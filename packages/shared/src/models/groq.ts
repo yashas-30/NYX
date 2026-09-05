@@ -25,6 +25,7 @@ export const GROQ_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: true,
+      toolCalling: true,
     },
     supportsThinking: true,
     features: [
@@ -59,6 +60,7 @@ export const GROQ_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: true,
+      toolCalling: true,
     },
     supportsThinking: true,
     features: [
@@ -97,6 +99,7 @@ export const GROQ_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: true,
+      toolCalling: true,
     },
     supportsThinking: true,
     features: [
@@ -127,6 +130,7 @@ export const GROQ_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -161,6 +165,7 @@ export const GROQ_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [

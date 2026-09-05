@@ -277,15 +277,25 @@ export const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({
   const [refreshKey, setRefreshKey] = useState(0);
   const [debouncedPreviewCode, setDebouncedPreviewCode] = useState(content);
 
+  const lastPreviewUpdateRef = useRef(0);
   useEffect(() => {
     if (!isStreaming) {
       setDebouncedPreviewCode(displayedArtifact.content || '');
       return;
     }
-    const timer = setTimeout(() => {
+    const now = Date.now();
+    // Throttle preview updates to every 300ms so rapid token stream doesn't starve the timer
+    if (now - lastPreviewUpdateRef.current >= 300) {
+      lastPreviewUpdateRef.current = now;
       setDebouncedPreviewCode(displayedArtifact.content || '');
-    }, 400);
-    return () => clearTimeout(timer);
+    } else {
+      const remaining = 300 - (now - lastPreviewUpdateRef.current);
+      const timer = setTimeout(() => {
+        lastPreviewUpdateRef.current = Date.now();
+        setDebouncedPreviewCode(displayedArtifact.content || '');
+      }, remaining);
+      return () => clearTimeout(timer);
+    }
   }, [displayedArtifact.content, isStreaming]);
 
   // Code selections for target AI edits
@@ -302,8 +312,11 @@ export const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({
   const handleEditorDidMount = (editor: any) => {
     setEditorInstance(editor);
     let isDisposed = false;
+    const isStreamingRef = { current: isStreaming };
+    isStreamingRef.current = isStreaming;
+
     const listener = editor.onDidChangeCursorSelection((e: any) => {
-      if (isDisposed) return;
+      if (isDisposed || isStreamingRef.current) return;
       try {
         const model = editor.getModel();
         if (!model || typeof model.isDisposed !== 'function' || model.isDisposed()) return;
@@ -522,8 +535,6 @@ User instructions to modify this selection: ${editInstruction}`;
     };
   }, [editorInstance]);
 
-  const decorationsRef = useRef<string[]>([]);
-
   // Automatically show 'code' tab while streaming, and switch to 'preview' once complete
   useEffect(() => {
     if (isStreaming) {
@@ -538,7 +549,14 @@ User instructions to modify this selection: ${editInstruction}`;
     prevStreamingRef.current = isStreaming;
   }, [isStreaming, isPreviewable]);
 
-  // Auto-scroll Monaco Editor to the active edited line during streaming / editing
+  // Clear any active selection when code is streaming
+  useEffect(() => {
+    if (isStreaming && selection) {
+      setSelection(null);
+    }
+  }, [isStreaming, selection]);
+
+  // Auto-scroll Monaco Editor smoothly to the active line during streaming
   useEffect(() => {
     if (!editorInstance) return;
 
@@ -546,28 +564,14 @@ User instructions to modify this selection: ${editInstruction}`;
 
     if (isStreaming) {
       try {
+        const model = editorInstance.getModel();
+        if (model && model.getValue() !== (displayedArtifact.content || '')) {
+          model.setValue(displayedArtifact.content || '');
+        }
         editorInstance.revealLineInCenter(lineCount);
-
-        // Highlight active streaming line with a glowing accent
-        decorationsRef.current = editorInstance.deltaDecorations(decorationsRef.current, [
-          {
-            range: {
-              startLineNumber: lineCount,
-              startColumn: 1,
-              endLineNumber: lineCount,
-              endColumn: 1,
-            },
-            options: {
-              isWholeLine: true,
-              className: 'bg-white/10 border-l-2 border-primary animate-pulse',
-            },
-          },
-        ]);
       } catch (err) {}
     } else if (prevStreamingRef.current && !isStreaming) {
-      // Clear line decoration and reveal bottom on completion
       try {
-        decorationsRef.current = editorInstance.deltaDecorations(decorationsRef.current, []);
         editorInstance.revealLine(lineCount);
       } catch (err) {}
     }
@@ -820,12 +824,17 @@ User instructions to modify this selection: ${editInstruction}`;
                     onMount={handleEditorDidMount}
                     theme="vs-dark"
                     options={{
-                      minimap: { enabled: true },
+                      minimap: { enabled: false },
                       fontSize: 13,
                       fontFamily: 'JetBrains Mono, monospace',
                       wordWrap: 'on',
                       lineNumbers: 'on',
                       automaticLayout: true,
+                      colorDecorators: false,
+                      renderLineHighlight: 'none',
+                      bracketPairColorization: { enabled: false },
+                      glyphMargin: false,
+                      folding: false,
                     }}
                   />
                 </div>

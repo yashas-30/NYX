@@ -1,3 +1,15 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "langchain-core",
+#     "langgraph",
+#     "langchain-google-genai",
+#     "google-genai",
+#     "requests",
+#     "geopy",
+#     "pydantic",
+# ]
+# ///
 """
 antigravity_agent_workflow.py
 

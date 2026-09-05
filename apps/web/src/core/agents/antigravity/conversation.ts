@@ -12,6 +12,8 @@ import {
   AntigravityContent,
   Image,
   Document,
+  UsageMetadata,
+  resolveSystemInstructions,
 } from './types';
 import { HookRunner, enforce } from './policies';
 import { TriggerRunner } from './triggers';
@@ -93,11 +95,23 @@ export class ChatResponse {
   private resolveFullText!: (text: string) => void;
   private accumulatedText: string = '';
   private accumulatedThought: string = '';
+  public usage_metadata: UsageMetadata | null = null;
 
   constructor() {
     this.fullTextPromise = new Promise<string>((resolve) => {
       this.resolveFullText = resolve;
     });
+  }
+
+  public setUsageMetadata(metadata: UsageMetadata | null): void {
+    this.usage_metadata = metadata;
+  }
+
+  public async structured_output<T = any>(): Promise<T> {
+    const text = await this.text();
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const target = jsonMatch ? jsonMatch[1].trim() : text.trim();
+    return JSON.parse(target) as T;
   }
 
   public pushToken(token: string): void {
@@ -242,6 +256,10 @@ export class Conversation {
           prompt: textPrompt,
           history: this.rawMessages,
           maxIterations: this.config?.max_iterations || 8,
+          systemInstruction: resolveSystemInstructions(this.config?.system_instructions),
+          subagents: this.config?.subagents,
+          enableSubagents: this.config?.capabilities?.enable_subagents,
+          capabilities: this.config?.capabilities,
           onDelta: (delta) => response.pushToken(delta),
           onReasoning: (reasoning) => response.pushThought(reasoning),
           onStep: (agStep) => {
@@ -273,6 +291,10 @@ export class Conversation {
             });
           },
         });
+
+        if (res.usageMetadata) {
+          response.setUsageMetadata(res.usageMetadata);
+        }
 
         if (res.outputText) {
           response.pushToken(res.outputText);

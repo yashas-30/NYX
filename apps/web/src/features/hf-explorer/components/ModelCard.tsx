@@ -19,49 +19,72 @@ interface ModelCardProps {
   onSelect: (id: string) => void;
 }
 
+// Verified creator cache directly against Hugging Face live organization API
+const VERIFIED_ORG_CACHE = new Map<string, boolean>();
+
+function useIsCreatorVerified(creator: string): boolean {
+  const [verified, setVerified] = React.useState<boolean>(() => {
+    return VERIFIED_ORG_CACHE.get(creator.toLowerCase()) ?? false;
+  });
+
+  React.useEffect(() => {
+    if (!creator) return;
+    const key = creator.toLowerCase();
+    if (VERIFIED_ORG_CACHE.has(key)) {
+      setVerified(VERIFIED_ORG_CACHE.get(key)!);
+      return;
+    }
+
+    let isMounted = true;
+    fetch(`https://huggingface.co/api/organizations/${encodeURIComponent(creator)}/overview`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const isV = Boolean(data?.isVerified);
+        VERIFIED_ORG_CACHE.set(key, isV);
+        if (isMounted) setVerified(isV);
+      })
+      .catch(() => {
+        VERIFIED_ORG_CACHE.set(key, false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [creator]);
+
+  return verified;
+}
+
 export function ModelCard({ model, isSelected, hardware, onSelect }: ModelCardProps) {
   const modelId = model?.id || '';
   const { creator, name } = parseModelId(modelId);
   const relTime = getRelativeTime(model?.last_modified);
 
-  // Verified creator check
-  const isVerified = [
-    'google',
-    'meta-llama',
-    'meta',
-    'microsoft',
-    'mistralai',
-    'qwen',
-    'nvidia',
-    'openai',
-    'anthropic',
-    'stabilityai',
-    'deepseek-ai',
-    'black-forest-labs',
-    'cohere',
-    'unsloth',
-    'bartowski',
-    'mradermacher',
-  ].includes(creator.toLowerCase());
+  // Verified creator check from live Hugging Face org API
+  const isVerified = useIsCreatorVerified(creator);
 
   // Hardware compatibility calculation for this specific device
   const hwFit = useMemo(() => {
     return getModelHardwareCompatibility(modelId, model.tags, model.numParameters, hardware);
   }, [modelId, model.tags, model.numParameters, hardware]);
 
-  // Extract accurate parameters and architecture
+  // Extract accurate parameters and architecture from live HF metadata
   const paramCount = useMemo(() => {
-    return extractParameterCount(modelId, model.tags, model.numParameters);
-  }, [modelId, model.tags, model.numParameters]);
+    return extractParameterCount(modelId, model.tags, model.numParameters, model.gguf);
+  }, [modelId, model.tags, model.numParameters, model.gguf]);
 
   const archName = useMemo(() => {
-    return getArchitectureName(modelId, model.tags);
-  }, [modelId, model.tags]);
+    return getArchitectureName(modelId, model.tags, model.config, model.gguf);
+  }, [modelId, model.tags, model.config, model.gguf]);
 
   // Extract accurate capability pills (max 2 for sleek display)
   const caps = useMemo(() => {
-    return getCapabilityTags(modelId, model.tags, model.pipeline_tag).slice(0, 2);
-  }, [modelId, model.tags, model.pipeline_tag]);
+    const hasMmproj = model.siblings?.some((s) => s.rfilename.toLowerCase().includes('mmproj'));
+    return getCapabilityTags(modelId, model.tags, model.pipeline_tag, hasMmproj, {
+      gguf: model.gguf,
+      config: model.config,
+    }).slice(0, 2);
+  }, [modelId, model.tags, model.pipeline_tag, model.siblings, model.gguf, model.config]);
 
   return (
     <button

@@ -40,7 +40,7 @@ impl CodebaseScanner {
             .filter_entry(|e| {
                 // Skip common irrelevant directories to avoid polluting the index
                 let name = e.file_name().to_string_lossy();
-                !matches!(name.as_ref(), "node_modules" | ".git" | "target" | "dist" | ".next" | "build")
+                !matches!(name.as_ref(), "node_modules" | ".git" | "target" | "dist" | ".next" | "build" | ".agents" | "graphify-out" | ".turbo" | "coverage")
             })
             .filter_map(|e| e.ok())
         {
@@ -78,6 +78,7 @@ impl CodebaseScanner {
             // making large workspace indexing 10-50× faster.
             match self.embedder.embed(chunks.clone()).await {
                 Ok(embeddings) => {
+                    let mut batch_items = Vec::with_capacity(chunks.len());
                     for (chunk_idx, (chunk, embedding)) in chunks.iter().zip(embeddings.into_iter()).enumerate() {
                         let path_str = path.to_string_lossy().to_string();
                         let chunk_id = format!("{}::chunk_{}", path_str, chunk_idx);
@@ -85,12 +86,14 @@ impl CodebaseScanner {
                             "file": path_str,
                             "chunk": chunk_idx
                         }).to_string();
+                        batch_items.push((chunk_id, chunk.clone(), embedding, metadata));
+                    }
 
-                        if let Err(e) = self.db.insert(chunk_id, chunk.clone(), embedding, metadata).await {
-                            warn!("Failed to insert chunk for {:?}: {}", path, e);
-                        } else {
-                            count += 1;
-                        }
+                    let batch_len = batch_items.len();
+                    if let Err(e) = self.db.insert_batch(batch_items).await {
+                        warn!("Failed to insert chunks for {:?}: {}", path, e);
+                    } else {
+                        count += batch_len;
                     }
                 }
                 Err(e) => error!("Failed to embed chunks for {:?}: {}", path, e),

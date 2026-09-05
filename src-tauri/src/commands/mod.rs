@@ -1,4 +1,4 @@
-﻿pub mod dialog;
+pub mod dialog;
 pub mod vault;
 pub mod window;
 pub mod system;
@@ -13,6 +13,7 @@ pub mod observability;
 pub mod memory;
 pub mod db;
 pub mod agent_pipeline;
+pub mod opencode;
 
 pub use dialog::*;
 pub use window::*;
@@ -25,3 +26,4 @@ pub use pty::*;
 pub use fs::*;
 pub use tools::*;
 pub use agent_pipeline::*;
+pub use opencode::*;

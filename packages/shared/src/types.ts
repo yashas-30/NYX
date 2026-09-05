@@ -165,6 +165,9 @@ export const ModelOptionSchema = z.object({
     .object({
       vision: z.boolean().optional(),
       reasoning: z.boolean().optional(),
+      toolCalling: z.boolean().optional(),
+      audio: z.boolean().optional(),
+      tools: z.boolean().optional(),
     })
     .optional(),
   features: z.array(z.string()).optional(),

@@ -1,0 +1,9 @@
+{
+  "name": "nyx-opencode-cli",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local OpenCode CLI installation for NYX",
+  "dependencies": {
+    "opencode-ai": "^1.18.27"
+  }
+}

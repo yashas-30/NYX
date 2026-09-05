@@ -21,14 +21,16 @@ export const useDashboardState = (onExit?: () => void) => {
   const activeMode = (() => {
     const path = location.pathname;
     if (path === '/chat') return 'chat';
+    if (path === '/opencode') return 'opencode';
     if (path === '/models') return 'registry';
     if (path === '/settings') return 'settings';
     if (path === '/compare') return 'compare';
     return 'chat';
   })();
 
-  const setActiveMode = (mode: 'settings' | 'registry' | 'chat' | 'compare') => {
+  const setActiveMode = (mode: 'settings' | 'registry' | 'chat' | 'compare' | 'opencode') => {
     if (mode === 'chat') navigate('/chat');
+    else if (mode === 'opencode') navigate('/opencode');
     else if (mode === 'registry') navigate('/models');
     else if (mode === 'settings') navigate('/settings');
     else if (mode === 'compare') navigate('/compare');

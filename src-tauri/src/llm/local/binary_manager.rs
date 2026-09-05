@@ -8,7 +8,7 @@ use tokio::io::AsyncWriteExt;
 use tracing::info;
 
 use super::hardware::GpuBackend;
-use super::server::{DOWNLOAD_SEMAPHORE, LLAMACPP_CUDA_ZIP, LLAMACPP_VULKAN_ZIP, LLAMACPP_RELEASE_BASE, MIN_SERVER_BINARY_BYTES, LLAMACPP_PINNED_VERSION};
+use super::server::{DOWNLOAD_SEMAPHORE, LLAMACPP_CUDA_ZIP, LLAMACPP_VULKAN_ZIP, LLAMACPP_CUDART_ZIP, LLAMACPP_RELEASE_BASE, MIN_SERVER_BINARY_BYTES, LLAMACPP_PINNED_VERSION};
 
 // § 6 — DOWNLOADER (server binary)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,45 +39,68 @@ impl Downloader {
         }
     }
 
-    /// Fetches the latest release from GitHub API, falls back to pinned if it fails.
-    async fn resolve_release(&self, backend: &GpuBackend) -> (String, String) {
-        if let Ok(resp) = self.client.get("https://api.github.com/repos/ggerganov/llama.cpp/releases/latest").send().await {
-            if resp.status().is_success() {
-                if let Ok(json) = resp.json::<serde_json::Value>().await {
-                    if let Some(tag) = json["tag_name"].as_str() {
-                        if let Some(assets) = json["assets"].as_array() {
-                            let mut target_url = None;
-                            for asset in assets {
-                                if let (Some(name), Some(url)) = (asset["name"].as_str(), asset["browser_download_url"].as_str()) {
-                                    let name_lower = name.to_lowercase();
-                                    if name_lower.contains("win") && name_lower.contains("x64") && name_lower.ends_with(".zip") {
-                                        let is_cuda = matches!(backend, GpuBackend::Cuda | GpuBackend::Unknown) && name_lower.contains("cuda");
-                                        let is_vulkan = matches!(backend, GpuBackend::Vulkan) && name_lower.contains("vulkan");
-                                        if is_cuda || is_vulkan {
-                                            target_url = Some(url.to_string());
-                                            break;
+    /// Fetches the latest release from GitHub API (scanning recent releases for newest b* tag),
+    /// and returns (tag_name, binary_zip_url, optional_cudart_zip_url).
+    async fn resolve_release(&self, backend: &GpuBackend) -> (String, String, Option<String>) {
+        let api_urls = [
+            "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10",
+            "https://api.github.com/repos/ggerganov/llama.cpp/releases?per_page=10",
+        ];
+
+        for api_url in api_urls {
+            if let Ok(resp) = self.client.get(api_url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(releases) = resp.json::<serde_json::Value>().await {
+                        if let Some(rel_array) = releases.as_array() {
+                            for rel in rel_array {
+                                let tag = match rel.get("tag_name").and_then(|v| v.as_str()) {
+                                    Some(t) if t.starts_with('b') => t,
+                                    _ => continue,
+                                };
+
+                                if let Some(assets) = rel.get("assets").and_then(|a| a.as_array()) {
+                                    let mut target_url = None;
+                                    let mut cudart_url = None;
+
+                                    for asset in assets {
+                                        if let (Some(name), Some(url)) = (asset["name"].as_str(), asset["browser_download_url"].as_str()) {
+                                            let name_lower = name.to_lowercase();
+                                            if name_lower.contains("win") && (name_lower.contains("x64") || name_lower.contains("x86_64")) && name_lower.ends_with(".zip") {
+                                                let is_cuda = matches!(backend, GpuBackend::Cuda | GpuBackend::Unknown) && name_lower.contains("cuda");
+                                                let is_vulkan = matches!(backend, GpuBackend::Vulkan | GpuBackend::Npu) && name_lower.contains("vulkan");
+
+                                                if name_lower.starts_with("cudart") && is_cuda {
+                                                    cudart_url = Some(url.to_string());
+                                                } else if (is_cuda || is_vulkan) && !name_lower.starts_with("cudart") {
+                                                    target_url = Some(url.to_string());
+                                                }
+                                            }
                                         }
                                     }
+
+                                    if let Some(url) = target_url {
+                                        return (tag.to_string(), url, cudart_url);
+                                    }
                                 }
-                            }
-                            if let Some(url) = target_url {
-                                return (tag.to_string(), url);
                             }
                         }
                     }
                 }
             }
         }
-        // Fallback to pinned version
-        let zip_name = match backend {
-            GpuBackend::Cuda | GpuBackend::Unknown => LLAMACPP_CUDA_ZIP,
-            GpuBackend::Vulkan => LLAMACPP_VULKAN_ZIP,
-            // Metal (macOS) — llama.cpp ships a universal macOS binary; not downloadable via this Windows path
-            GpuBackend::Metal => LLAMACPP_CUDA_ZIP,
-            // NPU uses Vulkan binary as compatible fallback
-            GpuBackend::Npu => LLAMACPP_VULKAN_ZIP,
+
+        // Fallback to pinned release
+        let (zip_name, cudart_name) = match backend {
+            GpuBackend::Cuda | GpuBackend::Unknown => (LLAMACPP_CUDA_ZIP, Some(LLAMACPP_CUDART_ZIP)),
+            GpuBackend::Vulkan | GpuBackend::Npu => (LLAMACPP_VULKAN_ZIP, None),
+            GpuBackend::Metal => (LLAMACPP_CUDA_ZIP, None),
         };
-        (LLAMACPP_PINNED_VERSION.to_string(), format!("{}/{}/{}", LLAMACPP_RELEASE_BASE, LLAMACPP_PINNED_VERSION, zip_name))
+
+        (
+            LLAMACPP_PINNED_VERSION.to_string(),
+            format!("{}/{}/{}", LLAMACPP_RELEASE_BASE, LLAMACPP_PINNED_VERSION, zip_name),
+            cudart_name.map(|c| format!("{}/{}/{}", LLAMACPP_RELEASE_BASE, LLAMACPP_PINNED_VERSION, c)),
+        )
     }
 
     pub async fn get_installed_version(data_dir: &Path) -> String {
@@ -110,7 +133,7 @@ impl Downloader {
 
         let _ = tokio::fs::remove_file(&server_path).await;
         
-        let (tag_name, url) = self.resolve_release(backend).await;
+        let (tag_name, url, cudart_url_opt) = self.resolve_release(backend).await;
         let zip_name = url.split('/').last().unwrap_or("llama-server.zip");
         let zip_path = bin_dir.join(zip_name);
 
@@ -123,10 +146,10 @@ impl Downloader {
             }));
 
         self.download_file(&url, &zip_path, |p| {
-            on_progress(p * 0.9, &format!("Downloading llama-server... {:.0}%", p));
+            on_progress(p * 0.7, &format!("Downloading llama-server... {:.0}%", p));
         }).await?;
 
-        on_progress(90.0, "Extracting server binary...");
+        on_progress(70.0, "Extracting server binary...");
 
         let zip_str = zip_path.to_string_lossy().replace("\\\\?\\", "");
         let bin_str = bin_dir.to_string_lossy().replace("\\\\?\\", "");
@@ -134,6 +157,23 @@ impl Downloader {
         let extract_ok = Self::extract_with_retry(&zip_str, &bin_str).await;
         if !extract_ok {
             return Err(format!("Failed to extract {}", zip_name));
+        }
+
+        // If CUDA runtime DLLs (cudart/cublas) are needed and missing, download cudart package
+        if let Some(cudart_url) = cudart_url_opt {
+            let has_cublas = bin_dir.join("cublas64_12.dll").exists() || bin_dir.join("cublas64_11.dll").exists();
+            if !has_cublas {
+                on_progress(75.0, "Downloading CUDA runtime libraries (cudart)...");
+                let cudart_zip_name = cudart_url.split('/').last().unwrap_or("cudart.zip");
+                let cudart_zip_path = bin_dir.join(cudart_zip_name);
+                if let Ok(()) = self.download_file(&cudart_url, &cudart_zip_path, |p| {
+                    on_progress(75.0 + (p * 0.15), &format!("Downloading CUDA runtime... {:.0}%", p));
+                }).await {
+                    let czip_str = cudart_zip_path.to_string_lossy().replace("\\\\?\\", "");
+                    let _ = Self::extract_with_retry(&czip_str, &bin_str).await;
+                    let _ = tokio::fs::remove_file(&cudart_zip_path).await;
+                }
+            }
         }
 
         let extracted = bin_dir.join("llama-server.exe");

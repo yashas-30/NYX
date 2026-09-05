@@ -50,6 +50,7 @@ pub struct HardwareAnalysisResult {
     pub estimated_ram_mb: u64,
     pub fully_gpu: bool,
     pub hybrid: bool,
+    pub uses_shared_memory: bool,
     pub recommended_cpu_threads: u32,
     pub max_context_length: u32,
     pub schedule_message: String,
@@ -382,9 +383,11 @@ pub async fn resolve_model_path(
             candidate_models_dirs.push(p_cwd2);
         }
     }
-    let p_workspace = PathBuf::from("E:\\NYX\\.nyx-models");
-    if !candidate_models_dirs.contains(&p_workspace) {
-        candidate_models_dirs.push(p_workspace);
+    if let Ok(env_models) = std::env::var("NYX_MODELS_DIR") {
+        let p_env = PathBuf::from(env_models);
+        if !candidate_models_dirs.contains(&p_env) {
+            candidate_models_dirs.push(p_env);
+        }
     }
 
     for model_id in &candidates {
@@ -482,12 +485,12 @@ pub async fn analyze_hardware(
     };
 
     let decision = compute_ngl_decision(&hw_snapshot, gguf_meta.as_ref(), model_size_gb, ctx);
-    let (ngl, fully_gpu, estimated_vram_mb, schedule_message, recommended_cpu_threads) = match decision {
-        Ok(d) => (d.ngl, d.fully_gpu, d.estimated_vram_mb, d.message, d.recommended_cpu_threads),
-        Err(err_msg) => (0, false, 0, err_msg, 0),
+    let (ngl, fully_gpu, hybrid, uses_shared_memory, estimated_vram_mb, schedule_message, recommended_cpu_threads) = match decision {
+        Ok(d) => (d.ngl, d.fully_gpu, d.hybrid, d.uses_shared_memory, d.estimated_vram_mb, d.message, d.recommended_cpu_threads),
+        Err(err_msg) => (0, false, false, false, 0, err_msg, 0),
     };
-    let layers_on_gpu = if ngl >= total_layers { total_layers } else { ngl };
-    let layers_on_cpu = 0u32; // In GPU-only mode, layers on CPU is always 0
+    let layers_on_gpu = ngl.min(total_layers);
+    let layers_on_cpu = total_layers.saturating_sub(layers_on_gpu);
 
     Ok(HardwareAnalysisResult {
         gpu_name: hw_snapshot.gpu_name,
@@ -517,7 +520,8 @@ pub async fn analyze_hardware(
             (model_ram_mb + cpu_kv_mb) as u64 + 256
         },
         fully_gpu,
-        hybrid: false,
+        hybrid,
+        uses_shared_memory,
         recommended_cpu_threads,
         max_context_length: gguf_meta.as_ref().and_then(|m| m.context_length).unwrap_or(131072),
         schedule_message,
@@ -656,25 +660,41 @@ pub async fn start_local_server(
         None
     };
 
-    // Try to find an mmproj file for this model
+    // Try to find an mmproj or audio projector file for this model
+    let target_meta_path_1 = model_path.with_extension("meta.json");
+    let target_meta_path_2 = model_path.with_extension("gguf.meta.json");
+    let (target_repo_id, has_multimodal_flag) = {
+        let mut rid: Option<String> = None;
+        let mut mm = false;
+        for mp in [&target_meta_path_1, &target_meta_path_2] {
+            if let Ok(content) = tokio::fs::read_to_string(mp).await {
+                if let Ok(j) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if rid.is_none() {
+                        rid = j.get("repo_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    }
+                    if j.get("supports_vision").and_then(|v| v.as_bool()).unwrap_or(false)
+                        || j.get("supports_audio").and_then(|v| v.as_bool()).unwrap_or(false)
+                    {
+                        mm = true;
+                    }
+                }
+            }
+        }
+        (rid, mm)
+    };
+
     let name_lower = model_id.to_lowercase();
-    let is_vision_model = name_lower.contains("-vl") 
+    let is_candidate_model = has_multimodal_flag
+        || name_lower.contains("-vl") 
         || name_lower.contains("_vl") 
         || name_lower.contains("vision") 
         || name_lower.contains("llava")
+        || name_lower.contains("audio")
+        || name_lower.contains("whisper")
         || name_lower.contains("multimodal");
 
-    // Only search and attach an mmproj projector if this is an explicit vision/multimodal model.
-    // Attaching a 1 GB vision projector to standard text models wastes VRAM/RAM, disables Flash Attention, and forces CPU offload.
     let mut mmproj_path = None;
-    if is_vision_model {
-        let target_meta_path = model_path.with_extension("gguf.meta.json");
-        let target_repo_id = if let Ok(content) = tokio::fs::read_to_string(&target_meta_path).await {
-            if let Ok(j) = serde_json::from_str::<serde_json::Value>(&content) {
-                j.get("repo_id").and_then(|v| v.as_str()).map(|s| s.to_string())
-            } else { None }
-        } else { None };
-
+    if is_candidate_model {
         let mut candidate_paths = Vec::new();
         let search_dirs = vec![
             app_dir.join("models"),
@@ -684,8 +704,10 @@ pub async fn start_local_server(
         for dir in search_dirs {
             if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
                 while let Ok(Some(entry)) = entries.next_entry().await {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    if name.contains("mmproj") && name.ends_with(".gguf") {
+                    let name = entry.file_name().to_string_lossy().to_lowercase();
+                    if (name.contains("mmproj") || name.contains("projector") || name.contains("whisper"))
+                        && name.ends_with(".gguf")
+                    {
                         candidate_paths.push(entry.path());
                     }
                 }
@@ -693,16 +715,22 @@ pub async fn start_local_server(
         }
 
         for path in candidate_paths {
-            let meta_path = path.with_extension("gguf.meta.json");
-            if let Ok(content) = tokio::fs::read_to_string(&meta_path).await {
-                if let Ok(j) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(repo_id) = j.get("repo_id").and_then(|v| v.as_str()) {
-                        if Some(repo_id.to_string()) == target_repo_id {
-                            mmproj_path = Some(path);
-                            break;
+            let meta_path_1 = path.with_extension("meta.json");
+            let meta_path_2 = path.with_extension("gguf.meta.json");
+            for mp in [&meta_path_1, &meta_path_2] {
+                if let Ok(content) = tokio::fs::read_to_string(mp).await {
+                    if let Ok(j) = serde_json::from_str::<serde_json::Value>(&content) {
+                        if let Some(repo_id) = j.get("repo_id").and_then(|v| v.as_str()) {
+                            if Some(repo_id.to_string()) == target_repo_id && target_repo_id.is_some() {
+                                mmproj_path = Some(path.clone());
+                                break;
+                            }
                         }
                     }
                 }
+            }
+            if mmproj_path.is_some() {
+                break;
             }
         }
     }
@@ -789,11 +817,10 @@ pub async fn start_local_server(
         None
     };
 
-    // If ctx is 0 (auto), default to 8192 context window (capped to model max if model max is smaller).
-    // Never blindly assign 131,072 or 1,000,000 on a 4GB-8GB GPU, as 128k KV cache consumes 8.5+ GB of memory!
-    let model_max_ctx = gguf_meta.as_ref().and_then(|m| m.context_length).unwrap_or(8192);
+    // If ctx is 0 (auto), default to 32768 (32K) context window (capped to model max if model max is smaller).
+    let model_max_ctx = gguf_meta.as_ref().and_then(|m| m.context_length).unwrap_or(32768);
     let effective_ctx = if ctx == 0 {
-        8192u32.min(model_max_ctx).max(2048)
+        32768u32.min(model_max_ctx).max(2048)
     } else {
         ctx.min(model_max_ctx).max(2048)
     };
@@ -883,15 +910,18 @@ pub async fn start_local_server(
         let model_size_gb = tokio::fs::metadata(&model_path).await
             .map(|m| m.len() as f32 / (1024.0 * 1024.0 * 1024.0))
             .unwrap_or(0.0);
+        let hw = HardwareSnapshot::collect().await;
 
         let _ = app.emit("vram-decision", serde_json::json!({
-            "ngl": 99,
+            "ngl": 0,
             "fully_gpu": true,
             "hybrid": false,
             "message": format!("⚡ {} active ({:.1} GB)", engine_label, model_size_gb),
             "estimated_vram_mb": (model_size_gb * 1024.0) as u64,
-            "vram_available_mb": 8192,
-            "gpu_name": "Local GPU",
+            "vram_available_mb": hw.vram_available_mb,
+            "dedicated_vram_available_mb": hw.dedicated_vram_available_mb,
+            "shared_gpu_memory_mb": hw.shared_gpu_memory_mb,
+            "gpu_name": hw.gpu_name,
             "model_size_gb": model_size_gb,
             "model_type": "text-to-image",
         }));
@@ -936,15 +966,18 @@ pub async fn start_local_server(
         let model_size_gb = tokio::fs::metadata(&model_path).await
             .map(|m| m.len() as f32 / (1024.0 * 1024.0 * 1024.0))
             .unwrap_or(0.0);
+        let hw = HardwareSnapshot::collect().await;
 
         let _ = app.emit("vram-decision", serde_json::json!({
-            "ngl": 99,
-            "fully_gpu": true,
+            "ngl": gpu_layers.unwrap_or(0),
+            "fully_gpu": gpu_layers.is_some(),
             "hybrid": false,
             "message": format!("⚡ {} active on port {} ({:.1} GB)", engine_label, native_port, model_size_gb),
             "estimated_vram_mb": (model_size_gb * 1024.0) as u64,
-            "vram_available_mb": 8192,
-            "gpu_name": "Local GPU",
+            "vram_available_mb": hw.vram_available_mb,
+            "dedicated_vram_available_mb": hw.dedicated_vram_available_mb,
+            "shared_gpu_memory_mb": hw.shared_gpu_memory_mb,
+            "gpu_name": hw.gpu_name,
             "model_size_gb": model_size_gb,
             "model_type": model_type_str,
         }));
@@ -971,13 +1004,18 @@ pub async fn start_local_server(
     let vulkan_path = app_dir.join("binaries").join("llama-server-vulkan.exe");
 
     // Check all possible binary locations on disk
-    let candidate_dirs = [
+    let mut candidate_dirs = vec![
         app_dir.join("binaries"),
         PathBuf::from(std::env::var("APPDATA").unwrap_or_default()).join("com.nyx.desktop").join("binaries"),
         PathBuf::from(std::env::var("APPDATA").unwrap_or_default()).join("nyx").join("binaries"),
-        PathBuf::from("E:\\NYX\\.nyx-models\\bin"),
-        PathBuf::from(".nyx-models").join("bin"),
     ];
+    if let Ok(cwd) = std::env::current_dir() {
+        candidate_dirs.push(cwd.join(".nyx-models").join("bin"));
+        candidate_dirs.push(cwd.join("binaries"));
+    }
+    if let Ok(env_models) = std::env::var("NYX_MODELS_DIR") {
+        candidate_dirs.push(PathBuf::from(env_models).join("bin"));
+    }
 
     let mut found_server_path: Option<PathBuf> = None;
     for dir in &candidate_dirs {
@@ -1063,7 +1101,18 @@ pub async fn start_local_server(
 
     // Always pass 999 to llama-server in GPU-only mode to guarantee 100% of all layers,
     // embeddings, and output tensors are offloaded to GPU without any trailing layers left on CPU.
-    let final_ngl = 999;
+    // Manual overrides may reduce GPU placement, but never exceed the
+    // capacity-aware plan calculated from the current hardware snapshot.
+    let final_ngl = match gpu_layers.filter(|&l| l > 0) {
+        Some(layers) => layers.min(total_layers).min(hybrid_cfg.ngl),
+        None => {
+            if hybrid_cfg.ngl >= total_layers || hybrid_cfg.uses_shared_memory {
+                999
+            } else {
+                hybrid_cfg.ngl
+            }
+        }
+    };
 
     // Generation threads: physical cores for sequential decode.
     let final_threads = cpu_threads.filter(|&t| t > 0).unwrap_or(hybrid_cfg.threads_gen);
@@ -1076,28 +1125,30 @@ pub async fn start_local_server(
     } else {
         kv_cache_type
     };
-    // Memory and KV placement: always keep KV in VRAM (GPU-only mode).
+    // Keep KV offload enabled so llama.cpp can place KV data with the GPU layers.
     let final_mlock   = false; // Never mlock in GPU-only mode — double-pinning risk
     let final_no_kv   = false; // KV must stay in VRAM
     let final_flash   = flash_attention.unwrap_or(true);
 
-    // estimated_vram_mb is already computed inside compute_gpu_inference_config.
-    let estimated_vram_mb = vram_for_ngl(model_size_gb, gguf_meta.as_ref(), total_layers, final_ngl, effective_ctx);
-    // Effective context comes from the GPU scheduler (may be auto-reduced to fit VRAM).
     let effective_context_size = hybrid_cfg.effective_context_size;
+    // Effective context comes from the GPU scheduler (may be auto-reduced to fit VRAM).
+    let estimated_vram_mb = vram_for_ngl(model_size_gb, gguf_meta.as_ref(), total_layers, if final_ngl >= 999 { total_layers } else { final_ngl }, effective_context_size);
     let context_capped = effective_context_size < effective_ctx;
     let _ = app.emit("vram-decision", serde_json::json!({
         "ngl": final_ngl,
-        "fully_gpu": true,
-        "hybrid": false,
+        "fully_gpu": final_ngl >= total_layers || final_ngl >= 999,
+        "hybrid": final_ngl < total_layers && final_ngl < 999,
+        "uses_shared_memory": hybrid_cfg.uses_shared_memory,
         "message": hybrid_cfg.message,
         "estimated_vram_mb": estimated_vram_mb,
         "vram_available_mb": hw.vram_available_mb,
+        "dedicated_vram_available_mb": hw.dedicated_vram_available_mb,
+        "shared_gpu_memory_mb": hw.shared_gpu_memory_mb,
         "gpu_name": hw.gpu_name,
         "model_size_gb": (model_size_gb * 0.80),
         "raw_file_size_gb": model_size_gb,
-        "layers_on_gpu": total_layers,
-        "layers_on_cpu": 0u32,
+        "layers_on_gpu": if final_ngl >= 999 { total_layers } else { final_ngl.min(total_layers) },
+        "layers_on_cpu": if final_ngl >= 999 { 0 } else { total_layers.saturating_sub(final_ngl) },
         "cpu_threads": final_threads,
         "threads_batch": hybrid_cfg.threads_batch,
         "ubatch_size": final_ubatch,
@@ -1106,7 +1157,7 @@ pub async fn start_local_server(
         "kv_in_vram": true,
         "mlock": final_mlock,
         "flash_attention": final_flash,
-        "inference_mode": "full_gpu",
+        "inference_mode": if final_ngl >= total_layers || final_ngl >= 999 { "full_gpu" } else { "hybrid" },
         "llamacpp_version": Downloader::get_installed_version(&app_dir).await,
         // 2026 additions
         "is_igpu": hw.is_igpu,
@@ -1119,8 +1170,7 @@ pub async fn start_local_server(
     // --- Step 3: Build config and start the server ---
     // Use the scheduler's effective context — it may have been auto-reduced to
     // keep all layers on the GPU instead of going hybrid/CPU.
-    // Use the scheduler's effective context (8,192 default or user override)
-    let server_ctx = effective_ctx;
+    let server_ctx = effective_context_size;
 
     // Prompt cache must be model-specific. A shared cache file is incompatible
     // across models (different KV dimensions) and causes a hard crash on switch.
@@ -1132,8 +1182,23 @@ pub async fn start_local_server(
         Some(app_dir.join("models").join(format!("{}.prompt_cache.bin", model_stem)))
     };
 
-    // 2026 Optimization: Let llama-server default (usually 'layer') unless user overrides
-    let final_split_mode = split_mode.filter(|s| !s.trim().is_empty());
+    // GPU Device Assignment:
+    // When a dedicated GPU is present, all processing MUST be performed by the
+    // dedicated GPU (CUDA0 / dGPU). Integrated GPUs (iGPU / Intel UHD) and CPU
+    // must NEVER execute model layers alongside a dedicated GPU.
+    // If the model exceeds physical VRAM, Windows WDDM Shared GPU Memory automatically
+    // provides system RAM to the dedicated GPU while all compute remains 100% on the dGPU.
+    let (final_device_id, final_split_mode) = if split_mode.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
+        (
+            if hw.gpu_device_id.is_empty() { None } else { Some(hw.gpu_device_id.clone()) },
+            split_mode.filter(|s| !s.trim().is_empty()),
+        )
+    } else {
+        (
+            if hw.gpu_device_id.is_empty() { None } else { Some(hw.gpu_device_id.clone()) },
+            None,
+        )
+    };
     let final_tensor_split = tensor_split.filter(|s| !s.trim().is_empty());
 
     let active_port = find_free_port();
@@ -1147,7 +1212,7 @@ pub async fn start_local_server(
         cpu_threads: final_threads,
         threads_batch: hybrid_cfg.threads_batch,
         ubatch_size: final_ubatch,
-        device_id: if hw.gpu_device_id.is_empty() { None } else { Some(hw.gpu_device_id.clone()) },
+        device_id: final_device_id,
         flash_attention: final_flash,
         kv_cache_type: final_kv_type,
         use_mlock: final_mlock,
@@ -1290,6 +1355,12 @@ pub struct LocalModelInfo {
     pub has_mmproj: bool,
     pub context_length: Option<u32>,
     pub model_type: Option<String>,
+    pub supports_reasoning: bool,
+    pub supports_vision: bool,
+    #[serde(default)]
+    pub supports_audio: bool,
+    #[serde(default)]
+    pub supports_tools: bool,
 }
 
 static LOCAL_MODELS_CACHE: std::sync::LazyLock<tokio::sync::Mutex<Option<(std::time::Instant, Vec<LocalModelInfo>)>>> = std::sync::LazyLock::new(|| {
@@ -1310,44 +1381,46 @@ fn scan_folder_fast<'a>(
         if depth > 4 {
             return (0, String::new(), false, false);
         }
-        let mut total_size: u64 = 0;
+        let mut total_size = 0u64;
         let mut primary_ext = String::new();
         let mut has_weights = false;
         let mut has_model_index = false;
 
-        let supported = ["gguf", "safetensors", "bin", "ckpt", "pt", "onnx", "pth", "engine"];
+        let mut read_dir = match tokio::fs::read_dir(dir).await {
+            Ok(rd) => rd,
+            Err(_) => return (0, String::new(), false, false),
+        };
 
-        if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let p = entry.path();
-                let name = entry.file_name().to_string_lossy().to_string();
+        while let Ok(Some(entry)) = read_dir.next_entry().await {
+            let path = entry.path();
+            if let Ok(ft) = entry.file_type().await {
+                if ft.is_file() {
+                    let len = entry.metadata().await.map(|m| m.len()).unwrap_or(0);
+                    total_size += len;
 
-                if name == "model_index.json" {
-                    has_model_index = true;
-                }
-
-                if p.is_file() {
-                    if let Ok(m) = entry.metadata().await {
-                        total_size += m.len();
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name == "model_index.json" {
+                        has_model_index = true;
                     }
-                    let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-                    if supported.contains(&ext.as_str()) {
-                        has_weights = true;
-                        if primary_ext.is_empty() {
-                            primary_ext = ext;
+
+                    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                        let lower_ext = ext.to_lowercase();
+                        if ["gguf", "safetensors", "bin", "ckpt", "pt", "onnx", "pth", "engine"].contains(&lower_ext.as_str()) {
+                            has_weights = true;
+                            if primary_ext.is_empty() {
+                                primary_ext = lower_ext;
+                            }
                         }
                     }
-                    if name == "config.json" || name == "model_index.json" {
-                        has_weights = true;
-                    }
-                } else if p.is_dir() && !name.starts_with('.') && name != ".nyx_offload" {
-                    let (sub_size, sub_ext, sub_weights, sub_index) = scan_folder_fast(&p, depth + 1).await;
+                } else if ft.is_dir() && !entry.file_name().to_string_lossy().starts_with('.') {
+                    let (sub_size, sub_ext, sub_weights, sub_index) =
+                        scan_folder_fast(&path, depth + 1).await;
                     total_size += sub_size;
+                    if !sub_ext.is_empty() && primary_ext.is_empty() {
+                        primary_ext = sub_ext;
+                    }
                     if sub_weights {
                         has_weights = true;
-                        if primary_ext.is_empty() {
-                            primary_ext = sub_ext;
-                        }
                     }
                     if sub_index {
                         has_model_index = true;
@@ -1358,6 +1431,104 @@ fn scan_folder_fast<'a>(
 
         (total_size, primary_ext, has_weights, has_model_index)
     })
+}
+
+async fn extract_model_meta_capabilities(
+    meta_paths: &[std::path::PathBuf],
+    gguf_meta: Option<&GgufMetadata>,
+    has_mmproj: bool,
+    model_type: &str,
+    db_tags: Option<&str>,
+) -> (bool, bool, bool, bool) {
+    let mut supports_reasoning = false;
+    let mut supports_vision = has_mmproj || model_type == "vision";
+    let mut supports_audio = model_type == "audio";
+    let mut supports_tools = false;
+
+    for meta_path in meta_paths {
+        if let Ok(content) = tokio::fs::read_to_string(meta_path).await {
+            if let Ok(j) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(r) = j.get("supports_reasoning").and_then(|v| v.as_bool()) {
+                    supports_reasoning = supports_reasoning || r;
+                }
+                if let Some(v) = j.get("supports_vision").and_then(|v| v.as_bool()) {
+                    supports_vision = supports_vision || v;
+                }
+                if let Some(a) = j.get("supports_audio").and_then(|v| v.as_bool()) {
+                    supports_audio = supports_audio || a;
+                }
+                if let Some(t) = j.get("supports_tools").and_then(|v| v.as_bool()) {
+                    supports_tools = supports_tools || t;
+                }
+                if let Some(tags) = j.get("tags").and_then(|v| v.as_array()) {
+                    for t in tags {
+                        if let Some(s) = t.as_str() {
+                            let sl = s.to_lowercase();
+                            if sl == "reasoning" || sl == "thinking" || sl == "thought" || sl.contains("reasoning") || sl.contains("r1") {
+                                supports_reasoning = true;
+                            }
+                            if sl == "vision" || sl == "multimodal" || sl.contains("vision") || sl.contains("image-to-text") {
+                                supports_vision = true;
+                            }
+                            if sl == "audio" || sl == "speech" || sl == "whisper" || sl.contains("audio") || sl.contains("voice") {
+                                supports_audio = true;
+                            }
+                            if sl == "tool-use" || sl == "function-calling" || sl == "tools" || sl == "agentic" {
+                                supports_tools = true;
+                            }
+                        }
+                    }
+                }
+                if let Some(pt) = j.get("pipeline_tag").and_then(|v| v.as_str()) {
+                    if pt == "image-to-text" || pt == "image-text-to-text" || pt == "visual-question-answering" {
+                        supports_vision = true;
+                    }
+                    if pt == "automatic-speech-recognition" || pt == "audio-to-text" || pt == "text-to-speech" {
+                        supports_audio = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(gm) = gguf_meta {
+        if gm.supports_reasoning {
+            supports_reasoning = true;
+        }
+        for t in &gm.tags {
+            let tl = t.to_lowercase();
+            if tl.contains("reasoning") || tl.contains("thinking") || tl.contains("thought") || tl.contains("r1") {
+                supports_reasoning = true;
+            }
+            if tl.contains("vision") || tl.contains("multimodal") || tl.contains("image-to-text") {
+                supports_vision = true;
+            }
+            if tl.contains("audio") || tl.contains("speech") || tl.contains("whisper") {
+                supports_audio = true;
+            }
+            if tl.contains("tool_call") || tl.contains("tool-use") || tl.contains("function-calling") {
+                supports_tools = true;
+            }
+        }
+    }
+
+    if let Some(tags_str) = db_tags {
+        let tl = tags_str.to_lowercase();
+        if tl.contains("reasoning") || tl.contains("thinking") || tl.contains("thought") || tl.contains("r1") {
+            supports_reasoning = true;
+        }
+        if tl.contains("vision") || tl.contains("multimodal") || tl.contains("image-to-text") {
+            supports_vision = true;
+        }
+        if tl.contains("audio") || tl.contains("speech") || tl.contains("whisper") {
+            supports_audio = true;
+        }
+        if tl.contains("tool") || tl.contains("agent") {
+            supports_tools = true;
+        }
+    }
+
+    (supports_reasoning, supports_vision, supports_audio, supports_tools)
 }
 
 #[tauri::command]
@@ -1488,6 +1659,23 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                 let context_length = db_model.context_length.map(|c| c as u32);
                 let model_type = Some(db_model.model_type.clone());
 
+                let db_meta_candidates = vec![
+                    parent_dir.join(format!("{}.meta.json", db_model.filename)),
+                    parent_dir.join(format!("{}.gguf.meta.json", db_model.filename)),
+                ];
+                let cached_gguf = if db_model.filename.ends_with(".gguf") {
+                    GGUF_META_CACHE.lock().unwrap().get(&db_model.filename).cloned()
+                } else {
+                    None
+                };
+                let (supports_reasoning, supports_vision, supports_audio, supports_tools) = extract_model_meta_capabilities(
+                    &db_meta_candidates,
+                    cached_gguf.as_ref(),
+                    has_mmproj,
+                    &db_model.model_type,
+                    db_model.tags.as_deref(),
+                ).await;
+
                 models.push(LocalModelInfo {
                     id,
                     name: display_name,
@@ -1499,6 +1687,10 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                     has_mmproj,
                     context_length,
                     model_type,
+                    supports_reasoning,
+                    supports_vision,
+                    supports_audio,
+                    supports_tools,
                 });
                 continue;
             }
@@ -1536,7 +1728,7 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                 let mut repo_id_opt: Option<String> = None;
                 let mut description = format!("Local {} model folder", primary_ext.to_uppercase());
 
-                for meta_path in meta_candidates {
+                for meta_path in &meta_candidates {
                     if let Ok(content) = tokio::fs::read_to_string(&meta_path).await {
                         if let Ok(j) = serde_json::from_str::<serde_json::Value>(&content) {
                             if let Some(rid) = j.get("repo_id").or_else(|| j.get("_name_or_path")).and_then(|v| v.as_str()) {
@@ -1600,6 +1792,14 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                     .await;
                 }
 
+                let (supports_reasoning, supports_vision, supports_audio, supports_tools) = extract_model_meta_capabilities(
+                    &meta_candidates,
+                    None,
+                    false,
+                    &model_type,
+                    None,
+                ).await;
+
                 models.push(LocalModelInfo {
                     id: rel_path,
                     name: display_name,
@@ -1611,6 +1811,10 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                     has_mmproj: false,
                     context_length: None,
                     model_type: Some(model_type),
+                    supports_reasoning,
+                    supports_vision,
+                    supports_audio,
+                    supports_tools,
                 });
                 continue;
             }
@@ -1656,7 +1860,7 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
             let mut repo_id_opt: Option<String> = None;
             let mut description = format!("Local {} model", ext.to_uppercase());
 
-            for meta_path in meta_candidates {
+            for meta_path in &meta_candidates {
                 if let Ok(content) = tokio::fs::read_to_string(&meta_path).await {
                     if let Ok(j) = serde_json::from_str::<serde_json::Value>(&content) {
                         if let Some(rid) = j.get("repo_id").and_then(|v| v.as_str()) {
@@ -1744,6 +1948,14 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                 .await;
             }
 
+            let (supports_reasoning, supports_vision, supports_audio, supports_tools) = extract_model_meta_capabilities(
+                &meta_candidates,
+                gguf_meta.as_ref(),
+                has_mmproj,
+                &model_type,
+                None,
+            ).await;
+
             models.push(LocalModelInfo {
                 id: rel_path,
                 name: display_name,
@@ -1755,6 +1967,10 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                 has_mmproj,
                 context_length,
                 model_type: Some(model_type),
+                supports_reasoning,
+                supports_vision,
+                supports_audio,
+                supports_tools,
             });
         }
     }
@@ -1821,6 +2037,15 @@ pub async fn hf_download_model(
         filename.clone()
     };
 
+    let safe_filename = std::path::Path::new(&final_filename);
+    if safe_filename.file_name().and_then(|name| name.to_str()) != Some(final_filename.as_str())
+        || final_filename.is_empty()
+        || final_filename == "."
+        || final_filename == ".."
+    {
+        return Err("Invalid model filename".to_string());
+    }
+
     let dest = app_dir.join("models").join(&final_filename);
 
     let is_paused = Arc::new(AtomicBool::new(false));
@@ -1854,12 +2079,14 @@ pub async fn hf_download_model(
             repo_id_clone,
             is_paused_clone,
             is_cancelled_clone,
-            move |pct, downloaded, total| {
+            move |pct, downloaded, total, speed, eta| {
                 let _ = app_emit.emit("hf-download-progress", serde_json::json!({
                     "model_id": mid_emit,
                     "progress": pct,
                     "downloaded": downloaded,
                     "total": total,
+                    "speed": speed,
+                    "eta": eta,
                 }));
             },
         ).await;
@@ -2108,63 +2335,191 @@ pub async fn hf_uninstall_model(
     manager: State<'_, Arc<LlamaManager>>,
     filename: String,
 ) -> Result<(), String> {
-    // Stop the server to release file locks before deletion.
+    // Stop the inference server to release any file locks before deletion.
     manager.stop().await;
 
     let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let dest = match resolve_model_path(&app, &filename).await {
-        Some(p) => p,
-        None => app_dir.join("models").join(&filename),
-    };
 
-    // Also remove from DB
+    // ── Step 1: Collect all related files from the DB ────────────────────────
+    // A vision model consists of (at least) two files:
+    //   • The main GGUF (e.g. llava-v1.6-mistral-7b.Q4_K_M.gguf  →  models/llm/)
+    //   • The mmproj projector (e.g. llava-...-mmproj-model-f16.gguf → models/projectors/)
+    // Both share the same repo_id.  We look up every DB row with that repo_id
+    // and physically delete all of them so nothing is left behind.
+
+    let mut files_to_delete: Vec<PathBuf> = Vec::new();
+    let mut db_ids_to_delete: Vec<String> = Vec::new();
+
     if let Some(pool) = app.try_state::<sqlx::SqlitePool>() {
+        use crate::db::models::LocalModel;
+
+        // Find the target model row.
+        let target: Option<LocalModel> = sqlx::query_as::<_, LocalModel>(
+            "SELECT * FROM local_models WHERE id = ? OR filename = ?"
+        )
+        .bind(&filename)
+        .bind(&filename)
+        .fetch_optional(&*pool)
+        .await
+        .unwrap_or(None);
+
+        if let Some(ref t) = target {
+            db_ids_to_delete.push(t.id.clone());
+
+            // Collect companion files with the same repo_id.
+            if let Some(ref rid) = t.repo_id {
+                if !rid.is_empty() {
+                    let companions: Vec<LocalModel> = sqlx::query_as::<_, LocalModel>(
+                        "SELECT * FROM local_models WHERE repo_id = ?"
+                    )
+                    .bind(rid)
+                    .fetch_all(&*pool)
+                    .await
+                    .unwrap_or_default();
+
+                    for c in companions {
+                        if !db_ids_to_delete.contains(&c.id) {
+                            db_ids_to_delete.push(c.id.clone());
+                        }
+                        // Resolve each companion's physical path.
+                        let companion_dest = if let Some(p) = resolve_model_path(&app, &c.id).await {
+                            p
+                        } else {
+                            // Fall back to stored file_path (absolute or relative to models dir)
+                            let p = PathBuf::from(&c.file_path);
+                            if p.is_absolute() && p.exists() {
+                                p
+                            } else {
+                                app_dir.join("models").join(&c.file_path)
+                            }
+                        };
+                        if !files_to_delete.contains(&companion_dest) {
+                            files_to_delete.push(companion_dest);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also always add the direct path for the requested filename.
+        let direct_dest = match resolve_model_path(&app, &filename).await {
+            Some(p) => p,
+            None => app_dir.join("models").join(&filename),
+        };
+        if !files_to_delete.contains(&direct_dest) {
+            files_to_delete.push(direct_dest);
+        }
+
+        // Delete all collected DB rows.
+        for db_id in &db_ids_to_delete {
+            let _ = sqlx::query("DELETE FROM local_models WHERE id = ? OR filename = ?")
+                .bind(db_id)
+                .bind(db_id)
+                .execute(&*pool)
+                .await;
+        }
+        // Belt-and-suspenders: also delete by the original filename.
         let _ = sqlx::query("DELETE FROM local_models WHERE id = ? OR filename = ?")
             .bind(&filename)
             .bind(&filename)
             .execute(&*pool)
             .await;
-    }
-
-    if !dest.exists() {
-        return Ok(()); // Already gone.
-    }
-
-    let mut last_error = None;
-    for _ in 0..10 {
-        let delete_res = if dest.is_dir() {
-            tokio::fs::remove_dir_all(&dest).await
-        } else {
-            tokio::fs::remove_file(&dest).await
+    } else {
+        // No DB — fall back to resolving the single path.
+        let dest = match resolve_model_path(&app, &filename).await {
+            Some(p) => p,
+            None => app_dir.join("models").join(&filename),
         };
-        match delete_res {
-            Ok(_) => {
-                info!("[NYX] Uninstalled model: {}", filename);
-                // Also remove metadata file if present.
-                let meta = dest.with_extension("meta.json");
-                let _ = tokio::fs::remove_file(&meta).await;
-                let meta_gguf = dest.with_extension("gguf.meta.json");
-                let _ = tokio::fs::remove_file(&meta_gguf).await;
-                invalidate_local_models_cache();
-                return Ok(());
+        files_to_delete.push(dest);
+    }
+
+    // ── Step 2: Physically delete every file ────────────────────────────────
+    let mut any_error: Option<String> = None;
+
+    for dest in &files_to_delete {
+        if !dest.exists() {
+            continue; // Already gone — not an error.
+        }
+
+        let mut last_err = None;
+        for _ in 0..10 {
+            let res = if dest.is_dir() {
+                tokio::fs::remove_dir_all(dest).await
+            } else {
+                tokio::fs::remove_file(dest).await
+            };
+            match res {
+                Ok(_) => {
+                    info!("[NYX] Deleted model file: {}", dest.display());
+                    last_err = None;
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                }
             }
-            Err(e) => {
-                last_error = Some(e);
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        }
+        if let Some(e) = last_err {
+            any_error = Some(format!("Failed to delete '{}': {:?}", dest.display(), e));
+        }
+
+        // Remove sidecar files regardless of whether the main delete succeeded.
+        let fname = dest.file_name().unwrap_or_default().to_string_lossy();
+        let parent = dest.parent().unwrap_or(dest);
+        // e.g.  model.gguf.meta.json  and  model.meta.json
+        let sidecars = [
+            parent.join(format!("{}.meta.json", fname)),
+            dest.with_extension("meta.json"),
+            dest.with_extension("gguf.meta.json"),
+            parent.join(format!("{}.part", fname)),  // incomplete download artefact
+        ];
+        for sc in &sidecars {
+            let _ = tokio::fs::remove_file(sc).await;
+        }
+
+        // If the parent directory is now empty and is one of our namespace dirs, remove it.
+        if let Some(parent_dir) = dest.parent() {
+            let is_namespace_dir = parent_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| matches!(n, "llm" | "projectors" | "vae" | "text_encoders" | "diffusion"))
+                .unwrap_or(false);
+            if is_namespace_dir {
+                // Only remove if truly empty (ignore hidden/system files).
+                if let Ok(mut entries) = tokio::fs::read_dir(parent_dir).await {
+                    let mut has_files = false;
+                    while let Ok(Some(_)) = entries.next_entry().await {
+                        has_files = true;
+                        break;
+                    }
+                    if !has_files {
+                        let _ = tokio::fs::remove_dir(parent_dir).await;
+                    }
+                }
             }
         }
     }
-    Err(format!("Failed to delete '{}' after retries: {:?}", filename, last_error))
+
+    invalidate_local_models_cache();
+
+    match any_error {
+        Some(e) => Err(e),
+        None => {
+            info!("[NYX] Uninstalled model '{}' and all companion files.", filename);
+            Ok(())
+        }
+    }
 }
 
 // ── HF Marketplace Commands ───────────────────────────────────────────────────
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HfSibling {
     pub rfilename: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HfAuthorData {
     #[serde(rename = "avatarUrl", default)]
     pub avatar_url: Option<String>,
@@ -2172,7 +2527,7 @@ pub struct HfAuthorData {
     pub fullname: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HfModelResult {
     pub id: String,
     #[serde(default)]
@@ -2199,6 +2554,16 @@ pub struct HfModelResult {
     pub author_data: Option<HfAuthorData>,
     #[serde(rename = "numParameters", default)]
     pub num_parameters: Option<u64>,
+    #[serde(default)]
+    pub gguf: Option<serde_json::Value>,
+    #[serde(default)]
+    pub config: Option<serde_json::Value>,
+    #[serde(rename = "cardData", default)]
+    pub card_data: Option<serde_json::Value>,
+    #[serde(rename = "baseModels", default)]
+    pub base_models: Option<serde_json::Value>,
+    #[serde(default)]
+    pub author: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2230,16 +2595,30 @@ pub async fn hf_search_models(
         ("direction", "-1".to_string()),
         ("limit", limit_str),
         ("full", "true".to_string()),
+        ("expand[]", "gguf".to_string()),
+        ("expand[]", "config".to_string()),
+        ("expand[]", "cardData".to_string()),
+        ("expand[]", "baseModels".to_string()),
+        ("expand[]", "pipeline_tag".to_string()),
+        ("expand[]", "tags".to_string()),
+        ("expand[]", "downloads".to_string()),
+        ("expand[]", "likes".to_string()),
+        ("expand[]", "lastModified".to_string()),
+        ("expand[]", "siblings".to_string()),
+        ("expand[]", "author".to_string()),
+        ("expand[]", "gated".to_string()),
     ];
 
     let target_filter = filter.as_deref().unwrap_or("all").trim();
     let active_lib = library.as_deref().unwrap_or("all").trim();
 
-    if active_lib != "all" && !active_lib.is_empty() {
-        params.push(("filter", active_lib.to_string()));
-    }
-    if target_filter != "all" && !target_filter.is_empty() && target_filter != active_lib {
-        params.push(("filter", target_filter.to_string()));
+    let api_filter = if active_lib != "all" && !active_lib.is_empty() {
+        active_lib
+    } else {
+        target_filter
+    };
+    if api_filter != "all" && !api_filter.is_empty() {
+        params.push(("filter", api_filter.to_string()));
     }
     
     if let Some(c) = cursor {
@@ -2296,6 +2675,96 @@ pub async fn hf_search_models(
             models: filtered,
             next_cursor,
         })
+    } else {
+        Err(format!("HF API error: {}", resp.status()))
+    }
+}
+
+#[tauri::command]
+pub async fn hf_get_model_details(model_id: String) -> Result<HfModelResult, String> {
+    let client = Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .unwrap_or_else(|_| Client::new());
+
+    let url = format!("https://huggingface.co/api/models/{}?full=true", model_id);
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    if resp.status().is_success() {
+        let mut model: HfModelResult = resp.json().await.map_err(|e| e.to_string())?;
+
+        // If the model has a base_model and tags or pipeline_tag are minimal, enrich from the base model
+        let base_model_id = model.card_data.as_ref()
+            .and_then(|cd| cd.get("base_model"))
+            .and_then(|bm| {
+                if let Some(s) = bm.as_str() {
+                    Some(s.to_string())
+                } else if let Some(arr) = bm.as_array() {
+                    arr.first().and_then(|v| v.as_str()).map(String::from)
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                model.base_models.as_ref().and_then(|bm_val| {
+                    if let Some(s) = bm_val.as_str() {
+                        Some(s.to_string())
+                    } else if let Some(obj) = bm_val.as_object() {
+                        obj.get("models")
+                            .and_then(|m| m.as_array())
+                            .and_then(|arr| arr.first())
+                            .and_then(|m| m.get("id"))
+                            .and_then(|id| id.as_str())
+                            .map(String::from)
+                    } else if let Some(arr) = bm_val.as_array() {
+                        arr.first().and_then(|item| {
+                            if let Some(s) = item.as_str() {
+                                Some(s.to_string())
+                            } else if let Some(obj) = item.as_object() {
+                                obj.get("models")
+                                    .and_then(|m| m.as_array())
+                                    .and_then(|arr| arr.first())
+                                    .and_then(|m| m.get("id"))
+                                    .and_then(|id| id.as_str())
+                                    .map(String::from)
+                            } else {
+                                None
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                })
+            });
+
+        if let Some(base_id) = base_model_id {
+            let base_url = format!("https://huggingface.co/api/models/{}", base_id);
+            if let Ok(base_resp) = client.get(&base_url).send().await {
+                if base_resp.status().is_success() {
+                    if let Ok(base_json) = base_resp.json::<serde_json::Value>().await {
+                        // Inherit pipeline_tag if missing
+                        if model.pipeline_tag.is_none() {
+                            model.pipeline_tag = base_json.get("pipeline_tag").and_then(|v| v.as_str()).map(String::from);
+                        }
+                        // Merge base model tags
+                        if let Some(base_tags) = base_json.get("tags").and_then(|v| v.as_array()) {
+                            for bt in base_tags {
+                                if let Some(bts) = bt.as_str() {
+                                    if !model.tags.iter().any(|t| t.eq_ignore_ascii_case(bts)) {
+                                        model.tags.push(bts.to_string());
+                                    }
+                                }
+                            }
+                        }
+                        // Inherit config if missing
+                        if model.config.is_none() {
+                            model.config = base_json.get("config").cloned();
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(model)
     } else {
         Err(format!("HF API error: {}", resp.status()))
     }

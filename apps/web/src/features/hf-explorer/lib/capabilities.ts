@@ -1,47 +1,83 @@
 // src/features/hf-explorer/lib/capabilities.ts
 import type { CapabilityTag } from '../types';
 
+export interface ModelMetadataContext {
+  tags?: string[];
+  pipelineTag?: string;
+  hasVisionProjector?: boolean;
+  hasAudioProjector?: boolean;
+  gguf?: {
+    architecture?: string;
+    context_length?: number;
+    chat_template?: string;
+    total?: number;
+    [key: string]: any;
+  };
+  config?: {
+    architectures?: string[];
+    model_type?: string;
+    [key: string]: any;
+  };
+  baseModelTags?: string[];
+}
+
 /**
- * Extracts accurate capability tags based on HF pipeline_tag, verified model tags,
- * and unambiguous model ID naming conventions.
- * Does NOT perform loose full-text substring searches on README bodies to avoid false positives.
+ * Extracts capability tags based on live HF metadata: pipeline_tag, verified tags,
+ * Jinja2 chat_template tokens (thought, tool_call, etc.), and projector companion files.
+ * Zero hardcoded model names.
  */
 export function getCapabilityTags(
   modelId: string,
   tags: string[] = [],
   pipelineTag?: string,
-  hasVisionProjector: boolean = false
+  hasVisionProjector: boolean = false,
+  extra?: ModelMetadataContext
 ): CapabilityTag[] {
-  const id = modelId.toLowerCase();
-  const t = tags.map((x) => x.toLowerCase());
-  const p = (pipelineTag || '').toLowerCase();
+  const t = [...tags, ...(extra?.baseModelTags || []), ...(extra?.tags || [])].map((x) =>
+    x.toLowerCase()
+  );
+  const p = (pipelineTag || extra?.pipelineTag || '').toLowerCase();
+  const chatTpl = (extra?.gguf?.chat_template || '').toLowerCase();
   const caps: CapabilityTag[] = [];
+
+  const hasTag = (kw: string) => t.some((tag) => tag === kw || tag.includes(kw));
 
   // 1. Multimodal / Vision
   const isVision =
     hasVisionProjector ||
+    Boolean(extra?.hasVisionProjector) ||
     p === 'image-text-to-text' ||
     p === 'image-to-text' ||
     p === 'visual-question-answering' ||
     p === 'document-question-answering' ||
-    t.includes('vision') ||
-    t.includes('multimodal') ||
-    t.includes('image-to-text') ||
-    t.includes('image-text-to-text') ||
-    /(?:^|\/|[._-])(vision|vl|llava|pixtral|moondream|florence|minicpm-v|internvl|deepseek-vl|qwen2(?:\.5)?-vl)(?:[._-]|$)/i.test(
-      id
-    );
+    p === 'any-to-any' ||
+    hasTag('vision') ||
+    hasTag('multimodal') ||
+    hasTag('image-to-text') ||
+    hasTag('image-text-to-text') ||
+    hasTag('any-to-any') ||
+    chatTpl.includes('<|image|>') ||
+    chatTpl.includes('image_url');
 
   if (isVision) {
     caps.push({ label: 'Vision', color: 'purple' });
   }
 
-  // 2. Reasoning / Thinking (CoT / R1 class models)
+  // 2. Reasoning / Thinking (Chain-of-thought, thinking tokens)
   const isReasoning =
-    t.includes('reasoning') ||
-    t.includes('deepseek-r1') ||
-    t.includes('chain-of-thought') ||
-    /(?:^|\/|[._-])(r1|qwq|o1|reasoning|deepseek-r1|marco-o1|krec-r1)(?:[._-]|$)/i.test(id);
+    hasTag('reasoning') ||
+    hasTag('thinking') ||
+    hasTag('thought') ||
+    hasTag('chain-of-thought') ||
+    p === 'reasoning' ||
+    chatTpl.includes('<think>') ||
+    chatTpl.includes('<|thought|>') ||
+    chatTpl.includes('<|channel>thought') ||
+    chatTpl.includes('thought\n') ||
+    chatTpl.includes('enable_thinking') ||
+    chatTpl.includes('strip_thinking') ||
+    chatTpl.includes('[think]') ||
+    chatTpl.includes('reasoning_content');
 
   if (isReasoning) {
     caps.push({ label: 'Reasoning', color: 'amber' });
@@ -49,34 +85,34 @@ export function getCapabilityTags(
 
   // 3. Coding / Programming
   const isCoding =
-    t.includes('code') ||
-    t.includes('coding') ||
-    t.includes('code-generation') ||
-    t.includes('programming') ||
-    /(?:^|\/|[._-])(coder|starcoder|codellama|deepseek-coder|devstral|wizardcoder|codegeex|qwen2\.5-coder)(?:[._-]|$)/i.test(
-      id
-    );
+    hasTag('code') ||
+    hasTag('coding') ||
+    hasTag('code-generation') ||
+    hasTag('programming') ||
+    p === 'code-generation';
 
   if (isCoding) {
     caps.push({ label: 'Coding', color: 'emerald' });
   }
 
-  // 4. Tool Use / Function Calling
+  // 4. Tool Use / Function Calling / Agents
   const isToolUse =
-    t.includes('function-calling') ||
-    t.includes('tool-use') ||
-    t.includes('tools') ||
-    /(?:^|\/|[._-])(hermes|functionary|gorilla|tool-use)(?:[._-]|$)/i.test(id);
+    hasTag('function-calling') ||
+    hasTag('tool-use') ||
+    hasTag('tools') ||
+    hasTag('agentic') ||
+    hasTag('agent') ||
+    chatTpl.includes('tool_call') ||
+    chatTpl.includes('tool_response') ||
+    chatTpl.includes('declaration:') ||
+    chatTpl.includes('<|tool');
 
   if (isToolUse) {
     caps.push({ label: 'Tool Use', color: 'blue' });
   }
 
   // 5. Mathematics
-  const isMath =
-    t.includes('math') ||
-    t.includes('mathematics') ||
-    /(?:^|\/|[._-])(math|numina|deepseek-math|qwen2\.5-math)(?:[._-]|$)/i.test(id);
+  const isMath = hasTag('math') || hasTag('mathematics');
 
   if (isMath) {
     caps.push({ label: 'Math', color: 'pink' });
@@ -86,10 +122,9 @@ export function getCapabilityTags(
   const isEmbedding =
     p === 'feature-extraction' ||
     p === 'sentence-similarity' ||
-    t.includes('sentence-similarity') ||
-    t.includes('feature-extraction') ||
-    t.includes('embeddings') ||
-    /(?:^|\/|[._-])(embed|bge|e5|gte|nomic-embed|instructor)(?:[._-]|$)/i.test(id);
+    hasTag('sentence-similarity') ||
+    hasTag('feature-extraction') ||
+    hasTag('embeddings');
 
   if (isEmbedding) {
     caps.push({ label: 'Embeddings', color: 'indigo' });
@@ -97,16 +132,19 @@ export function getCapabilityTags(
 
   // 7. Audio / Speech
   const isAudio =
+    Boolean(extra?.hasAudioProjector) ||
     p === 'text-to-speech' ||
     p === 'automatic-speech-recognition' ||
     p === 'audio-to-audio' ||
     p === 'audio-classification' ||
-    t.includes('audio') ||
-    t.includes('speech') ||
-    t.includes('whisper') ||
-    t.includes('tts') ||
-    t.includes('asr') ||
-    /(?:^|\/|[._-])(whisper|bark|tts|speech|audio|parler)(?:[._-]|$)/i.test(id);
+    hasTag('audio') ||
+    hasTag('speech') ||
+    hasTag('voice') ||
+    hasTag('text-to-speech') ||
+    hasTag('asr') ||
+    hasTag('tts') ||
+    chatTpl.includes('<|audio|>') ||
+    chatTpl.includes('input_audio');
 
   if (isAudio) {
     caps.push({ label: 'Audio', color: 'teal' });
@@ -116,22 +154,18 @@ export function getCapabilityTags(
   const isImageGen =
     p === 'text-to-image' ||
     p === 'image-to-image' ||
-    t.includes('text-to-image') ||
-    t.includes('diffusers') ||
-    /(?:^|\/|[._-])(flux|sdxl|stable-diffusion|diffusion)(?:[._-]|$)/i.test(id);
+    hasTag('text-to-image') ||
+    hasTag('diffusers');
 
   if (isImageGen) {
     caps.push({ label: 'Image Gen', color: 'rose' });
   }
 
-  // 9. Instruct / Chat
+  // 9. Instruct / Chat / Conversational
   const isChat =
-    t.includes('conversational') ||
-    t.includes('chat') ||
-    t.includes('instruct') ||
-    /(?:^|\/|[._-])(instruct|chat|it|dpo|sft)(?:[._-]|$)/i.test(id);
+    p === 'conversational' || hasTag('conversational') || hasTag('chat') || hasTag('instruct');
 
-  if (isChat && !isReasoning && !isCoding && !isVision && caps.length === 0) {
+  if (isChat) {
     caps.push({ label: 'Instruct', color: 'sky' });
   }
 
@@ -139,67 +173,120 @@ export function getCapabilityTags(
 }
 
 /**
- * Extracts architecture family name from tags or model ID
+ * Formats a raw architecture or model type string into a human-readable title.
+ * e.g. "gemma4" -> "Gemma 4", "Gemma4ForConditionalGeneration" -> "Gemma 4",
+ * "qwen2_5_vl" -> "Qwen 2.5 VL", "llama" -> "Llama"
  */
-export function getArchitectureName(modelId: string, tags: string[] = []): string {
-  const t = tags.map((x) => x.toLowerCase());
-  const id = modelId.toLowerCase();
+function formatArchitecture(raw: string): string {
+  if (!raw) return 'Transformer';
+  let s = raw
+    .replace(
+      /(ForCausalLM|ForConditionalGeneration|ForSequenceClassification|Model|LMHeadModel)$/i,
+      ''
+    )
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  // Insert space between letters and numbers e.g. "gemma4" -> "gemma 4"
+  s = s.replace(/([a-zA-Z])(\d)/g, '$1 $2').replace(/(\d)([a-zA-Z])/g, '$1 $2');
+  return s
+    .split(' ')
+    .map((w) => {
+      const lower = w.toLowerCase();
+      if (lower === 'vl') return 'VL';
+      if (lower === 'moe') return 'MoE';
+      if (lower === 'lm') return 'LM';
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .join(' ');
+}
 
-  const families = [
-    {
-      name: 'Llama',
-      match: ['llama', 'llama-2', 'llama-3', 'llama-3.1', 'llama-3.2', 'llama-3.3'],
-    },
-    { name: 'Qwen', match: ['qwen', 'qwen2', 'qwen2.5', 'qwq'] },
-    { name: 'DeepSeek', match: ['deepseek', 'deepseek-v2', 'deepseek-v3', 'deepseek-r1'] },
-    { name: 'Mistral', match: ['mistral', 'mixtral', 'devstral', 'codestral', 'ministral'] },
-    { name: 'Gemma', match: ['gemma', 'gemma-2'] },
-    { name: 'Phi', match: ['phi', 'phi-3', 'phi-3.5', 'phi-4'] },
-    { name: 'Falcon', match: ['falcon'] },
-    { name: 'Command R', match: ['command-r', 'cohere'] },
-    { name: 'Mamba', match: ['mamba', 'mamba2'] },
-    { name: 'RWKV', match: ['rwkv'] },
-    { name: 'Whisper', match: ['whisper'] },
-    { name: 'Flux', match: ['flux'] },
-    { name: 'Stable Diffusion', match: ['stable-diffusion', 'sdxl'] },
-  ];
+/**
+ * Extracts architecture name directly from GGUF metadata or model config.
+ * Falls back to generic token derivation without hardcoding.
+ */
+export function getArchitectureName(
+  modelId: string,
+  tags: string[] = [],
+  config?: { architectures?: string[]; model_type?: string },
+  ggufMeta?: { architecture?: string }
+): string {
+  // 1. Direct from GGUF metadata
+  if (ggufMeta?.architecture) {
+    return formatArchitecture(ggufMeta.architecture);
+  }
 
-  for (const f of families) {
-    if (f.match.some((m) => id.includes(m) || t.some((tag) => tag.includes(m)))) {
-      return f.name;
+  // 2. Direct from config.model_type
+  if (config?.model_type) {
+    return formatArchitecture(config.model_type);
+  }
+
+  // 3. Direct from config.architectures[0]
+  if (config?.architectures && config.architectures.length > 0) {
+    return formatArchitecture(config.architectures[0]);
+  }
+
+  // 4. From tags containing architecture: or model_type:
+  for (const t of tags) {
+    const tl = t.toLowerCase();
+    if (tl.startsWith('model_type:')) {
+      return formatArchitecture(t.slice(11));
     }
+    if (tl.startsWith('architecture:')) {
+      return formatArchitecture(t.slice(13));
+    }
+  }
+
+  // 5. Dynamic fallback: extract from model ID leading family word
+  const name = modelId.split('/').pop() || modelId;
+  const match = name.match(/^([a-zA-Z]+)(?:[-_](\d+(?:\.\d+)?))?/);
+  if (match) {
+    const base = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+    const ver = match[2] ? ` ${match[2]}` : '';
+    return `${base}${ver}`;
   }
 
   return 'Transformer';
 }
 
 /**
- * Extracts parameter count string e.g. "7B", "14B", "70B"
+ * Extracts parameter count string e.g. "2B", "7B", "14B", "26B (A4B)"
  */
 export function extractParameterCount(
   modelId: string,
   tags: string[] = [],
-  numParameters?: number
+  numParameters?: number,
+  ggufMeta?: { total?: number; totalFileSize?: number; [key: string]: any }
 ): string | null {
-  if (numParameters && numParameters > 0) {
-    if (numParameters >= 1_000_000_000) {
-      const b = numParameters / 1_000_000_000;
+  const count = numParameters || ggufMeta?.total;
+  if (count && count > 0) {
+    if (count >= 1_000_000_000) {
+      const b = count / 1_000_000_000;
       return b % 1 === 0 ? `${b}B` : `${parseFloat(b.toFixed(1))}B`;
     }
-    if (numParameters >= 1_000_000) {
-      const m = numParameters / 1_000_000;
+    if (count >= 1_000_000) {
+      const m = count / 1_000_000;
       return m % 1 === 0 ? `${m}M` : `${parseFloat(m.toFixed(1))}M`;
     }
   }
 
   const name = modelId.split('/').pop() || modelId;
-  const match = name.match(/(\d+(?:\.\d+)?)[Bb](?:[._-]|$)/);
-  if (match) return `${match[1].toUpperCase()}B`;
+
+  // Check for MoE pattern e.g. "26B-A4B", "120B-A12B"
+  const moeMatch = name.match(/(\d+(?:\.\d+)?)[Bb][-._]?[Aa](\d+(?:\.\d+)?)[Bb]/i);
+  if (moeMatch) {
+    return `${moeMatch[1].toUpperCase()}B (A${moeMatch[2].toUpperCase()}B)`;
+  }
+
+  // Check for standard param notations e.g. "E2B", "E4B", "7B", "70B"
+  const paramMatch = name.match(/(?:^|[-._/]|[Ee])(\d+(?:\.\d+)?)[Bb](?:[-._]|$)/);
+  if (paramMatch) {
+    return `${paramMatch[1].toUpperCase()}B`;
+  }
 
   const tagMatch = tags.find((t) => typeof t === 'string' && /^[\d.]+[BM]$/i.test(t));
   if (tagMatch) return tagMatch.toUpperCase();
 
-  const mMatch = name.match(/(\d+(?:\.\d+)?)[Mm](?:[._-]|$)/);
+  const mMatch = name.match(/(?:^|[-._/]|[Ee])(\d+(?:\.\d+)?)[Mm](?:[-._]|$)/);
   if (mMatch) return `${mMatch[1].toUpperCase()}M`;
 
   return null;

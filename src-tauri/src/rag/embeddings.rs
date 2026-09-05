@@ -29,10 +29,8 @@ fn get_embedder() -> &'static Mutex<TextEmbedding> {
     })
 }
 
-/// Eagerly initialize the embedding model at startup so the first user
-/// request doesn't pay the cold-start cost (~500ms–2s ONNX load).
 pub fn warm_up() {
-    let _ = get_embedder();
+    // Kept as no-op to allow on-demand lazy initialization and save ~500MB RAM on startup
 }
 
 /// Thin wrapper kept for backward compat with scanner.rs / mcp_server / etc.
@@ -40,8 +38,7 @@ pub struct Embedder;
 
 impl Embedder {
     pub fn new() -> Result<Self, String> {
-        // Trigger initialization eagerly rather than on first embed call.
-        let _ = get_embedder();
+        // Purely lazy initialization: do not load heavy ONNX weights until embed() is actually called
         Ok(Self)
     }
 

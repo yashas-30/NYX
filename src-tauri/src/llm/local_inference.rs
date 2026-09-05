@@ -339,8 +339,22 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         system_text.push_str("\n\n[FORMATTING DIRECTIVE]\nFormat responses using clean Markdown with headers, tables, and bullet points where appropriate. For code, always use fenced code blocks with the correct language tag. Keep responses concise and direct.");
     }
 
-    if req.reasoning_enabled == Some(true) && !system_text.contains("<think>") {
-        system_text.push_str("\n\n[REASONING DIRECTIVE]\nYou MUST perform deep, step-by-step reasoning inside <think>...</think> tags before providing your final answer.");
+    let (thinking_budget, reasoning_effort) = match req.thinking_level.as_deref() {
+        Some("low") => (1024u32, "low"),
+        Some("medium") | Some("med") => (4096u32, "medium"),
+        Some("max") | Some("high") => (8192u32, "high"),
+        _ => (4096u32, "medium"),
+    };
+
+    if req.reasoning_enabled == Some(true) {
+        if !system_text.contains("<think>") {
+            system_text.push_str(&format!(
+                "\n\n[REASONING DIRECTIVE]\nYou MUST perform deep, step-by-step reasoning inside <think>...</think> tags before providing your final answer. Allocate approximately {} tokens to your reasoning process, thoroughly verifying facts and logic before writing the final response.",
+                thinking_budget
+            ));
+        }
+    } else {
+        system_text.push_str("\n\n[CRITICAL DIRECTIVE: NO REASONING]\nDo NOT include any <think> tags, scratchpad, reasoning chain, or internal monologue. Answer the user's prompt DIRECTLY and immediately without any preamble or thinking block.");
     }
 
     let active_server_ctx = crate::llm::local_orchestrator::ACTIVE_SERVER_CTX_SIZE.load(std::sync::atomic::Ordering::Relaxed);
@@ -362,10 +376,8 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
     }
 
     // Reserve space for response dynamically based on available context
-    let is_reasoning_model = req.model_id.to_lowercase().contains("reasoning") 
-        || req.model_id.to_lowercase().contains("think")
-        || req.model_id.to_lowercase().contains("-r1")
-        || req.model_id.to_lowercase().contains("qw");
+    let is_reasoning_model = req.reasoning_enabled == Some(true)
+        || req.capabilities.as_ref().map(|c| c.reasoning).unwrap_or(false);
     
     let requested_max = max_tokens.unwrap_or(2048) as usize;
     let max_output_allowed = (context_window / 3).max(256).min(requested_max);
@@ -447,6 +459,10 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         body["stop"] = json!(default_stop);
     }
 
+    if let Some(ref tools) = req.tools {
+        body["tools"] = tools.clone();
+    }
+
     if let Some(ref tool_choice) = req.tool_choice {
         body["tool_choice"] = json!(tool_choice);
     }
@@ -490,9 +506,19 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         }
     }
 
-    // Disable thinking overhead on local GGUF models for instant response generation
-    body["reasoning_effort"] = json!("none");
-    body["enable_thinking"] = json!(false);
+    if req.reasoning_enabled == Some(true) {
+        body["reasoning_effort"] = json!(reasoning_effort);
+        body["enable_thinking"] = json!(true);
+        body["chat_template_kwargs"] = json!({ "thinking": true });
+        // Expand max_tokens to accommodate reasoning budget on top of output tokens
+        let current_max = body["max_tokens"].as_u64().unwrap_or(4096) as u32;
+        body["max_tokens"] = json!(current_max + thinking_budget);
+    } else {
+        // Disable thinking overhead on local GGUF models for instant response generation
+        body["reasoning_effort"] = json!("none");
+        body["enable_thinking"] = json!(false);
+        body["chat_template_kwargs"] = json!({ "thinking": false });
+    }
 
     let mut headers = HeaderMap::new();
     headers.insert("Content-Type", HeaderValue::from_static("application/json"));
@@ -774,30 +800,49 @@ pub async fn execute_local_stream(
             return Ok(Box::pin(stream));
         }
 
-        // Auto-boot the native Gemma 4 E2B Lucifer agent on GPU if port is 0
-        let target_model = if req.model_id.contains(".gguf") {
+        // Auto-boot the local model on GPU if port is 0
+        let target_model = if !req.model_id.trim().is_empty() && req.model_id != "default" && req.model_id != "local" {
             req.model_id.clone()
         } else {
-            "gemma-4-E2B_q4_0-it.gguf".to_string()
+            // Find any available local GGUF model dynamically
+            let available = crate::llm::local_orchestrator::list_local_models(app.clone()).await.unwrap_or_default();
+            let mut found_id: Option<String> = None;
+            for m in available {
+                if (m.id.ends_with(".gguf") || m.name.ends_with(".gguf") || m.model_type.as_deref() == Some("llm"))
+                    && m.status == "completed"
+                {
+                    if crate::llm::local_orchestrator::resolve_model_path(app, &m.id).await.is_some() {
+                        found_id = Some(m.id);
+                        break;
+                    }
+                }
+            }
+            if let Some(id) = found_id {
+                id
+            } else {
+                return Err(
+                    "No local GGUF models found to run inference. Please download a model in Settings → Local Models.".to_string()
+                );
+            }
         };
         
         let resolved = crate::llm::local_orchestrator::resolve_model_path(app, &target_model).await;
         if resolved.is_some() {
             let active_port = SERVER_PORT.load(std::sync::atomic::Ordering::Relaxed);
             if active_port == 0 {
-                info!("[Inference] Auto-starting native Lucifer GPU engine with model: {}", target_model);
+                info!("[Inference] Auto-starting native GPU engine with model: {}", target_model);
                 if let Some(manager) = app.try_state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>() {
                     if let Err(e) = crate::llm::local_orchestrator::start_local_server(
                         app.clone(),
                         manager,
                         target_model.clone(),
-                        Some(8192),
-                        Some(999), // 100% GPU offload
-                        None,
+                        req.context_window,
+                        None, // Dynamic capacity-aware NGL offload (including Shared GPU Memory)
+                        None, // Dynamic CPU threads
                         Some(true), // Flash Attention enabled
-                        Some("q4_0".to_string()),
+                        None, // Dynamic KV cache quantization (q8_0 or q4_0 based on headroom)
                         None,
-                        Some(2048), // Batch size 2048 for high throughput
+                        None, // Dynamic batch size
                         None,
                         None,
                         None,

@@ -5,7 +5,7 @@
 use crate::agents::core::{
     AgentExecutionStep, ConductorProgressEvent, ConductorSupervisor,
 };
-use crate::agents::tools::{ClineFsTools, WorkspaceSandbox};
+use crate::agents::tools::{WorkspaceFsTools, WorkspaceSandbox};
 use crate::llm::gateway::{DynamicModelSpec, ProviderQuotaState};
 use crate::llm::router::{classify_intent_dynamically, RouteDecision};
 use crate::AppState;
@@ -39,10 +39,10 @@ pub async fn nyx_run_agent_pipeline(
     };
 
     let sandbox = WorkspaceSandbox::new(root_path);
-    let cline_fs = Arc::new(ClineFsTools::new(sandbox));
+    let fs_tools = Arc::new(WorkspaceFsTools::new(sandbox));
 
     let supervisor = ConductorSupervisor::new(
-        cline_fs,
+        fs_tools,
         state.model_registry.clone(),
         state.quota_ledger.clone(),
         state.agent_cancel.clone(),
@@ -110,6 +110,36 @@ pub async fn nyx_cancel_agent(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Helper to resolve the optimal Python runner: prefers `uv run` if available, falls back to `python`.
+pub fn resolve_python_runner() -> (String, Vec<String>) {
+    // 1. Check if `uv` is directly invokable on PATH
+    if std::process::Command::new("uv")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+    {
+        return ("uv".to_string(), vec!["run".to_string(), "--quiet".to_string()]);
+    }
+
+    // 2. Check standard cargo/local bin paths if not in current process PATH
+    if let Some(home) = dirs::home_dir() {
+        let cargo_uv = home.join(".cargo").join("bin").join(if cfg!(windows) { "uv.exe" } else { "uv" });
+        if cargo_uv.exists() {
+            return (cargo_uv.to_string_lossy().to_string(), vec!["run".to_string(), "--quiet".to_string()]);
+        }
+        let local_uv = home.join(".local").join("bin").join(if cfg!(windows) { "uv.exe" } else { "uv" });
+        if local_uv.exists() {
+            return (local_uv.to_string_lossy().to_string(), vec!["run".to_string(), "--quiet".to_string()]);
+        }
+    }
+
+    // 3. Fall back to standard python binary
+    ("python".to_string(), vec!["-u".to_string()])
+}
+
 /// Runs the official Google Antigravity Python SDK bridge with live streaming
 #[tauri::command]
 pub async fn run_antigravity_python_agent(
@@ -131,14 +161,20 @@ pub async fn run_antigravity_python_agent(
         })
         .unwrap_or_else(|_| std::path::PathBuf::from("src-tauri/scripts/antigravity_bridge.py"));
 
-    let mut child = Command::new("python")
-        .arg("-u")
-        .arg(&script_path)
+    let (prog, base_args) = resolve_python_runner();
+    let mut cmd = Command::new(&prog);
+    for arg in base_args {
+        cmd.arg(arg);
+    }
+    cmd.arg(&script_path)
+        .env("PYTHONUNBUFFERED", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd
         .spawn()
-        .map_err(|e| format!("Failed to spawn Python process: {}", e))?;
+        .map_err(|e| format!("Failed to spawn Python process ({:?}): {}", prog, e))?;
 
     if let Some(mut stdin) = child.stdin.take() {
         let req_str = req.to_string();
@@ -192,13 +228,17 @@ pub async fn run_langgraph_python_agent(
         })
         .unwrap_or_else(|_| std::path::PathBuf::from("scripts/antigravity_agent_workflow.py"));
 
-    let mut cmd = Command::new("python");
-    cmd.arg("-u")
-        .arg(&script_path)
+    let (prog, base_args) = resolve_python_runner();
+    let mut cmd = Command::new(&prog);
+    for arg in base_args {
+        cmd.arg(arg);
+    }
+    cmd.arg(&script_path)
         .arg("--prompt")
         .arg(&prompt)
         .arg("--mode")
-        .arg(mode.unwrap_or_else(|| "langgraph".to_string()));
+        .arg(mode.unwrap_or_else(|| "langgraph".to_string()))
+        .env("PYTHONUNBUFFERED", "1");
 
     if let Some(key) = api_key {
         cmd.env("GEMINI_API_KEY", key);
@@ -206,7 +246,9 @@ pub async fn run_langgraph_python_agent(
 
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn LangGraph workflow: {}", e))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn LangGraph workflow ({:?}): {}", prog, e))?;
 
     let mut final_text = String::new();
     if let Some(stdout) = child.stdout.take() {

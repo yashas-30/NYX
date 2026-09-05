@@ -52,6 +52,7 @@ pub use crate::llm::local_orchestrator::{
     hf_get_restored_downloads,
     hf_uninstall_model,
     hf_search_models,
+    hf_get_model_details,
     hf_get_model_files,
     hf_get_model_readme,
     get_llamacpp_version,

@@ -76,9 +76,7 @@ export default defineConfig(({ mode, command }) => {
         'lucide-react',
         'zustand',
         'zustand/middleware',
-        'motion/react',
-        '@codemirror/state',
-        '@codemirror/view',
+        'framer-motion',
         '@base-ui/react',
         'sonner',
         'clsx',
@@ -123,7 +121,6 @@ export default defineConfig(({ mode, command }) => {
               if (id.includes('lucide-react')) return 'vendor-icons';
               if (id.includes('motion')) return 'vendor-animation';
               if (id.includes('recharts') || id.includes('d3')) return 'vendor-charts';
-              if (id.includes('@codemirror')) return 'vendor-codemirror';
               if (id.includes('@base-ui')) return 'vendor-base-ui';
             }
           },

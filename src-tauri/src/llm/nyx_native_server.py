@@ -5,6 +5,7 @@ import sys
 import time
 import traceback
 import asyncio
+import importlib
 from typing import AsyncGenerator, Dict, Any, List, Optional
 
 try:
@@ -70,6 +71,7 @@ app.add_middleware(
 GLOBAL_MODEL = None
 GLOBAL_TOKENIZER = None
 GLOBAL_MODEL_ID = "nyx-native-model"
+TORCH_DIRECTML = None
 
 
 def detect_accelerator() -> str:
@@ -82,12 +84,14 @@ def detect_accelerator() -> str:
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         print("[NyxNativeServer] Apple Silicon GPU detected via Metal Performance Shaders (MPS).")
         return "mps"
+    global TORCH_DIRECTML
     try:
-        import torch_directml
-        if torch_directml.is_available():
+        TORCH_DIRECTML = importlib.import_module("torch_directml")
+        if hasattr(TORCH_DIRECTML, "is_available") and TORCH_DIRECTML.is_available():
             print("[NyxNativeServer] iGPU/dGPU detected via DirectML.")
             return "directml"
     except ImportError:
+        TORCH_DIRECTML = None
         pass
 
     print("[NyxNativeServer] FATAL: No GPU (CUDA/MPS/DirectML) or NPU detected on this system.", file=sys.stderr)
@@ -222,16 +226,43 @@ def load_native_model(model_path: str, repo_id: Optional[str] = None, gpu_layers
     try:
         print(f"[NyxNativeServer] Loading model 100% on GPU ({DEVICE})...")
         if DEVICE == "cuda":
+            max_memory = None
+            try:
+                # Windows WDDM Shared GPU Memory support:
+                # Accelerate's device_map="auto" bounds GPU memory to physical free VRAM by default.
+                # By providing max_memory that includes Windows WDDM Shared GPU Memory budget (up to 50% system RAM),
+                # large models remain 100% GPU accelerated across dedicated VRAM + shared system memory.
+                free_vram, _ = torch.cuda.mem_get_info(0)
+                try:
+                    import psutil
+                    sys_ram = psutil.virtual_memory()
+                    shared_gpu_budget = int(min(sys_ram.total * 0.5, max(0, sys_ram.available - 1024 * 1024 * 1024)))
+                except Exception:
+                    shared_gpu_budget = 4 * 1024 * 1024 * 1024  # 4GB conservative fallback
+                total_gpu_capacity = free_vram + shared_gpu_budget
+                gpu_budget_mib = max(1024, (total_gpu_capacity // (1024 * 1024)) - 256)
+                max_memory = {0: f"{gpu_budget_mib}MiB"}
+                print(f"[NyxNativeServer] GPU memory budget configured: dedicated={free_vram // (1024*1024)}MB, shared={shared_gpu_budget // (1024*1024)}MB, max_memory={gpu_budget_mib}MiB")
+            except Exception as mem_err:
+                print(f"[NyxNativeServer] Shared GPU memory calculation notice: {mem_err}")
+
+            load_kwargs = {
+                "torch_dtype": dtype,
+                "trust_remote_code": True,
+                "low_cpu_mem_usage": True,
+                "device_map": "auto",
+            }
+            if max_memory:
+                load_kwargs["max_memory"] = max_memory
+
             GLOBAL_MODEL = load_model_with_fallbacks(
                 model_source,
-                torch_dtype=dtype,
-                trust_remote_code=True,
-                low_cpu_mem_usage=True,
-                device_map="auto",
+                **load_kwargs,
             )
         elif DEVICE == "directml":
-            import torch_directml
-            dml = torch_directml.device()
+            if TORCH_DIRECTML is None:
+                raise RuntimeError("DirectML accelerator was selected but torch-directml is unavailable")
+            dml = TORCH_DIRECTML.device()
             raw_model = load_model_with_fallbacks(
                 model_source,
                 torch_dtype=dtype,

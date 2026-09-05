@@ -82,9 +82,6 @@ impl Default for AppState {
 pub fn run() {
     tracing_subscriber::fmt::init();
 
-    // Optimize Webview2 memory usage on Windows to reduce RAM consumption
-    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-features=RendererCodeIntegrity,SitePerProcess --js-flags=--max-old-space-size=2048");
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -115,7 +112,6 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
 
-
             // Set up Llama sidecar manager (now from local_orchestrator)
             let llama_manager = std::sync::Arc::new(llm::local_orchestrator::LlamaManager::new());
             app_handle.manage(llama_manager);
@@ -138,9 +134,11 @@ pub fn run() {
             // Restore persistent API keys into environment variables from safeStorage/Keyring + encrypted vault
             commands::vault::restore_all_vault_keys_to_env();
 
+            // Configure main window and tray safely on the main thread
+            setup_app(&app_handle);
 
-            // ── Spawn the rest of the UI setup, CodebaseScanner & binary auto-updater asynchronously ─
-            let handle = app.handle().clone();
+            // ── Spawn background workers asynchronously (detached from UI thread) ─
+            let handle = app_handle.clone();
             let rag_db_path = data_dir.join("rag.db");
             let turbovec_data_dir = data_dir.clone();
             tauri::async_runtime::spawn(async move {
@@ -150,27 +148,23 @@ pub fn run() {
                     if let Ok(scanner) = crate::rag::scanner::CodebaseScanner::new(rag_path).await {
                         let scanner = std::sync::Arc::new(scanner);
                         handle_rag.manage(scanner.clone());
-                        let workspace_root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-                        if let Err(error) = scanner.index_workspace(&workspace_root).await {
-                            tracing::warn!("[RAG] Workspace indexing failed: {}", error);
-                        }
-                        tracing::info!("[RAG] CodebaseScanner initialized and workspace indexing completed");
+                        tracing::info!("[RAG] CodebaseScanner initialized (on-demand indexing ready)");
                     } else {
                         tracing::error!("Failed to initialize CodebaseScanner");
                     }
                 });
 
                 // Initialize TurbovecStore (LanceDB-backed vector memory) and register as app state.
-                // This wires up the previously declared but unused TurboVec memory backend.
                 let handle_tv = handle.clone();
                 tauri::async_runtime::spawn(async move {
                     let store = crate::rag::turbovec_store::TurbovecStore::new(&turbovec_data_dir, "chat").await;
+                    // Compact any residual small fragment files & prune old versions on startup
+                    let _ = store.inner.optimize().await;
                     handle_tv.manage(std::sync::Arc::new(store));
-                    tracing::info!("[TurboVec] Chat memory store initialized");
+                    tracing::info!("[TurboVec] Chat memory store initialized and optimized");
                 });
 
                 // Auto-check and update local binaries on app startup / restart
-                // Background binary verification & Lucifer Gemma 4 E2B GPU Auto-loader
                 let handle_startup = handle.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Ok(app_dir) = handle_startup.path().app_data_dir() {
@@ -185,13 +179,19 @@ pub fn run() {
                     }
                 });
 
+                let handle_skills = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let default_ws = std::env::current_dir()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| ".".to_string());
+                    let _ = commands::opencode::ensure_opencode_skills_connected(&handle_skills, &default_ws);
+                });
+
                 // Pre-load the ONNX embedding model in the background so the 
                 // first web search or codebase scan doesn't hang.
                 tauri::async_runtime::spawn_blocking(|| {
                     crate::rag::embeddings::warm_up();
                 });
-
-                setup_app(&handle).await;
             });
 
             Ok(())
@@ -210,6 +210,7 @@ pub fn run() {
             commands::system::cleanup_session_state,
             commands::system::set_search_settings,
             pty_spawn, pty_write, pty_resize, pty_close,
+            opencode_check_status, opencode_spawn_session, opencode_sync_skills,
             fs_watch_start, fs_watch_stop, fs_parse_and_chunk_file,
             commands::fs::fs_read_file, commands::fs::fs_write_file, commands::fs::fs_list_dir,
             commands::db::db_get_chat_conversations,
@@ -279,6 +280,7 @@ pub fn run() {
             llm::local_orchestrator::hf_cancel_download,
             llm::local_orchestrator::hf_uninstall_model,
             llm::local_orchestrator::hf_search_models,
+            llm::local_orchestrator::hf_get_model_details,
             llm::local_orchestrator::hf_get_model_files,
             llm::local_orchestrator::hf_get_model_readme,
             llm::local_orchestrator::hf_get_restored_downloads,
@@ -327,16 +329,18 @@ pub fn run() {
         .expect("error while running NYX");
 }
 
-async fn setup_app(handle: &tauri::AppHandle) {
+fn setup_app(handle: &tauri::AppHandle) {
     tracing::info!("🚀 NYX Tauri boot sequence starting...");
 
-    let window   = create_main_window(handle).await;
+    let window = create_main_window(handle);
 
     // Maximize the window by default to fill the display as requested, 
     // without pushing the native OS titlebar off-screen.
     let _ = window.maximize();
 
-    tray::create_tray(handle, &window).expect("Failed to create tray");
+    if let Err(e) = tray::create_tray(handle, &window) {
+        tracing::warn!("Failed to create tray icon: {}", e);
+    }
 
     let _ = window.show();
     let _ = window.set_focus();
@@ -346,14 +350,13 @@ async fn setup_app(handle: &tauri::AppHandle) {
     let _ = window.remove_menu();
 
     // Explicitly enforce resizable state after the window is fully shown.
-    // tauri_plugin_window_state or vibrancy effects can silently override this.
     let _ = window.set_resizable(true);
     let _ = window.set_maximizable(true);
 
     tracing::info!("✅ NYX Tauri fully initialized");
 }
 
-async fn create_main_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
+fn create_main_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
     if let Some(window) = handle.get_webview_window("main") {
         return window;
     }
@@ -383,9 +386,9 @@ async fn create_main_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
 
 
 fn main() {
-    // Enforce 16MB minimum stack size for all threads (including Tokio worker threads)
+    // Enforce 2MB stack size for threads to prevent excessive virtual memory reservation
     unsafe {
-        std::env::set_var("RUST_MIN_STACK", "16777216");
+        std::env::set_var("RUST_MIN_STACK", "2097152");
     }
 
     // Run Tauri application directly on the OS main thread (required by TAO/Winit Windows EventLoop)

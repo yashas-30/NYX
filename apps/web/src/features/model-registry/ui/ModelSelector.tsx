@@ -360,6 +360,26 @@ export const ModelSelector: React.FC<Props> = ({
       });
   }, [allModels, localLibraryModels]);
 
+  const selectedModel = useMemo(() => {
+    if (!currentModelId) return null;
+    return (
+      mergedModels.find((m) => m.id === currentModelId || (m as any).realId === currentModelId) ||
+      null
+    );
+  }, [mergedModels, currentModelId]);
+
+  const selectedModelName = useMemo(() => {
+    if (selectedModel?.name) return selectedModel.name;
+    if (currentModelId) {
+      if (currentModelId.includes('/') || currentModelId.includes('\\')) {
+        const parts = currentModelId.split(/[/\\]/);
+        return parts[parts.length - 1].replace(/\.[^/.]+$/, '');
+      }
+      return currentModelId;
+    }
+    return 'None Selected';
+  }, [selectedModel, currentModelId]);
+
   const groupedModels = useMemo(() => {
     const groups: Record<string, ModelOption[]> = {
       gemini: [],
@@ -401,15 +421,17 @@ export const ModelSelector: React.FC<Props> = ({
     );
   }, [groupedModels, selectedProvider, searchTerm]);
 
-  // Virtualizer setup — compact, scrollable list
+  // Virtualizer setup — scrollable list with max 5 rows visible
+  const MAX_VISIBLE_ROWS = 5;
   const ROW_ESTIMATE_PX = 56;
-  const listMaxHeight = Math.min(Math.max(filteredModels.length * ROW_ESTIMATE_PX, 160), 380);
+  const listMaxHeight =
+    Math.min(Math.max(filteredModels.length, 1), MAX_VISIBLE_ROWS) * ROW_ESTIMATE_PX;
 
   const rowVirtualizer = useVirtualizer({
     count: filteredModels.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_ESTIMATE_PX,
-    overscan: 8,
+    overscan: 5,
   });
 
   const dropdownClassName =
@@ -468,6 +490,48 @@ export const ModelSelector: React.FC<Props> = ({
       >
         {/* Top Edge Highlight */}
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-foreground/5 to-transparent" />
+
+        {/* Header Bar: Selected Model & Filter */}
+        <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-border bg-muted/20 shrink-0">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <span className="text-[7.5px] font-mono font-bold uppercase tracking-wider text-muted-foreground shrink-0">
+              Selected:
+            </span>
+            <span
+              className="text-[11px] font-semibold text-foreground truncate"
+              title={selectedModelName}
+            >
+              {selectedModelName}
+            </span>
+            {selectedModel?.provider && (
+              <span className="text-[7.5px] font-mono text-muted-foreground/80 shrink-0 px-1 py-0.5 bg-muted/60 rounded border border-border/40">
+                {getProviderLabel(selectedModel.provider)}
+              </span>
+            )}
+          </div>
+
+          {/* Search Input */}
+          <div className="relative flex items-center w-36 sm:w-44 shrink-0">
+            <Search className="absolute left-2 w-3 h-3 text-muted-foreground pointer-events-none" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Filter models..."
+              className="w-full h-6 pl-6 pr-5 bg-background border border-border rounded text-[10px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => onSearchChange('')}
+                className="absolute right-1.5 text-muted-foreground hover:text-foreground"
+              >
+                <X size={10} />
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Main Content Split Area */}
         <div className="flex flex-1 min-h-0 gap-1.5 p-1.5 overflow-hidden">
           {/* Left Box: Providers (Gateways) */}
@@ -477,7 +541,36 @@ export const ModelSelector: React.FC<Props> = ({
                 Gateways
               </span>
               {sortedProviders.map((provider) => {
-                const status = providerStatuses?.[provider];
+                let status = providerStatuses?.[provider];
+                if (!status || status === 'offline' || status === 'no-key') {
+                  if (provider === 'nvidia-nim' && providerStatuses?.['nvidia']) {
+                    status = providerStatuses['nvidia'];
+                  } else if (provider === 'nvidia' && providerStatuses?.['nvidia-nim']) {
+                    status = providerStatuses['nvidia-nim'];
+                  }
+                }
+
+                // If still not online, check if a valid API key exists for this provider
+                if (!status || status === 'offline' || status === 'no-key') {
+                  if (typeof window !== 'undefined') {
+                    try {
+                      const raw = localStorage.getItem('nyx_api_keys');
+                      const parsed = raw ? JSON.parse(raw) : {};
+                      const keyVal =
+                        provider === 'gemini'
+                          ? parsed['gemini'] || parsed['google']
+                          : provider === 'nvidia-nim'
+                            ? parsed['nvidia-nim'] || parsed['nvidia']
+                            : provider === 'nvidia'
+                              ? parsed['nvidia'] || parsed['nvidia-nim']
+                              : parsed[provider];
+                      if (keyVal && typeof keyVal === 'string' && keyVal.trim().length > 0) {
+                        status = 'online';
+                      }
+                    } catch {}
+                  }
+                }
+
                 const isActive = selectedProvider === provider;
 
                 return (
@@ -508,9 +601,9 @@ export const ModelSelector: React.FC<Props> = ({
                     {providerStatuses && (
                       <div className="relative flex items-center shrink-0 ml-1">
                         <div
-                          className={`w-1.5 h-1.5 rounded-md ${
+                          className={`w-1.5 h-1.5 rounded-full ${
                             status === 'online'
-                              ? 'bg-emerald-400 animate-pulse'
+                              ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse'
                               : status === 'no-key'
                                 ? 'bg-zinc-700'
                                 : 'bg-zinc-800'
@@ -541,8 +634,11 @@ export const ModelSelector: React.FC<Props> = ({
               ref={parentRef}
               className="flex-1 overflow-y-auto p-2 custom-scrollbar"
               style={{
-                maxHeight: `${listMaxHeight}px`,
-                minHeight: filteredModels.length > 0 ? '160px' : 'auto',
+                maxHeight: `${MAX_VISIBLE_ROWS * ROW_ESTIMATE_PX}px`,
+                minHeight:
+                  filteredModels.length > 0
+                    ? `${Math.min(filteredModels.length, MAX_VISIBLE_ROWS) * ROW_ESTIMATE_PX}px`
+                    : '120px',
               }}
             >
               {filteredModels.length === 0 ? (
@@ -564,7 +660,8 @@ export const ModelSelector: React.FC<Props> = ({
                 >
                   {rowVirtualizer.getVirtualItems().map((virtualItem) => {
                     const model = filteredModels[virtualItem.index];
-                    const isSelected = currentModelId === model.id;
+                    const isSelected =
+                      currentModelId === model.id || currentModelId === (model as any).realId;
                     const isNoKey = providerStatuses?.[model.provider] === 'no-key';
                     const isOnline = providerStatuses?.[model.provider] === 'online';
                     const isExpanded = expandedModelId === model.id;
@@ -600,11 +697,11 @@ export const ModelSelector: React.FC<Props> = ({
                           `}
                         >
                           <div className="flex items-center justify-between gap-1.5">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1">
+                            <div className="flex-1 min-w-0 pr-2">
+                              <div className="flex items-center gap-1.5">
                                 <h4
-                                  className={`text-[9px] font-bold truncate leading-none ${
-                                    isSelected ? 'text-foreground font-black' : 'text-foreground/80'
+                                  className={`text-[10px] font-semibold truncate leading-tight ${
+                                    isSelected ? 'text-foreground font-black' : 'text-foreground/90'
                                   } ${
                                     (model as any).status === 'deprecated'
                                       ? 'line-through opacity-60'
@@ -622,90 +719,32 @@ export const ModelSelector: React.FC<Props> = ({
                                     compact
                                   />
                                 )}
-
-                                {/* Provider connection status tag */}
-                                {providerStatuses && providerStatuses[model.provider] && (
-                                  <div
-                                    className={`
-                                    text-[5.5px] font-black uppercase tracking-wider px-1 py-0.5 rounded-[3px] border shrink-0
-                                    ${
-                                      isOnline
-                                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                        : isNoKey
-                                          ? 'bg-muted border-border text-muted-foreground'
-                                          : 'bg-muted/50 border-border text-muted-foreground/60'
-                                    }
-                                  `}
-                                  >
-                                    {isOnline ? 'Online' : isNoKey ? 'Auth' : 'Off'}
-                                  </div>
-                                )}
-
-                                {/* Inline Monospace Specs Badge */}
-                                {(model as any).specs?.quantization &&
-                                  (model as any).specs.quantization !== 'Unknown' && (
-                                    <span className="text-[6px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20 shrink-0 ml-auto leading-none">
-                                      {(model as any).specs.quantization}
-                                    </span>
-                                  )}
-                                {(() => {
-                                  const modelCfg = modelConfigs?.[model.id];
-                                  const displayCtx =
-                                    modelCfg?.contextSize && modelCfg.contextSize > 0
-                                      ? formatContextWindow(modelCfg.contextSize, model.name)
-                                      : model.specs?.contextWindow;
-                                  return displayCtx ? (
-                                    <span
-                                      className={`text-[6px] font-mono font-bold text-muted-foreground/80 bg-muted px-1 py-0.5 rounded border border-border shrink-0 leading-none ${(model as any).specs?.quantization && (model as any).specs.quantization !== 'Unknown' ? '' : 'ml-auto'}`}
-                                    >
-                                      {displayCtx}
-                                    </span>
-                                  ) : null;
-                                })()}
-                                {(model as any).capabilities?.vision && (
-                                  <span className="text-[6px] font-mono font-bold text-indigo-400 bg-indigo-500/10 px-1 py-0.5 rounded border border-indigo-500/20 shrink-0 leading-none">
-                                    👁️ Vision
-                                  </span>
-                                )}
-                                {(model as any).capabilities?.reasoning && (
-                                  <span className="text-[6px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20 shrink-0 leading-none">
-                                    🧠 Reasoning
-                                  </span>
-                                )}
                               </div>
 
-                              <p className="text-[7px] font-mono text-muted-foreground/60 truncate uppercase tracking-tight mt-0.5 leading-none pr-6">
+                              <p className="text-[7.5px] font-mono text-muted-foreground/60 truncate uppercase tracking-tight mt-0.5 leading-none">
                                 {model.description || model.id}
                               </p>
                             </div>
 
-                            <div className="flex items-center gap-1 shrink-0">
-                              {/* Settings / Info Button */}
-                              {(model.features ||
-                                model.pros ||
-                                model.cons ||
-                                model.provider === 'nyx-native') && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setExpandedModelId(isExpanded ? null : model.id);
-                                  }}
-                                  className={`p-1 rounded transition-colors ${
-                                    isExpanded
-                                      ? 'bg-primary/20 text-primary'
-                                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                                  }`}
-                                  title={
-                                    model.provider === 'nyx-native'
-                                      ? 'Model Settings & Info'
-                                      : 'View features'
-                                  }
-                                >
-                                  <Info size={12} />
-                                </button>
-                              )}
+                            <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                              {/* Info Button: Placed directly next to the Select button */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedModelId(isExpanded ? null : model.id);
+                                }}
+                                className={`p-1 rounded-md border transition-all shrink-0 ${
+                                  isExpanded
+                                    ? 'bg-primary/20 border-primary/40 text-primary'
+                                    : 'border-border/60 bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground hover:border-border'
+                                }`}
+                                title="Model Capabilities, Specs & Maximum Potential"
+                              >
+                                <Info size={11} />
+                              </button>
 
+                              {/* Native Model Load/Switch/Unload Button */}
                               {model.provider === 'nyx-native' &&
                                 (() => {
                                   const isThisModelLoaded = isModelLoaded(
@@ -745,86 +784,194 @@ export const ModelSelector: React.FC<Props> = ({
                                   );
                                 })()}
 
-                              {isSelected && (
-                                <div
-                                  className={`w-3.5 h-3.5 rounded-md flex items-center justify-center shrink-0 ml-0.5 ${isNoKey ? 'bg-muted border border-border text-muted-foreground' : 'bg-primary border border-primary/20 text-primary-foreground'}`}
+                              {/* Cloud Model Select Button */}
+                              {model.provider !== 'nyx-native' && (
+                                <button
+                                  type="button"
+                                  disabled={isNoKey}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!isNoKey) onSelect((model as any).realId || model.id);
+                                  }}
+                                  className={`
+                                    px-2 py-0.5 rounded border text-[7.5px] font-mono font-bold tracking-wider uppercase transition-all flex items-center gap-1 shrink-0
+                                    ${
+                                      isSelected
+                                        ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                                        : isNoKey
+                                          ? 'bg-muted/40 border-border text-muted-foreground/50 cursor-not-allowed'
+                                          : 'bg-muted/20 hover:bg-primary/20 border-border text-foreground hover:text-primary hover:border-primary/40'
+                                    }
+                                  `}
                                 >
-                                  <Check
-                                    className={`w-2 h-2 ${isNoKey ? 'text-muted-foreground' : 'text-primary-foreground'}`}
-                                  />
-                                </div>
+                                  {isSelected ? (
+                                    <>
+                                      <Check size={9} className="stroke-[3]" />
+                                      Active
+                                    </>
+                                  ) : isNoKey ? (
+                                    'No Key'
+                                  ) : (
+                                    'Select'
+                                  )}
+                                </button>
                               )}
                             </div>
                           </div>
 
-                          {/* Expanded Details */}
+                          {/* Expanded Details: Real Capabilities, Specs & Maximum Potential */}
                           <AnimatePresence>
-                            {isExpanded &&
-                              (model.features ||
-                                model.pros ||
-                                model.cons ||
-                                model.provider === 'nyx-native') && (
-                                <motion.div
-                                  initial={{ height: 0, opacity: 0 }}
-                                  animate={{ height: 'auto', opacity: 1 }}
-                                  exit={{ height: 0, opacity: 0 }}
-                                  className="overflow-hidden"
-                                >
-                                  <div className="pt-2 mt-1 border-t border-border/30 flex flex-col gap-2">
-                                    {model.features && model.features.length > 0 && (
-                                      <div>
-                                        <span className="text-[7px] font-black uppercase tracking-widest text-muted-foreground/80">
-                                          Features
+                            {isExpanded && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden"
+                              >
+                                <div className="pt-2 mt-1 border-t border-border/40 flex flex-col gap-2">
+                                  {/* Real Capabilities Grid */}
+                                  <div>
+                                    <span className="text-[7px] font-mono font-black uppercase tracking-widest text-muted-foreground">
+                                      Real Capabilities & Maximum Potential
+                                    </span>
+                                    <div className="grid grid-cols-3 gap-1 mt-1">
+                                      <div
+                                        className={`p-1 rounded border text-[7px] font-mono flex flex-col gap-0.5 ${
+                                          (model as any).capabilities?.vision
+                                            ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300'
+                                            : 'bg-muted/30 border-border text-muted-foreground'
+                                        }`}
+                                      >
+                                        <span className="font-bold">👁️ Vision</span>
+                                        <span className="text-[6.5px] opacity-80 leading-tight">
+                                          {(model as any).capabilities?.vision
+                                            ? 'Multimodal Image/Doc Analysis'
+                                            : 'Text-Only'}
                                         </span>
-                                        <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
-                                          {model.features.map((f: string, i: number) => (
-                                            <li
-                                              key={i}
-                                              className="text-[8px] text-foreground/80 leading-snug"
-                                            >
-                                              {f}
-                                            </li>
-                                          ))}
-                                        </ul>
                                       </div>
-                                    )}
-                                    {model.pros && model.pros.length > 0 && (
-                                      <div>
-                                        <span className="text-[7px] font-black uppercase tracking-widest text-emerald-500/80">
-                                          Good
+
+                                      <div
+                                        className={`p-1 rounded border text-[7px] font-mono flex flex-col gap-0.5 ${
+                                          (model as any).capabilities?.reasoning ||
+                                          (model as any).supportsThinking
+                                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                                            : 'bg-muted/30 border-border text-muted-foreground'
+                                        }`}
+                                      >
+                                        <span className="font-bold">🧠 Reasoning</span>
+                                        <span className="text-[6.5px] opacity-80 leading-tight">
+                                          {(model as any).capabilities?.reasoning ||
+                                          (model as any).supportsThinking
+                                            ? 'Deep Thinking & Logic'
+                                            : 'Direct Inference'}
                                         </span>
-                                        <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
-                                          {model.pros.map((p: string, i: number) => (
-                                            <li
-                                              key={i}
-                                              className="text-[8px] text-emerald-500/90 leading-snug"
-                                            >
-                                              {p}
-                                            </li>
-                                          ))}
-                                        </ul>
                                       </div>
-                                    )}
-                                    {model.cons && model.cons.length > 0 && (
-                                      <div>
-                                        <span className="text-[7px] font-black uppercase tracking-widest text-destructive/80">
-                                          Bad
+
+                                      <div
+                                        className={`p-1 rounded border text-[7px] font-mono flex flex-col gap-0.5 ${
+                                          (model as any).capabilities?.toolCalling
+                                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                                            : 'bg-muted/30 border-border text-muted-foreground'
+                                        }`}
+                                      >
+                                        <span className="font-bold">🛠️ Tool Calling</span>
+                                        <span className="text-[6.5px] opacity-80 leading-tight">
+                                          {(model as any).capabilities?.toolCalling
+                                            ? 'Native Function & Tools'
+                                            : 'Standard Text'}
                                         </span>
-                                        <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
-                                          {model.cons.map((c: string, i: number) => (
-                                            <li
-                                              key={i}
-                                              className="text-[8px] text-destructive/90 leading-snug"
-                                            >
-                                              {c}
-                                            </li>
-                                          ))}
-                                        </ul>
                                       </div>
-                                    )}
+                                    </div>
                                   </div>
-                                </motion.div>
-                              )}
+
+                                  {/* Specifications Matrix */}
+                                  <div className="grid grid-cols-3 gap-1 bg-muted/20 p-1.5 rounded-md border border-border/40 text-[7px] font-mono">
+                                    <div>
+                                      <span className="text-muted-foreground block">Context:</span>
+                                      <span className="font-bold text-foreground">
+                                        {model.specs?.contextWindow || '128K'}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground block">
+                                        Max Output:
+                                      </span>
+                                      <span className="font-bold text-foreground">
+                                        {model.specs?.maxOutput || '8K'}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground block">Modality:</span>
+                                      <span className="font-bold text-foreground">
+                                        {model.specs?.modality || 'Text'}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Model Description */}
+                                  {model.description && (
+                                    <p className="text-[7.5px] text-foreground/80 leading-snug">
+                                      {model.description}
+                                    </p>
+                                  )}
+
+                                  {/* Features List */}
+                                  {model.features && model.features.length > 0 && (
+                                    <div>
+                                      <span className="text-[7px] font-black uppercase tracking-widest text-muted-foreground/80">
+                                        Features & Architectural Highlights
+                                      </span>
+                                      <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
+                                        {model.features.map((f: string, i: number) => (
+                                          <li
+                                            key={i}
+                                            className="text-[8px] text-foreground/80 leading-snug"
+                                          >
+                                            {f}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+
+                                  {/* Pros and Cons */}
+                                  {model.pros && model.pros.length > 0 && (
+                                    <div>
+                                      <span className="text-[7px] font-black uppercase tracking-widest text-emerald-500/80">
+                                        Strengths
+                                      </span>
+                                      <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
+                                        {model.pros.map((p: string, i: number) => (
+                                          <li
+                                            key={i}
+                                            className="text-[8px] text-emerald-500/90 leading-snug"
+                                          >
+                                            {p}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  {model.cons && model.cons.length > 0 && (
+                                    <div>
+                                      <span className="text-[7px] font-black uppercase tracking-widest text-destructive/80">
+                                        Considerations
+                                      </span>
+                                      <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
+                                        {model.cons.map((c: string, i: number) => (
+                                          <li
+                                            key={i}
+                                            className="text-[8px] text-destructive/90 leading-snug"
+                                          >
+                                            {c}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                </div>
+                              </motion.div>
+                            )}
                           </AnimatePresence>
                         </motion.div>
                       </div>

@@ -220,6 +220,8 @@ export function inferModelSpecs(idOrName: string) {
     capabilities: {
       vision: isVision,
       reasoning: isReasoning,
+      audio: false,
+      tools: true,
     },
   };
 }
@@ -275,7 +277,15 @@ export function useLocalModels(enabled: boolean = true) {
                 contextWindow,
                 size: (m.size_bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB',
               },
-              capabilities: specs.capabilities,
+              // Prefer backend-derived capability flags; fall back to inferModelSpecs only for
+              // imageGen / onnx / pytorch which are not yet surfaced by the backend.
+              capabilities: {
+                ...specs.capabilities,
+                reasoning: m.supports_reasoning === true,
+                vision: m.supports_vision === true || specs.capabilities?.vision === true,
+                audio: m.supports_audio === true || specs.capabilities?.audio === true,
+                tools: m.supports_tools === true || specs.capabilities?.tools === true,
+              },
               status: m.status || 'completed',
               features: [
                 'Local',

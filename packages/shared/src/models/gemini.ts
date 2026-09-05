@@ -2,6 +2,48 @@ import { ModelOption } from '../types.js';
 
 export const GEMINI_MODELS: ModelOption[] = [
   // ═══════════════════════════════════════════════════════════════════════════════
+  // GEMINI 3.8 FLASH — Google AI Studio Flagship Frontier Multimodal Model
+  // ═══════════════════════════════════════════════════════════════════════════════
+  {
+    id: 'gemini-3.8-flash',
+    name: 'Gemini 3.8 Flash',
+    provider: 'gemini',
+    status: 'ga',
+    description:
+      'Google DeepMind next-generation flagship frontier multimodal model via Google AI Studio API. Features adaptive hybrid reasoning, extended 1M context ingestion, high-speed code architecture, native agentic tool calling, and multimodal perception across text, code, vision, audio, and video.',
+    specs: {
+      contextWindow: '1,048,576 (1M)',
+      maxOutput: '65,536 (64K)',
+      modality: 'Multimodal (Text, Code, Vision, Audio, Video, PDF)',
+    },
+    capabilities: {
+      vision: true,
+      reasoning: true,
+      toolCalling: true,
+    },
+    supportsThinking: true,
+    features: [
+      'Controllable Hybrid Thinking Budget (0–64K reasoning tokens)',
+      '1M Token Context Ingestion with sub-second TTFT',
+      'Native Google Search Grounding & Real-time Web Retrieval',
+      'Autonomous Function & Tool Calling with Parallel Execution',
+      'Native Multimodal Audio, Video, Image, and Document Parsing',
+      'Strict JSON Schema Enforcement & Structured Outputs',
+    ],
+    pros: [
+      'Top-tier SWE-bench coding benchmarks and mathematical reasoning',
+      'Low latency with adaptive reasoning depth',
+      'Full 1M input context and 64K maximum output tokens',
+    ],
+    cons: ['Google AI Studio API rate limits apply'],
+    limits: {
+      rpm: 15,
+      tpm: 1000000,
+      rpd: 1500,
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════════
   // GEMINI 3.7 FLASH — Frontier Hybrid Reasoning & Flagship Workhorse
   // ═══════════════════════════════════════════════════════════════════════════════
   {
@@ -19,6 +61,7 @@ export const GEMINI_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: true,
+      toolCalling: true,
     },
     supportsThinking: true,
     features: [
@@ -60,6 +103,7 @@ export const GEMINI_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: true,
+      toolCalling: true,
     },
     supportsThinking: true,
     features: [
@@ -100,6 +144,7 @@ export const GEMINI_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: true,
+      toolCalling: true,
     },
     supportsThinking: true,
     features: [
@@ -139,6 +184,7 @@ export const GEMINI_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: true,
+      toolCalling: true,
     },
     supportsThinking: true,
     features: [
@@ -178,6 +224,7 @@ export const GEMINI_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: true,
+      toolCalling: true,
     },
     supportsThinking: true,
     features: [
@@ -218,6 +265,7 @@ export const GEMINI_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: true,
+      toolCalling: true,
     },
     supportsThinking: true,
     features: [

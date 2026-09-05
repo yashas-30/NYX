@@ -25,7 +25,7 @@ export const useHfExplorerStore = create<HfExplorerState>()(
     (set) => ({
       searchQuery: '',
       activeQuery: '',
-      sortMode: 'trending',
+      sortMode: 'createdAt',
       activeCategory: 'all',
       activeLibraryFilter: 'gguf',
       selectedModel: null,
@@ -40,7 +40,7 @@ export const useHfExplorerStore = create<HfExplorerState>()(
         set({
           searchQuery: '',
           activeQuery: '',
-          sortMode: 'trending',
+          sortMode: 'createdAt',
           activeCategory: 'all',
           activeLibraryFilter: 'gguf',
           selectedModel: null,

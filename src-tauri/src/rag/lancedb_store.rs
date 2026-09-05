@@ -93,6 +93,17 @@ impl LanceDbStore {
     }
 
     pub async fn insert(&self, id: String, text: String, vector: Vec<f32>, metadata: String) -> Result<(), String> {
+        self.insert_batch(vec![(id, text, vector, metadata)]).await
+    }
+
+    /// Batch inserts multiple records into LanceDB within a single RecordBatch and single table commit.
+    /// This prevents LanceDB fragment explosion and version runaway.
+    pub async fn insert_batch(&self, items: Vec<(String, String, Vec<f32>, String)>) -> Result<(), String> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        let num_items = items.len();
         let table_guard = self.table.write().await;
         let table = table_guard.as_ref().ok_or("Table not initialized")?;
 
@@ -106,16 +117,28 @@ impl LanceDbStore {
             Field::new("metadata", DataType::Utf8, true),
         ]));
 
-        let id_array = StringArray::from(vec![id]);
-        let text_array = StringArray::from(vec![text]);
-        let vector_values = Float32Array::from(vector);
+        let mut ids = Vec::with_capacity(num_items);
+        let mut texts = Vec::with_capacity(num_items);
+        let mut all_vectors = Vec::with_capacity(num_items * 384);
+        let mut metadatas = Vec::with_capacity(num_items);
+
+        for (id, text, vector, metadata) in items {
+            ids.push(id);
+            texts.push(text);
+            all_vectors.extend(vector);
+            metadatas.push(metadata);
+        }
+
+        let id_array = StringArray::from(ids);
+        let text_array = StringArray::from(texts);
+        let vector_values = Float32Array::from(all_vectors);
         let vector_array = FixedSizeListArray::try_new(
             Arc::new(Field::new("item", DataType::Float32, true)),
             384,
             Arc::new(vector_values),
             None
         ).map_err(|e| format!("Vector format error: {}", e))?;
-        let metadata_array = StringArray::from(vec![metadata]);
+        let metadata_array = StringArray::from(metadatas);
 
         let batch = RecordBatch::try_new(
             schema,
@@ -130,8 +153,8 @@ impl LanceDbStore {
         table.add(vec![batch]).execute().await
             .map_err(|e| format!("Failed to insert records: {}", e))?;
 
-        // Mark that we now have at least one entry
-        self.entry_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Mark that we now have additional entries
+        self.entry_count.fetch_add(num_items, std::sync::atomic::Ordering::Relaxed);
         // Any new inserts invalidate the FTS index — mark as needing rebuild.
         self.fts_indexed.store(false, std::sync::atomic::Ordering::Relaxed);
 
@@ -152,6 +175,17 @@ impl LanceDbStore {
 
         self.fts_indexed.store(true, std::sync::atomic::Ordering::Relaxed);
         info!("LanceDB FTS (BM25/Tantivy) index built on 'text' column");
+        Ok(())
+    }
+
+    /// Compacts small fragment files and prunes old versions to keep disk and memory minimal.
+    pub async fn optimize(&self) -> Result<(), String> {
+        let table_guard = self.table.write().await;
+        let table = table_guard.as_ref().ok_or("Table not initialized")?;
+
+        info!("Running LanceDB table compaction and version pruning");
+        table.optimize(lancedb::table::OptimizeAction::All).await
+            .map_err(|e| format!("LanceDB optimize error: {}", e))?;
         Ok(())
     }
 

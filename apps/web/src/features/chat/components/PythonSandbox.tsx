@@ -8,94 +8,66 @@ interface PythonSandboxProps {
 
 export const PythonSandbox: React.FC<PythonSandboxProps> = ({ code }) => {
   const [pyodide, setPyodide] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingStatus, setLoadingStatus] = useState('Loading Python runtime (CDN)...');
+  const [loading, setLoading] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState('');
   const [output, setOutput] = useState<string[]>([]);
   const [plotUrl, setPlotUrl] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
 
-  useEffect(() => {
-    let active = true;
+  const getOrInitPyodide = async (): Promise<any> => {
+    if (pyodide) return pyodide;
 
-    const loadPyodideRuntime = async () => {
-      try {
-        if ((window as any).loadPyodide) {
-          initPyodide();
-          return;
-        }
+    setLoading(true);
+    setLoadingStatus('Loading Python runtime...');
 
-        // Dynamically inject Pyodide script
+    if (!(window as any).loadPyodide) {
+      await new Promise<void>((resolve, reject) => {
         const script = document.createElement('script');
         script.src = 'https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js';
         script.async = true;
-        script.onload = () => {
-          if (active) initPyodide();
-        };
-        script.onerror = () => {
-          if (active) {
-            setLoadingStatus('Failed to load Pyodide script from CDN.');
-            setLoading(false);
-          }
-        };
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Failed to load Pyodide script from CDN'));
         document.body.appendChild(script);
-      } catch (err: any) {
-        if (active) {
-          setLoadingStatus(`Error: ${err.message}`);
-          setLoading(false);
-        }
-      }
-    };
-
-    const initPyodide = async () => {
-      try {
-        setLoadingStatus('Initializing WebAssembly runtime...');
-        const py = await (window as any).loadPyodide({
-          indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.1/full/',
-        });
-
-        setLoadingStatus('Loading packages (numpy, pandas, matplotlib)...');
-        await py.loadPackage(['numpy', 'pandas', 'matplotlib']);
-
-        if (active) {
-          setPyodide(py);
-          setLoading(false);
-        }
-      } catch (err: any) {
-        if (active) {
-          setLoadingStatus(`Initialization failed: ${err.message}`);
-          setLoading(false);
-        }
-      }
-    };
-
-    loadPyodideRuntime();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Auto-run code once runtime is ready or code updates
-  useEffect(() => {
-    if (pyodide && !running) {
-      runCode();
+      });
     }
-  }, [pyodide, code]);
+
+    setLoadingStatus('Initializing WebAssembly runtime...');
+    const py = await (window as any).loadPyodide({
+      indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.1/full/',
+    });
+
+    setLoadingStatus('Loading packages (numpy, pandas, matplotlib)...');
+    await py.loadPackage(['numpy', 'pandas', 'matplotlib']);
+
+    setPyodide(py);
+    setLoading(false);
+    return py;
+  };
 
   const runCode = async () => {
-    if (!pyodide || running) return;
-    setRunning(true);
+    if (running) return;
     setOutput([]);
     setPlotUrl(null);
 
+    let pyInstance = pyodide;
+    if (!pyInstance) {
+      try {
+        pyInstance = await getOrInitPyodide();
+      } catch (err: any) {
+        setOutput([`Failed to initialize Python runtime: ${err.message}`]);
+        return;
+      }
+    }
+
+    setRunning(true);
     const logs: string[] = [];
-    pyodide.setStdout({
+    pyInstance.setStdout({
       batched: (text: string) => {
         logs.push(text);
         setOutput([...logs]);
       },
     });
-    pyodide.setStderr({
+    pyInstance.setStderr({
       batched: (text: string) => {
         logs.push(`[Error] ${text}`);
         setOutput([...logs]);
@@ -104,7 +76,7 @@ export const PythonSandbox: React.FC<PythonSandboxProps> = ({ code }) => {
 
     try {
       // Setup Matplotlib mock backend to capture figures
-      await pyodide.runPythonAsync(`
+      await pyInstance.runPythonAsync(`
 import sys
 import matplotlib
 matplotlib.use('Agg')
@@ -113,10 +85,10 @@ plt.close('all')
 `);
 
       // Run user code
-      await pyodide.runPythonAsync(code);
+      await pyInstance.runPythonAsync(code);
 
       // Check if figure exists and extract it as base64
-      const plotData = await pyodide.runPythonAsync(`
+      const plotData = await pyInstance.runPythonAsync(`
 import io
 import base64
 fig = plt.gcf()

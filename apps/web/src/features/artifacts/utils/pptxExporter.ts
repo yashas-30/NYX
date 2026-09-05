@@ -5,7 +5,6 @@
  * from a Slidev parsed deck using pptxgenjs.
  */
 
-import pptxgen from 'pptxgenjs';
 import { parseSlidevMarkdown, ParsedSlidevDeck, SlidevSlide } from './slidevParser';
 
 export interface PptxExportOptions {
@@ -175,9 +174,7 @@ function parseFormattedRuns(
 /**
  * Parses markdown lines into text blocks and bullet points
  */
-function parseContentBlocks(
-  content: string
-): {
+function parseContentBlocks(content: string): {
   type: 'heading' | 'bullet' | 'text' | 'code';
   rawText: string;
   text: string;
@@ -258,7 +255,9 @@ export async function exportSlidevToPptx(
 ): Promise<boolean> {
   const deck: ParsedSlidevDeck =
     typeof deckOrMarkdown === 'string' ? parseSlidevMarkdown(deckOrMarkdown) : deckOrMarkdown;
-  const pptx = new pptxgen();
+  const pptxModule = await import('pptxgenjs');
+  const PptxGen = (pptxModule as any).default || pptxModule;
+  const pptx = new (PptxGen as any)();
 
   // Set widescreen 16:9 format
   pptx.layout = 'LAYOUT_16x9';

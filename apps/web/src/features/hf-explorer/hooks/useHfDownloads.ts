@@ -81,6 +81,8 @@ export function useHfDownloads() {
           progress: e.payload.progress,
           downloaded: e.payload.downloaded,
           total: e.payload.total,
+          speed: e.payload.speed,
+          eta: e.payload.eta,
           status: 'downloading',
           error: undefined,
         });

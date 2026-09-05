@@ -27,7 +27,21 @@ import {
   Image as ImageIcon,
   Globe,
   Brain,
+  Plus,
+  FileText,
+  Code2,
+  Music,
 } from 'lucide-react';
+
+export interface AttachedFileItem {
+  id: string;
+  name: string;
+  size: number;
+  type: 'document' | 'code' | 'audio';
+  content?: string;
+  base64?: string;
+  mimeType: string;
+}
 
 import { ModelDefinition } from '@src/infrastructure/types';
 import { getModelCapabilities } from '@src/infrastructure/utils/provider';
@@ -67,6 +81,8 @@ interface ChatPromptInputProps {
   pendingImages?: { name: string; mimeType: string; data: string }[];
   onRemoveImage?: (index: number) => void;
   onImagesChange?: (images: { name: string; mimeType: string; data: string }[]) => void;
+  pendingFiles?: AttachedFileItem[];
+  onRemoveFile?: (id: string) => void;
   onAttachFiles: (files: File[]) => void;
 }
 
@@ -129,6 +145,8 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   pendingImages,
   onRemoveImage,
   onImagesChange,
+  pendingFiles,
+  onRemoveFile,
   onAttachFiles,
 }) => {
   const [isFocused, setIsFocused] = useState(false);
@@ -282,26 +300,21 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
     [selectedImages, pendingImages, onImagesChange]
   );
 
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
+  const codeInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImageUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-
-    setIsUploadingImage(true);
     try {
-      // Delegate to the shared file handler which handles both images and documents
       onAttachFiles(Array.from(files));
     } catch (error: any) {
       toast.error(`File attach failed: ${error.message}`);
     } finally {
-      setIsUploadingImage(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      e.target.value = '';
     }
   };
 
@@ -371,7 +384,11 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
     : currentModel != null && 'capabilities' in currentModel
       ? !!(currentModel as any).capabilities?.reasoning
       : capabilities.supportsReasoning;
-  const canAttachFiles = supportsVision;
+  const supportsAudio = localModelDef
+    ? !!(localModelDef.capabilities as any)?.audio
+    : currentModel != null && 'capabilities' in currentModel
+      ? !!(currentModel as any).capabilities?.audio
+      : (capabilities.supportsAudio ?? false);
   const [showReasoningMenu, setShowReasoningMenu] = useState(false);
 
   const isGeminiProvider =
@@ -473,7 +490,12 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
 
   const handleSubmit = async (e?: React.SyntheticEvent) => {
     e?.preventDefault();
-    if ((!prompt.trim() && selectedImages.length === 0) || isLoading || isSubmitting.current)
+    const hasFiles = Boolean(pendingFiles && pendingFiles.length > 0);
+    if (
+      (!prompt.trim() && selectedImages.length === 0 && !hasFiles) ||
+      isLoading ||
+      isSubmitting.current
+    )
       return;
     if (!hasModelSelected) {
       toast.error('Please select a model first');
@@ -507,8 +529,9 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
     }
   };
 
+  const hasFiles = Boolean(pendingFiles && pendingFiles.length > 0);
   const canSubmit =
-    (!!prompt.trim() || selectedImages.length > 0) && hasModelSelected && !isLoading;
+    (!!prompt.trim() || selectedImages.length > 0 || hasFiles) && hasModelSelected && !isLoading;
 
   const gpuModeLabel =
     localSettings.gpuLayers === 0
@@ -575,37 +598,211 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
               className="flex items-center justify-between px-1.5 py-0.5 border-b border-border/30 overflow-visible select-none h-6 gap-1.5"
             >
               <div className="flex items-center gap-1">
-                <motion.button
-                  variants={tagItemVariants}
-                  whileHover={canAttachFiles ? { y: -1, scale: 1.02 } : {}}
-                  whileTap={canAttachFiles ? { scale: 0.98 } : {}}
-                  type="button"
-                  onClick={handleImageUploadClick}
-                  disabled={isUploadingImage || !canAttachFiles}
-                  className={`flex items-center gap-1 h-5 px-2 rounded transition-all text-left shrink-0 ${
-                    !canAttachFiles
-                      ? 'bg-muted/50 border border-border/30 text-muted-foreground/40 cursor-not-allowed opacity-50'
-                      : 'bg-secondary border border-border hover:border-border-strong hover:text-foreground text-muted-foreground cursor-pointer'
-                  }`}
-                  title={
-                    !canAttachFiles
-                      ? 'Selected model does not support vision/image input'
-                      : 'Attach image'
-                  }
-                  aria-label="Attach image"
-                >
-                  <ImageIcon className="w-3 h-3 opacity-70" />
-                  <span className="text-[9px] font-semibold tracking-tight">
-                    {isUploadingImage ? 'Uploading...' : 'Attach Image'}
-                  </span>
-                </motion.button>
+                {/* Attachment Menu Button (+) */}
+                <div className="relative flex items-center shrink-0">
+                  <motion.button
+                    variants={tagItemVariants}
+                    whileHover={{ y: -1, scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    onClick={() => setShowAttachMenu((prev) => !prev)}
+                    className={`flex items-center justify-center w-5 h-5 rounded border transition-all cursor-pointer shrink-0 ${
+                      showAttachMenu
+                        ? 'bg-primary/20 border-primary text-primary shadow-xs'
+                        : 'bg-secondary border-border hover:border-border-strong hover:text-foreground text-muted-foreground'
+                    }`}
+                    title="Attach files (Document, Code, Image, Audio)"
+                    aria-label="Attach files"
+                  >
+                    <Plus
+                      size={11}
+                      className={`transition-transform duration-200 ${showAttachMenu ? 'rotate-45 text-primary' : ''}`}
+                    />
+                  </motion.button>
+
+                  <AnimatePresence>
+                    {showAttachMenu && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setShowAttachMenu(false)}
+                        />
+                        <motion.div
+                          initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                          transition={{ duration: 0.15, ease: 'easeOut' }}
+                          className="absolute bottom-full mb-2 left-0 w-52 bg-card/95 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 p-1.5 flex flex-col gap-1"
+                        >
+                          <div className="px-2 py-1 text-[9px] font-mono uppercase tracking-wider text-muted-foreground/70 border-b border-border/30">
+                            Attach to Prompt
+                          </div>
+
+                          {/* Document */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAttachMenu(false);
+                              docInputRef.current?.click();
+                            }}
+                            className="flex items-center justify-between px-2 py-1.5 rounded-md text-xs text-left hover:bg-muted/60 transition-colors text-foreground cursor-pointer group"
+                          >
+                            <div className="flex items-center gap-2">
+                              <FileText
+                                size={13}
+                                className="text-blue-400 group-hover:scale-110 transition-transform"
+                              />
+                              <div className="flex flex-col">
+                                <span className="font-medium text-[11px]">Document</span>
+                                <span className="text-[8px] text-muted-foreground">
+                                  PDF, TXT, MD, DOCX
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Code File */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAttachMenu(false);
+                              codeInputRef.current?.click();
+                            }}
+                            className="flex items-center justify-between px-2 py-1.5 rounded-md text-xs text-left hover:bg-muted/60 transition-colors text-foreground cursor-pointer group"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Code2
+                                size={13}
+                                className="text-emerald-400 group-hover:scale-110 transition-transform"
+                              />
+                              <div className="flex flex-col">
+                                <span className="font-medium text-[11px]">Code File</span>
+                                <span className="text-[8px] text-muted-foreground">
+                                  TS, PY, RS, GO, JSON...
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Image (Gated on supportsVision) */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (supportsVision) {
+                                setShowAttachMenu(false);
+                                imageInputRef.current?.click();
+                              }
+                            }}
+                            disabled={!supportsVision}
+                            className={`flex items-center justify-between px-2 py-1.5 rounded-md text-xs text-left transition-colors ${
+                              supportsVision
+                                ? 'hover:bg-muted/60 text-foreground cursor-pointer group'
+                                : 'opacity-40 text-muted-foreground cursor-not-allowed'
+                            }`}
+                            title={
+                              supportsVision ? 'Attach Images' : 'Model does not support vision'
+                            }
+                          >
+                            <div className="flex items-center gap-2">
+                              <ImageIcon
+                                size={13}
+                                className={
+                                  supportsVision
+                                    ? 'text-amber-400 group-hover:scale-110 transition-transform'
+                                    : 'text-muted-foreground'
+                                }
+                              />
+                              <div className="flex flex-col">
+                                <span className="font-medium text-[11px]">Image</span>
+                                <span className="text-[8px] text-muted-foreground">
+                                  PNG, JPG, WEBP
+                                </span>
+                              </div>
+                            </div>
+                            {!supportsVision && (
+                              <span className="text-[7px] font-mono px-1 py-0.5 rounded bg-muted/80 text-muted-foreground/80">
+                                No Vision
+                              </span>
+                            )}
+                          </button>
+
+                          {/* Audio (Gated on supportsAudio) */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (supportsAudio) {
+                                setShowAttachMenu(false);
+                                audioInputRef.current?.click();
+                              }
+                            }}
+                            disabled={!supportsAudio}
+                            className={`flex items-center justify-between px-2 py-1.5 rounded-md text-xs text-left transition-colors ${
+                              supportsAudio
+                                ? 'hover:bg-muted/60 text-foreground cursor-pointer group'
+                                : 'opacity-40 text-muted-foreground cursor-not-allowed'
+                            }`}
+                            title={supportsAudio ? 'Attach Audio' : 'Model does not support audio'}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Music
+                                size={13}
+                                className={
+                                  supportsAudio
+                                    ? 'text-purple-400 group-hover:scale-110 transition-transform'
+                                    : 'text-muted-foreground'
+                                }
+                              />
+                              <div className="flex flex-col">
+                                <span className="font-medium text-[11px]">Audio File</span>
+                                <span className="text-[8px] text-muted-foreground">
+                                  MP3, WAV, M4A, OGG
+                                </span>
+                              </div>
+                            </div>
+                            {!supportsAudio && (
+                              <span className="text-[7px] font-mono px-1 py-0.5 rounded bg-muted/80 text-muted-foreground/80">
+                                No Audio
+                              </span>
+                            )}
+                          </button>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Hidden specialized file pickers */}
                 <input
                   type="file"
                   multiple
-                  ref={fileInputRef}
-                  onChange={handleImageChange}
+                  ref={imageInputRef}
+                  accept="image/*"
+                  onChange={handleFileInputChange}
                   className="hidden"
-                  disabled={!canAttachFiles}
+                />
+                <input
+                  type="file"
+                  multiple
+                  ref={docInputRef}
+                  accept=".pdf,.doc,.docx,.txt,.md,.rtf,.csv,.json,.log"
+                  onChange={handleFileInputChange}
+                  className="hidden"
+                />
+                <input
+                  type="file"
+                  multiple
+                  ref={codeInputRef}
+                  accept=".ts,.tsx,.js,.jsx,.py,.rs,.go,.java,.c,.cpp,.h,.hpp,.cs,.php,.rb,.swift,.kt,.sql,.html,.css,.scss,.yaml,.yml,.toml,.sh,.bash,.json,.env"
+                  onChange={handleFileInputChange}
+                  className="hidden"
+                />
+                <input
+                  type="file"
+                  multiple
+                  ref={audioInputRef}
+                  accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac,.webm"
+                  onChange={handleFileInputChange}
+                  className="hidden"
                 />
                 <motion.button
                   variants={tagItemVariants}
@@ -624,31 +821,33 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   <span className="text-[9px] font-semibold tracking-tight">Web Search</span>
                 </motion.button>
 
-                <motion.button
-                  variants={tagItemVariants}
-                  whileHover={{ y: -1, scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  type="button"
-                  onClick={toggleReasoning}
-                  className={`flex items-center gap-1 h-5 px-2 rounded border transition-all text-left cursor-pointer shrink-0 ${
-                    reasoningEnabled
-                      ? 'bg-violet-500/10 border-violet-500/35 text-violet-400 font-semibold'
-                      : 'bg-secondary border-border hover:border-border-strong hover:text-foreground text-muted-foreground'
-                  }`}
-                  title={
-                    reasoningEnabled
-                      ? 'Reasoning is active (Click to disable thinking)'
-                      : 'Reasoning is disabled (Click to enable thinking)'
-                  }
-                  aria-label="Toggle reasoning"
-                >
-                  <Brain className="w-3 h-3" />
-                  <span className="text-[9px] font-semibold tracking-tight">
-                    Reasoning {reasoningEnabled ? 'ON' : 'OFF'}
-                  </span>
-                </motion.button>
+                {supportsReasoning && (
+                  <motion.button
+                    variants={tagItemVariants}
+                    whileHover={{ y: -1, scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={toggleReasoning}
+                    className={`flex items-center gap-1 h-5 px-2 rounded border transition-all text-left cursor-pointer shrink-0 ${
+                      reasoningEnabled
+                        ? 'bg-violet-500/10 border-violet-500/35 text-violet-400 font-semibold'
+                        : 'bg-secondary border-border hover:border-border-strong hover:text-foreground text-muted-foreground'
+                    }`}
+                    title={
+                      reasoningEnabled
+                        ? 'Reasoning is active (Click to disable thinking)'
+                        : 'Reasoning is disabled (Click to enable thinking)'
+                    }
+                    aria-label="Toggle reasoning"
+                  >
+                    <Brain className="w-3 h-3" />
+                    <span className="text-[9px] font-semibold tracking-tight">
+                      Reasoning {reasoningEnabled ? 'ON' : 'OFF'}
+                    </span>
+                  </motion.button>
+                )}
 
-                {isGeminiProvider && reasoningEnabled && (
+                {reasoningEnabled && supportsReasoning && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.92 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -791,30 +990,69 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                 isFocused ? 'border-accent/40 ring-1 ring-accent/25' : ''
               }`}
             >
-              {selectedImages.length > 0 && (
+              {(selectedImages.length > 0 || (pendingFiles && pendingFiles.length > 0)) && (
                 <div className="flex flex-wrap gap-2 px-1 py-1 border-b border-border/40 pb-2 mb-1">
+                  {/* Images */}
                   {selectedImages.map((img, idx) => (
                     <div
-                      key={idx}
-                      className="relative group/img flex items-center gap-2 p-2 bg-muted border border-border rounded-md pr-6"
+                      key={`img-${idx}`}
+                      className="relative group/img flex items-center gap-2 p-1.5 bg-muted/80 border border-white/10 rounded-md pr-6"
                     >
                       <img
                         src={`data:${img.mimeType};base64,${img.data}`}
                         alt={img.name}
-                        className="w-8 h-8 rounded-md object-cover bg-background"
+                        className="w-7 h-7 rounded object-cover bg-background shrink-0"
                       />
                       <div className="flex flex-col min-w-0 max-w-[120px]">
                         <span className="text-[9px] font-semibold text-foreground truncate">
                           {img.name}
                         </span>
-                        <span className="text-[7px] text-muted-foreground uppercase">
-                          {img.mimeType.split('/')[1]}
+                        <span className="text-[7px] text-muted-foreground uppercase font-mono">
+                          {img.mimeType.split('/')[1] || 'IMAGE'}
                         </span>
                       </div>
                       <button
                         type="button"
                         onClick={() => removeImage(idx)}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 transition-all"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 transition-all cursor-pointer"
+                        title="Remove image"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ))}
+
+                  {/* Documents, Code, and Audio Files */}
+                  {pendingFiles?.map((file) => (
+                    <div
+                      key={file.id}
+                      className="relative group/file flex items-center gap-2 p-1.5 bg-muted/80 border border-white/10 rounded-md pr-6 shrink-0 shadow-2xs"
+                    >
+                      <div className="w-7 h-7 rounded bg-background/80 border border-white/5 flex items-center justify-center shrink-0">
+                        {file.type === 'code' ? (
+                          <Code2 size={13} className="text-emerald-400" />
+                        ) : file.type === 'audio' ? (
+                          <Music size={13} className="text-purple-400" />
+                        ) : (
+                          <FileText size={13} className="text-blue-400" />
+                        )}
+                      </div>
+                      <div className="flex flex-col min-w-0 max-w-[130px]">
+                        <span
+                          className="text-[9px] font-semibold text-foreground truncate"
+                          title={file.name}
+                        >
+                          {file.name}
+                        </span>
+                        <span className="text-[7px] text-muted-foreground font-mono">
+                          {(file.size / 1024).toFixed(1)} KB · {file.type.toUpperCase()}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onRemoveFile && onRemoveFile(file.id)}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 transition-all cursor-pointer"
+                        title={`Remove ${file.name}`}
                       >
                         <X size={10} />
                       </button>

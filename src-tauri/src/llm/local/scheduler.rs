@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tracing::info;
-use super::hardware::{GpuBackend, HardwareSnapshot};
+use super::hardware::HardwareSnapshot;
 
 // § 3 — SMART NGL SCHEDULER
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,6 +24,9 @@ pub struct GgufMetadata {
     pub context_length: Option<u32>,
     pub embedding_length: Option<u32>,
     pub architecture: Option<String>,
+    pub chat_template: Option<String>,
+    pub tags: Vec<String>,
+    pub supports_reasoning: bool,
 }
 
 fn read_u32(r: &mut impl std::io::Read) -> std::io::Result<u32> {
@@ -40,7 +43,7 @@ fn read_u64(r: &mut impl std::io::Read) -> std::io::Result<u64> {
 
 fn read_string(r: &mut impl std::io::Read) -> std::io::Result<String> {
     let len = read_u64(r)?;
-    if len > 10_000 {
+    if len > 100_000 {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "String too long"));
     }
     let mut buf = vec![0u8; len as usize];
@@ -74,6 +77,23 @@ pub fn parse_gguf_metadata(path: &std::path::Path) -> std::io::Result<GgufMetada
             }
         }
 
+        if key.contains("chat_template") && val_type == 8 {
+            if let Ok(tmpl) = read_string(&mut file) {
+                let tmpl_lower = tmpl.to_lowercase();
+                if tmpl_lower.contains("<think>")
+                    || tmpl_lower.contains("<|thought|>")
+                    || tmpl_lower.contains("thought\n")
+                    || tmpl_lower.contains("[think]")
+                    || tmpl_lower.contains("reasoning_content")
+                    || tmpl_lower.contains("enable_thinking")
+                {
+                    meta.supports_reasoning = true;
+                }
+                meta.chat_template = Some(tmpl);
+            }
+            continue;
+        }
+
         let mut read_val = || -> std::io::Result<Option<u32>> {
             use std::io::{Seek, SeekFrom};
             match val_type {
@@ -83,6 +103,24 @@ pub fn parse_gguf_metadata(path: &std::path::Path) -> std::io::Result<GgufMetada
                 9 => {
                     let arr_type = read_u32(&mut file)?;
                     let arr_len = read_u64(&mut file)?;
+                    if arr_type == 8 {
+                        for _ in 0..arr_len {
+                            if let Ok(s) = read_string(&mut file) {
+                                let s_lower = s.to_lowercase();
+                                if key == "general.tags" {
+                                    if s_lower.contains("reasoning")
+                                        || s_lower.contains("thinking")
+                                        || s_lower.contains("thought")
+                                        || s_lower.contains("deepseek-r1")
+                                    {
+                                        meta.supports_reasoning = true;
+                                    }
+                                    meta.tags.push(s);
+                                }
+                            }
+                        }
+                        return Ok(None);
+                    }
                     let bytes_per_elem = match arr_type {
                         0 | 1 | 7 => 1,  // UINT8 / INT8 / BOOL
                         2 | 3 => 2,      // UINT16 / INT16
@@ -90,10 +128,6 @@ pub fn parse_gguf_metadata(path: &std::path::Path) -> std::io::Result<GgufMetada
                         6 => 4,          // FLOAT32
                         10 | 11 => 8,    // UINT64 / INT64
                         12 => 8,         // FLOAT64
-                        8 => {
-                            for _ in 0..arr_len { let _ = read_string(&mut file)?; }
-                            0
-                        }
                         _ => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Unsupported array type")),
                     };
                     if bytes_per_elem > 0 {
@@ -163,47 +197,36 @@ pub fn vram_for_ngl(model_size_gb: f32, meta: Option<&GgufMetadata>, total_layer
     let non_layer_overhead_mb = (model_mb as f64 * 0.18) as u64;
     let transformer_layers_mb = model_mb.saturating_sub(non_layer_overhead_mb);
 
-    // GGUF files contain metadata, tokenizer vocabularies (e.g. 256k tokens vocabulary strings, mergetables), and tied weights.
-    // When loaded into CUDA with all layers on GPU, tied embeddings (e.g. Gemma/Qwen tied weights) share memory.
-    // The active VRAM footprint for tensor weights on GPU is ~80% of the raw file size on disk.
+    // Tensor weights in memory: all layers in device memory equals full tensor footprint (~95% of GGUF file size)
     let weights_in_vram_mb = if ngl >= total_layers {
-        ((model_mb as f64) * 0.80) as u64
+        ((model_mb as f64) * 0.95) as u64
     } else {
-        // Base non-layer overhead (embeddings) offloaded + proportional layer weights
-        let per_layer_mb = ((transformer_layers_mb as f64) * 0.80) as u64 / total_layers.max(1) as u64;
+        let per_layer_mb = ((transformer_layers_mb as f64) * 0.95) as u64 / total_layers.max(1) as u64;
         let offloaded_mb = per_layer_mb.saturating_mul(ngl as u64);
-        (((non_layer_overhead_mb as f64) * 0.80) as u64 / 2).saturating_add(offloaded_mb).min(model_mb)
+        (((non_layer_overhead_mb as f64) * 0.95) as u64 / 2).saturating_add(offloaded_mb).min(model_mb)
     };
 
-    // Precise KV Cache calculation: default 8-bit KV (--ctk q8_0 --ctv q8_0) uses 1 byte per element (K+V = 2 bytes).
-    // IMPORTANT: In hybrid mode only `ngl` layers reside in VRAM; their KV is in VRAM.
-    // The remaining (total_layers - ngl) layers run on CPU; their KV stays in system RAM.
-    // Using `ngl` here ensures we account only for GPU-resident KV,
-    // preventing overestimation that caused fewer layers to be scheduled on the GPU.
+    // Precise KV Cache calculation: default 4-bit/8-bit KV (--ctk q4_0/q8_0) with FlashAttention.
+    // Modern LLMs utilize Grouped-Query Attention (GQA) with 4-8 KV heads instead of MHA (which has head_count heads).
+    // Using 1.0 byte per element (0.5 byte K + 0.5 byte V for q4_0) accurately models modern KV footprint.
     let gpu_kv_layers = if ngl >= total_layers { total_layers } else { ngl };
     let kv_mb_per_1k = if let Some(m) = meta {
-        let head_kv = m.head_count_kv.unwrap_or(m.head_count.unwrap_or(32)) as u64;
+        let head_count = m.head_count.unwrap_or(32).max(1) as u64;
+        let head_kv = m.head_count_kv
+            .unwrap_or_else(|| (head_count / 4).max(1).min(8) as u32) as u64;
         let embd = m.embedding_length.unwrap_or(4096) as u64;
-        let head_count = m.head_count.unwrap_or(32) as u64;
-        let head_dim = embd / head_count.max(1);
-        // K + V: 1 byte per element for q8_0 across GPU-offloaded layers only
-        (2 * 1024 * head_kv * head_dim * (gpu_kv_layers as u64)) as f32 / (1024.0 * 1024.0)
+        let head_dim = embd / head_count;
+        // K + V: 1.0 byte per element for q4_0 across GPU-offloaded layers only
+        (1.0 * 1024.0 * (head_kv as f32) * (head_dim as f32) * (gpu_kv_layers as f32)) / (1024.0 * 1024.0)
     } else {
-        // Fallback heuristic when GGUF metadata is unavailable.
-        // Modern models use GQA (few KV heads), so KV is much smaller than MHA models.
-        // Conservative estimate: 12 MB/1K base + 3 MB per GB of model size.
-        // (Old formula was 25 + model_size_gb*5 which grossly overestimated GQA models.)
-        let base = 12.0 + (model_size_gb * 3.0).min(40.0);
+        let base = 6.0 + (model_size_gb * 1.5).min(20.0);
         base * (gpu_kv_layers as f32 / total_layers.max(1) as f32)
     };
 
     let total_kv_mb = (ctx_size as f32 / 1024.0) * kv_mb_per_1k;
-    // All GPU-resident KV is already accounted for in kv_mb_per_1k (uses gpu_kv_layers)
     let offloaded_kv_mb = total_kv_mb as u64;
 
-    // FlashAttention-2 compute buffer overhead: scales with context length, not model size.
-    // Base = command buffer + pipeline state. ctx_size/1024 * 10 MB = context-proportional scratch.
-    // (Removed model_size_gb * 12.0 — model weights are already counted in weights_in_vram_mb.)
+    // FlashAttention-2 compute buffer overhead: scales with context length
     let compute_mb = COMPUTE_BUFFER_BASE_MB
         .saturating_add((ctx_size as u64 / 1024) * 10);
 
@@ -214,11 +237,11 @@ pub fn vram_for_ngl(model_size_gb: f32, meta: Option<&GgufMetadata>, total_layer
 /// The scheduling decision returned to callers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NglDecision {
-    /// Number of layers to pass as `-ngl` to llama-server. Always equals total_layers in GPU-only mode.
+    /// Number of layers to pass as `-ngl` to llama-server.
     pub ngl: u32,
-    /// True when the model fits entirely in VRAM. Always true in GPU-only mode.
+    /// True when every layer fits in the selected GPU memory budget.
     pub fully_gpu: bool,
-    /// Always false — hybrid CPU+GPU inference is disabled.
+    /// True when the remaining layers must stay in system RAM.
     pub hybrid: bool,
     /// Estimated VRAM usage in MB.
     pub estimated_vram_mb: u64,
@@ -228,28 +251,29 @@ pub struct NglDecision {
     pub recommended_cpu_threads: u32,
     /// The actual context size used (may be auto-reduced to fit GPU VRAM).
     pub effective_context_size: u32,
+    /// True when the model exceeds dedicated VRAM and is utilizing Shared GPU Memory.
+    #[serde(default)]
+    pub uses_shared_memory: bool,
 }
 
 /// Describes how transformer layers are distributed across compute units.
-///
-/// NYX enforces GPU-only inference. CPU offload is never used for model layers.
-/// Only `FullGpu` is valid — this runs on dedicated GPU, iGPU, or NPU.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InferenceMode {
     /// All transformer layers run on GPU/iGPU/NPU. CPU is used only for tokenization.
     FullGpu,
+    /// GPU-resident layers plus CPU/system-RAM layers.
+    Hybrid,
 }
 
 /// Complete set of llama-server parameters derived from hardware.
 ///
 /// Computed once per model launch by [`compute_gpu_inference_config`] and
-/// forwarded to `LlamaServerConfig`. Never hardcoded; always derived from the
-/// live `HardwareSnapshot`. In GPU-only mode, `ngl` always equals `total_layers`.
+/// forwarded to `LlamaServerConfig` from the live `HardwareSnapshot`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HybridInferenceConfig {
     /// Number of transformer layers to offload to GPU (-ngl).
-    /// Always equals total_layers in GPU-only mode — every layer runs on GPU.
+    /// Number of layers that llama.cpp should place in device memory.
     pub ngl: u32,
     /// CPU threads for *token generation* (-t). Minimal in GPU-only mode (2–4)
     /// since GPU handles all decode; CPU only handles tokenization overhead.
@@ -266,15 +290,17 @@ pub struct HybridInferenceConfig {
     /// "q8_0" = 2× smaller than f16, <1% quality loss — default for GPU.
     /// "q4_0" / "q5_0" for lower-VRAM tiers.
     pub kv_cache_type: String,
-    /// Force KV cache to system RAM (`--no-kv-offload`). Always false in GPU-only mode.
+    /// Force KV cache to system RAM (`--no-kv-offload`).
     pub disable_kv_offload: bool,
-    /// Pin CPU-side model layers in physical RAM (`--mlock`). Always false in GPU-only mode.
+    /// Pin CPU-side model layers in physical RAM (`--mlock`).
     pub use_mlock: bool,
     /// Use mmap for the model file. True = mmap; False = --no-mmap (full eager load).
     pub use_mmap: bool,
     /// Enable flash attention (-fa). Always true — reduces KV bandwidth in attention.
     pub flash_attention: bool,
-    /// The compute mode. Always `InferenceMode::FullGpu` in GPU-only mode.
+    /// Indicates whether inference leverages Windows WDDM Shared GPU Memory
+    pub uses_shared_memory: bool,
+    /// The selected compute mode.
     pub mode: InferenceMode,
     /// Additional CLI arguments injected based on hardware topology.
     pub extra_args: Vec<String>,
@@ -296,37 +322,43 @@ pub fn find_draft_model(main_model_path: &Path) -> Option<PathBuf> {
     let dir_entries = std::fs::read_dir(dir).ok()?;
     for entry in dir_entries.flatten() {
         let path = entry.path();
+        if path == main_model_path {
+            continue;
+        }
         if path.extension()?.to_string_lossy().to_lowercase() != "gguf" {
             continue;
         }
-        let name = path.file_stem()?.to_string_lossy();
-        // A draft model must explicitly start with "draft-" OR match the exact base architecture prefix.
-        // Mixing architectures (e.g. Gemma with Hyperclovax) causes hard crashes in llama.cpp.
-        if name.starts_with("draft-") {
+        let name = path.file_stem()?.to_string_lossy().to_lowercase();
+        // A draft or MTP model starts with draft- or mtp-, or has -draft/-mtp in its stem.
+        if name.starts_with("draft-")
+            || name.starts_with("mtp-")
+            || name.contains("-draft")
+            || name.contains("_draft")
+            || name.contains("-mtp")
+            || name.contains("_mtp")
+        {
             return Some(path);
         }
     }
     None
 }
 
-/// Compute the GPU layer count and context size for a model launch.
-///
-/// # GPU-Only Guarantee
-/// This function NEVER returns `ngl < total_layers` for CPU offload purposes.
-/// If the model cannot fit in GPU/iGPU/NPU VRAM, it returns `Err(message)` — the
-/// caller surfaces this as a user-visible error. CPU inference is forbidden.
+/// Compute a capacity-aware GPU layer count and context size for a model launch.
 ///
 /// # Context-Reduction Strategy
 /// Before erroring, the scheduler attempts progressive context reduction:
 /// 65536 → 32768 → 16384 → 8192 → 4096 → 2048 → 1024
 /// The smallest context that allows full GPU offload is used.
 ///
-/// # NPU Fast Path
-/// For NPU backends (Qualcomm Hexagon, Intel NPU, AMD XDNA), VRAM checks are
-/// skipped — the NPU runtime manages its own memory allocation.
 pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, model_size_gb: f32, ctx_size: u32) -> Result<NglDecision, String> {
     let total_layers = estimate_total_layers(meta, model_size_gb);
-    let avail_mb = hw.vram_available_mb;
+    let dedicated_avail = if hw.has_dedicated_gpu {
+        hw.dedicated_vram_available_mb
+    } else {
+        hw.vram_available_mb
+    };
+    let shared_avail = hw.shared_gpu_memory_mb;
+    let total_gpu_budget = dedicated_avail.saturating_add(shared_avail);
 
     let mut actual_ctx_size = ctx_size;
     if actual_ctx_size == 0 {
@@ -335,34 +367,7 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
         actual_ctx_size = max_ctx.min(131072);
     }
 
-    // CPU threads for tokenization only (minimal — GPU handles all inference).
-    let cpu_threads = hw.cpu_physical_cores.min(4).max(1);
-
-    // ── NPU Fast Path ─────────────────────────────────────────────────────────
-    // NPU backends manage their own memory; skip VRAM checks entirely.
-    if hw.gpu_backend == GpuBackend::Npu {
-        let needed = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, actual_ctx_size);
-        info!(
-            "[NglScheduler] NPU path: all {} layers → NPU. Model={:.1}GB ctx={}.",
-            total_layers, model_size_gb, actual_ctx_size
-        );
-        return Ok(NglDecision {
-            ngl: total_layers,
-            fully_gpu: true,
-            hybrid: false,
-            estimated_vram_mb: needed,
-            message: format!(
-                "✅ NPU — all {}/{} layers on Neural Processing Unit. Model: {:.1} GB.",
-                total_layers, total_layers, model_size_gb
-            ),
-            recommended_cpu_threads: cpu_threads,
-            effective_context_size: actual_ctx_size,
-        });
-    }
-
-    // ── No GPU Available ──────────────────────────────────────────────────────
-    // avail_mb == 0 means no GPU/iGPU was detected. NYX does not run on CPU.
-    if avail_mb == 0 {
+    if total_gpu_budget == 0 {
         return Err(format!(
             "No GPU or iGPU detected on this system.\n\n\
             NYX local inference requires a dedicated GPU, integrated GPU (iGPU), or NPU.\n\
@@ -374,20 +379,83 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
         ));
     }
 
-    // Unconditionally offload 100% of all layers to the dedicated GPU without hardware restrictions
-    let total_layers = estimate_total_layers(meta, model_size_gb);
+    // ── PASS 1: Dedicated GPU VRAM Priority ───────────────────────────────────
+    // If the model can fit 100% inside dedicated GPU VRAM at ANY viable context
+    // size (tested from largest to smallest), keep it 100% inside dedicated VRAM.
+    // This eliminates shared-memory spilling and guarantees native GPU speed.
+    let mut dedicated_fit = None;
+    if dedicated_avail > 0 {
+        for &candidate_ctx in &[actual_ctx_size, 32768, 16384, 8192, 4096, 2048, 1024] {
+            if candidate_ctx > actual_ctx_size { continue; }
+            let needed_all = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, candidate_ctx);
+            if needed_all <= dedicated_avail {
+                dedicated_fit = Some((candidate_ctx, needed_all));
+                break;
+            }
+        }
+    }
+
+    let (selected_ctx, selected_ngl, uses_shared_memory) = if let Some((ctx, _needed)) = dedicated_fit {
+        (ctx, total_layers, false)
+    } else {
+        // ── PASS 2: Shared GPU Memory Fallback (All Layers On Dedicated GPU) ────
+        // The model exceeds dedicated VRAM, so it must borrow Windows WDDM Shared
+        // GPU Memory. All compute MUST still be executed 100% on the dedicated GPU.
+        let mut shared_fit = None;
+        for &candidate_ctx in &[actual_ctx_size, 32768, 16384, 8192, 4096, 2048, 1024] {
+            if candidate_ctx > actual_ctx_size { continue; }
+            let needed_all = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, candidate_ctx);
+            if needed_all <= total_gpu_budget {
+                shared_fit = Some((candidate_ctx, needed_all));
+                break;
+            }
+        }
+
+        if let Some((ctx, _needed)) = shared_fit {
+            (ctx, total_layers, true)
+        } else {
+            // ── PASS 3: Partial Offload (Hybrid Fallback) ────────────────────────
+            let candidate_ngl = (0..=total_layers)
+                .rev()
+                .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, 1024) <= total_gpu_budget)
+                .unwrap_or(0);
+            let uses_shmem = vram_for_ngl(model_size_gb, meta, total_layers, candidate_ngl, 1024) > dedicated_avail;
+            (1024, candidate_ngl, uses_shmem)
+        }
+    };
+
+    let fully_gpu = selected_ngl >= total_layers;
+    let hybrid = !fully_gpu;
+    let needed = vram_for_ngl(model_size_gb, meta, total_layers, selected_ngl, selected_ctx);
+
+    let message = if fully_gpu && !uses_shared_memory {
+        format!("GPU (Dedicated VRAM) — all {}/{} layers offloaded to {}. Context: {}.", total_layers, total_layers, hw.gpu_name, selected_ctx)
+    } else if fully_gpu && uses_shared_memory {
+        format!("GPU (Shared GPU Memory: {}MB VRAM + shared system memory) — all {}/{} layers offloaded to {}. Context: {}.", dedicated_avail, total_layers, total_layers, hw.gpu_name, selected_ctx)
+    } else {
+        format!("Hybrid — {}/{} layers on GPU ({}MB VRAM/shared) and {} layers in system RAM. Context: {}.", selected_ngl, total_layers, needed.min(total_gpu_budget), total_layers.saturating_sub(selected_ngl), selected_ctx)
+    };
+
+    let cpu_threads = if hybrid {
+        hw.cpu_physical_cores.max(1)
+    } else {
+        hw.cpu_physical_cores.min(4).max(1)
+    };
+
     info!(
-        "[NglScheduler] Direct Dedicated GPU execution: model={:.1}GB ctx={} ngl=999 layers={}",
-        model_size_gb, actual_ctx_size, total_layers
+        "[NglScheduler] model={:.1}GB ctx={} ngl={}/{} needed={}MB (dedicated={}MB, shared={}MB, uses_shared={})",
+        model_size_gb, selected_ctx, selected_ngl, total_layers, needed, dedicated_avail, shared_avail, uses_shared_memory
     );
+
     Ok(NglDecision {
-        ngl: 999,
-        fully_gpu: true,
-        hybrid: false,
-        estimated_vram_mb: 1600,
-        message: format!("✅ 100% Dedicated GPU — {}/{} layers on GPU VRAM. Context: {}.", total_layers, total_layers, actual_ctx_size),
-        recommended_cpu_threads: 2,
-        effective_context_size: actual_ctx_size,
+        ngl: selected_ngl,
+        fully_gpu,
+        hybrid,
+        estimated_vram_mb: needed,
+        message,
+        recommended_cpu_threads: cpu_threads,
+        effective_context_size: selected_ctx,
+        uses_shared_memory,
     })
 }
 
@@ -404,40 +472,60 @@ pub fn compute_gpu_inference_config(
     draft_model_path: Option<PathBuf>,
     _is_auto_ctx: bool,
 ) -> Result<HybridInferenceConfig, String> {
-    let ubatch_size = 512;
-    let batch_size = 2048;
-    let kv_cache_type = "q4_0".to_string();
-
     let ngl_decision = compute_ngl_decision(hw, meta, model_size_gb, ctx_size)?;
     let total_layers = estimate_total_layers(meta, model_size_gb);
 
-    // In GPU-only mode, InferenceMode is always FullGpu.
-    let mode = InferenceMode::FullGpu;
+    let mode = if ngl_decision.hybrid { InferenceMode::Hybrid } else { InferenceMode::FullGpu };
 
-    // Threading Strategy for GPU-Only Mode:
-    // GPU handles all transformer decode. CPU is idle during generation.
-    // Minimal CPU threads (1–2) for dispatching CUDA kernels to avoid CPU thread spinning.
-    let threads_gen = hw.cpu_physical_cores.min(2).max(1);
+    let total_gpu_budget = if hw.has_dedicated_gpu {
+        hw.dedicated_vram_available_mb.saturating_add(hw.shared_gpu_memory_mb)
+    } else {
+        hw.vram_available_mb.max(hw.shared_gpu_memory_mb)
+    };
+    let memory_headroom_mb = total_gpu_budget.saturating_sub(ngl_decision.estimated_vram_mb);
+    let kv_cache_type = if memory_headroom_mb >= 2048 && !ngl_decision.uses_shared_memory {
+        "q8_0".to_string()
+    } else {
+        "q4_0".to_string()
+    };
 
-    // Prefill (batch): Cap to physical cores (max 4) to prevent CPU thread thrashing.
+    let (batch_size, ubatch_size) = if ngl_decision.uses_shared_memory {
+        (1024u32, 256u32)
+    } else if ngl_decision.effective_context_size <= 4096 {
+        (1024u32, 512u32)
+    } else {
+        (2048u32, 512u32)
+    };
+
+    let threads_gen = if ngl_decision.hybrid {
+        hw.cpu_physical_cores.max(1)
+    } else {
+        hw.cpu_physical_cores.min(2).max(1)
+    };
+
     let threads_batch = hw.cpu_physical_cores.min(4).max(1);
 
     let extra_args: Vec<String> = Vec::new();
     let disable_kv_offload = false;
-    // Enable mmap so llama-server-cuda streams tensors directly to GPU VRAM with ~50MB private host RAM instead of allocating a 2.5GB private heap buffer.
     let use_mmap = true;
 
-
     let message = format!(
-        "✅ GPU-only — {}/{} layers | KV: {} | ubatch {} | Profile: {:?} | is_npu: {} | is_igpu: {}",
-        total_layers, total_layers, kv_cache_type, ubatch_size, hw.profile,
-        hw.gpu_backend == GpuBackend::Npu, hw.is_igpu
+        "{} — {}/{} layers | KV: {} | ubatch {} | Shared GPU Mem: {} | Profile: {:?} | is_igpu: {}",
+        if ngl_decision.hybrid { "Hybrid" } else { "GPU-only" },
+        ngl_decision.ngl,
+        total_layers,
+        kv_cache_type,
+        ubatch_size,
+        ngl_decision.uses_shared_memory,
+        hw.profile,
+        hw.is_igpu
     );
 
     info!("[GpuScheduler] {}", message);
 
     Ok(HybridInferenceConfig {
         ngl: ngl_decision.ngl,
+        uses_shared_memory: ngl_decision.uses_shared_memory,
         threads_gen,
         threads_batch,
         batch_size,
@@ -453,6 +541,48 @@ pub fn compute_gpu_inference_config(
         effective_context_size: ngl_decision.effective_context_size,
         draft_model_path,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::llm::local::hardware::{GpuBackend, HardwareSnapshot};
+
+    fn hardware(dedicated_mb: u64, shared_mb: u64) -> HardwareSnapshot {
+        let mut hw = HardwareSnapshot::default();
+        hw.gpu_backend = GpuBackend::Cuda;
+        hw.has_dedicated_gpu = dedicated_mb > 0;
+        hw.vram_available_mb = dedicated_mb;
+        hw.dedicated_vram_available_mb = dedicated_mb;
+        hw.shared_gpu_memory_mb = shared_mb;
+        hw.cpu_physical_cores = 8;
+        hw
+    }
+
+    #[test]
+    fn uses_partial_offload_when_model_exceeds_device_budget() {
+        let decision = compute_ngl_decision(&hardware(4096, 0), None, 8.0, 8192).unwrap();
+        assert!(decision.hybrid);
+        assert!(decision.ngl > 0);
+        assert!(decision.ngl < estimate_total_layers(None, 8.0));
+        assert!(decision.estimated_vram_mb <= 4096);
+    }
+
+    #[test]
+    fn uses_shared_memory_as_fallback_budget() {
+        let decision = compute_ngl_decision(&hardware(4096, 6144), None, 8.0, 8192).unwrap();
+        assert!(decision.fully_gpu);
+        assert!(decision.uses_shared_memory);
+        assert_eq!(decision.ngl, estimate_total_layers(None, 8.0));
+    }
+
+    #[test]
+    fn keeps_full_gpu_for_models_that_fit() {
+        let decision = compute_ngl_decision(&hardware(16384, 0), None, 8.0, 8192).unwrap();
+        assert!(decision.fully_gpu);
+        assert!(!decision.hybrid);
+        assert!(!decision.uses_shared_memory);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ export const OPENROUTER_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: true,
+      toolCalling: true,
     },
     supportsThinking: true,
     features: [
@@ -54,6 +55,7 @@ export const OPENROUTER_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: true,
+      toolCalling: true,
     },
     supportsThinking: true,
     features: [
@@ -84,6 +86,7 @@ export const OPENROUTER_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -114,6 +117,7 @@ export const OPENROUTER_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -144,6 +148,7 @@ export const OPENROUTER_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -174,6 +179,7 @@ export const OPENROUTER_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -204,6 +210,7 @@ export const OPENROUTER_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -234,6 +241,7 @@ export const OPENROUTER_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -264,6 +272,7 @@ export const OPENROUTER_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -294,6 +303,7 @@ export const OPENROUTER_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -324,6 +334,7 @@ export const OPENROUTER_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [

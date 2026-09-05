@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ModelOption, AISettings, Provider } from '@nyx/shared/types';
-import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { useNyxStore } from './useNyxStore';
 
 interface AppState {
   apiKeys: Record<Provider, string>;

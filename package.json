@@ -21,7 +21,7 @@
     "prepare": "husky",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --config apps/web/playwright.config.ts",
     "coverage": "vitest run --coverage"
   },
   "devDependencies": {

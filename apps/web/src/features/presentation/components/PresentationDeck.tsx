@@ -5,7 +5,6 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
-import pptxgen from 'pptxgenjs';
 import { toast } from 'sonner';
 import {
   ChevronLeft,

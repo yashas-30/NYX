@@ -23,35 +23,6 @@ export const CLOUD_PROVIDERS: string[] = [
 
 export const LOCAL_PROVIDERS: string[] = ['nyx-native'];
 
-const LOCAL_MODEL_IDS = new Set([
-  'gemma-2-2b-it',
-  'gemma-2-9b-it',
-  'gemma-3-4b-it',
-  'gemma-3-12b-it',
-  'llama-3.2-1b-native',
-  'llama-3.2-3b-native',
-  'llama-3-8b-instruct',
-  'llama-3.1-8b-native',
-  'codellama-7b-instruct',
-  'codellama-13b-instruct',
-  'phi-3-mini-instruct',
-  'phi-4-mini-instruct',
-  'phi-4-instruct',
-  'qwen2.5-1.5b-instruct',
-  'qwen2.5-coder-1.5b-native',
-  'qwen2.5-coder-3b-native',
-  'qwen2.5-coder-7b-native',
-  'qwen2.5-coder-14b-native',
-  'qwen2.5-7b-native',
-  'qwen3-8b-native',
-  'deepseek-r1-distill-qwen-1.5b',
-  'deepseek-r1-distill-qwen-7b',
-  'deepseek-r1-distill-qwen-14b',
-  'deepseek-r1-distill-llama-8b',
-  'mistral-7b-v0.3',
-  'openchat-3.5-7b',
-]);
-
 /**
  * Structured provider detection that checks in priority order.
  */
@@ -65,12 +36,7 @@ export const detectProvider = (modelId: string): Provider => {
     return 'openai';
   if (modelId.startsWith('claude-')) return 'anthropic';
 
-  // 1. Check in local GGUF model presets first
-  if (LOCAL_MODEL_IDS.has(modelId)) {
-    return 'nyx-native';
-  }
-
-  // 2. Check in static AVAILABLE_MODELS presets
+  // 1. Check in static AVAILABLE_MODELS presets
   const availableModel = AVAILABLE_MODELS.find((m) => m.id === modelId);
   if (availableModel) return availableModel.provider;
 
@@ -112,12 +78,7 @@ export const getProviderForModel = (modelId: string): Provider => {
     return 'openai';
   if (modelId.startsWith('claude-')) return 'anthropic';
 
-  // 1. Check in local GGUF model presets first
-  if (LOCAL_MODEL_IDS.has(modelId)) {
-    return 'nyx-native';
-  }
-
-  // 2. Check in static AVAILABLE_MODELS presets
+  // 1. Check in static AVAILABLE_MODELS presets
   const availableModel = AVAILABLE_MODELS.find((m) => m.id === modelId);
   if (availableModel) return availableModel.provider;
 
@@ -204,65 +165,37 @@ export const getModelCapabilities = (modelId: string): ModelCapabilities => {
   const cleanId = (modelId || '').trim();
   const lowerId = cleanId.toLowerCase();
 
-  const found = AVAILABLE_MODELS.find(
-    (m) =>
-      m.id === cleanId ||
-      m.id.toLowerCase() === lowerId ||
-      m.id.endsWith(`/${cleanId}`) ||
-      cleanId.endsWith(`/${m.id}`)
-  );
+  // Exact match first, then fuzzy prefix/suffix for version aliases not yet in catalog
+  const found =
+    AVAILABLE_MODELS.find(
+      (m) =>
+        m.id === cleanId ||
+        m.id.toLowerCase() === lowerId ||
+        m.id.endsWith(`/${cleanId}`) ||
+        cleanId.endsWith(`/${m.id}`)
+    ) ||
+    AVAILABLE_MODELS.find(
+      (m) => lowerId.startsWith(m.id.toLowerCase()) || m.id.toLowerCase().startsWith(lowerId)
+    );
 
   const caps: ModelCapabilities = {
+    // All capabilities strictly from the catalog. If a model isn't in the catalog, return false.
     supportsVision: found?.capabilities?.vision !== undefined ? !!found.capabilities.vision : false,
     supportsStreaming: true,
-    supportsTools: false,
+    supportsTools:
+      found?.capabilities?.toolCalling !== undefined ? !!found.capabilities.toolCalling : false,
     supportsSystemPrompt: true,
     supportsReasoning:
       found?.capabilities?.reasoning !== undefined ? !!found.capabilities.reasoning : false,
     contextWindow: 8192,
   };
 
-  if (found) {
-    if (found.specs?.contextWindow) {
-      const match = found.specs.contextWindow.match(/^([\d,]+)/);
-      if (match) {
-        const num = parseInt(match[1].replace(/,/g, ''), 10);
-        if (!isNaN(num) && num > 0) caps.contextWindow = num;
-      }
+  if (found?.specs?.contextWindow) {
+    const match = found.specs.contextWindow.match(/^([\d,]+)/);
+    if (match) {
+      const num = parseInt(match[1].replace(/,/g, ''), 10);
+      if (!isNaN(num) && num > 0) caps.contextWindow = num;
     }
-  }
-
-  if (
-    lowerId.includes('gemini-3.7-flash') ||
-    lowerId.includes('deepseek-r1') ||
-    lowerId.includes('claude-3.7') ||
-    lowerId.includes('qwq') ||
-    lowerId.includes('nemotron-3-ultra') ||
-    lowerId.includes('nemotron-3-super')
-  ) {
-    caps.supportsReasoning = true;
-  }
-
-  if (lowerId.includes('gemini')) {
-    caps.supportsVision = true;
-    caps.supportsTools = true;
-    caps.contextWindow = 1048576;
-  } else if (lowerId.includes('gemma-4')) {
-    caps.supportsVision = true;
-    caps.supportsTools = true;
-    caps.contextWindow = 262144;
-  } else if (lowerId.includes('llama-3.2')) {
-    caps.supportsVision = lowerId.includes('vision');
-    caps.supportsTools = true;
-    caps.contextWindow = 128000;
-  } else if (
-    lowerId.includes('pixtral') ||
-    lowerId.includes('vl') ||
-    lowerId.includes('vision') ||
-    lowerId.includes('claude') ||
-    lowerId.includes('gpt-4o')
-  ) {
-    caps.supportsVision = true;
   }
 
   return caps;

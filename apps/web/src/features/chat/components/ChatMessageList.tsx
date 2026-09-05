@@ -46,7 +46,7 @@ import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
-import { CodeBlock } from '../../../components/chat/CodeBlock';
+import { CodeBlock } from './CodeBlock';
 import {
   getDomainFaviconUrl,
   getEmojiForTopic,
@@ -150,6 +150,119 @@ export {
   distributeMediaIntoMarkdown,
 };
 
+export function extractArtifactTitle(code: string, language: string, userPrompt?: string): string {
+  const lang = (language || '').toLowerCase().trim();
+
+  // 1. Try extracting explicit HTML/SVG <title>
+  if (['html', 'htm', 'xhtml', 'svg', 'xml'].includes(lang) || /<html\b|<svg\b/i.test(code)) {
+    const titleMatch = /<title[^>]*>([^<]+)<\/title>/i.exec(code);
+    if (titleMatch && titleMatch[1]) {
+      const cleanTitle = titleMatch[1]
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&#39;/g, "'")
+        .replace(/&quot;/g, '"')
+        .trim();
+      const genericNames = [
+        'document',
+        'vite app',
+        'react app',
+        'untitled',
+        'new tab',
+        'home',
+        'index',
+        'my app',
+        'web application',
+      ];
+      if (
+        cleanTitle.length >= 2 &&
+        cleanTitle.length <= 40 &&
+        !genericNames.includes(cleanTitle.toLowerCase())
+      ) {
+        return cleanTitle;
+      }
+    }
+  }
+
+  // 2. Try extracting from Slidev frontmatter
+  if (lang === 'slidev' || lang === 'presentation' || lang === 'slides') {
+    const fmMatch = /^---\s*\n[\s\S]*?title:\s*["']?([^"'\n\r]+)["']?/m.exec(code);
+    if (fmMatch && fmMatch[1]?.trim()) {
+      return fmMatch[1].trim();
+    }
+  }
+
+  // 3. Try extracting from userPrompt
+  if (userPrompt && typeof userPrompt === 'string') {
+    let p = userPrompt.trim();
+    p = p.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+    let candidate = '';
+
+    // Check for "code/app/query for <target>"
+    const forMatch =
+      /(?:code|script|app(?:lication)?|query|program|component|implementation)\s+for\s+(?:an?|the)?\s*([^.,\n\r!?:;]+)/i.exec(
+        p
+      );
+    if (forMatch && forMatch[1]) {
+      candidate = forMatch[1].trim();
+    } else {
+      // Check for "create/write/build <target>"
+      const directMatch =
+        /(?:write|create|build|make|generate|code|design|implement|develop|give\s+me|show\s+me)\s+(?:an?|the|some)?\s*(?:simple|interactive|modern|responsive|minimalist|clean|full|complete)?\s*(?:html|css|js|javascript|typescript|ts|python|py|react|web\s+app(?:lication)?|page|script|program)?\s*([^.,\n\r!?:;]+)/i.exec(
+          p
+        );
+      if (directMatch && directMatch[1]) {
+        candidate = directMatch[1].trim();
+      }
+    }
+
+    if (candidate) {
+      // Strip trailing qualifiers like "in html", "using react", "with sound effects", "please"
+      candidate = candidate
+        .replace(/\s+(?:using|in|with|written\s+in)\s+.*$/i, '')
+        .replace(/\s+please$/i, '')
+        .trim();
+
+      // Strip leading articles/fillers
+      candidate = candidate.replace(/^(?:an?|the)\s+/i, '').trim();
+
+      if (candidate.length >= 2 && candidate.length <= 40) {
+        return candidate
+          .split(/\s+/)
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
+      }
+    }
+  }
+
+  // 4. Try first line code comment (e.g. // Calculator or # Snake Game)
+  const firstLine = code.split('\n')[0]?.trim() || '';
+  const commentMatch = /^(?:\/\/|#|\/\*)\s*([^*/\n\r]{2,35})(?:\*\/)?$/i.exec(firstLine);
+  if (commentMatch && commentMatch[1]) {
+    const cTitle = commentMatch[1].trim();
+    if (
+      cTitle.length >= 3 &&
+      !/^(use\s+strict|pragma|import|from|require|eslint|ts-check)/i.test(cTitle)
+    ) {
+      return cTitle;
+    }
+  }
+
+  // 5. Clean, intelligent fallback (domain-agnostic, never raw generic "Web Application")
+  if (['html', 'htm', 'xhtml'].includes(lang)) return 'HTML Application';
+  if (['jsx', 'tsx', 'react'].includes(lang)) return 'React Component';
+  if (['python', 'py'].includes(lang)) return 'Python Script';
+  if (['javascript', 'js', 'typescript', 'ts'].includes(lang)) return 'JavaScript Program';
+  if (lang === 'mermaid') return 'Architecture Diagram';
+  if (['slidev', 'presentation', 'slides'].includes(lang)) return 'Presentation Deck';
+  if (lang === 'svg') return 'Vector Graphic';
+  if (lang === 'sql') return 'Database Query';
+  if (['bash', 'sh', 'shell', 'zsh'].includes(lang)) return 'Shell Script';
+  return 'Code Block';
+}
+
 const MemoizedMarkdownBlock: React.FC<{
   content: string;
   isStreaming?: boolean;
@@ -161,9 +274,12 @@ const MemoizedMarkdownBlock: React.FC<{
     title: string;
     content: string;
     language?: string;
+    isStreaming?: boolean;
   }) => void;
+  messageId?: string;
+  userPrompt?: string;
 }> = memo(
-  ({ content, isStreaming, citations, onOpenLightbox, onArtifactClick }) => {
+  ({ content, isStreaming, citations, onOpenLightbox, onArtifactClick, messageId, userPrompt }) => {
     // useSmoothTypewriter drives the RAF-paced reveal — no useDeferredValue on top (double-buffer overhead)
     const smoothContent = useSmoothTypewriter(content, isStreaming || false);
 
@@ -354,22 +470,9 @@ const MemoizedMarkdownBlock: React.FC<{
               );
             }
 
-            let title = 'Code Artifact';
-            if (['html', 'htm', 'xhtml'].includes(lang)) title = 'Web Application';
-            else if (['jsx', 'tsx', 'react'].includes(lang)) title = 'React Component';
-            else if (['python', 'py'].includes(lang)) title = 'Python Script';
-            else if (['javascript', 'js', 'typescript', 'ts'].includes(lang))
-              title = 'JavaScript Program';
-            else if (lang === 'mermaid') title = 'Architecture Diagram';
-            else if (lang === 'slidev' || lang === 'presentation') title = 'Presentation Deck';
-            else if (lang === 'svg') title = 'Vector Graphic';
-
+            const artTitle = extractArtifactTitle(rawCode, lang, userPrompt);
             const lineCount = rawCode.split('\n').length;
-            const artifactHash = Array.from(rawCode.slice(0, 40)).reduce(
-              (acc, c) => (acc * 31 + c.charCodeAt(0)) >>> 0,
-              0
-            );
-            const artifactId = `artifact-${lang}-${rawCode.length}-${artifactHash}`;
+            const artifactId = messageId ? `artifact-${messageId}` : `artifact-${lang}-block`;
 
             return (
               <div
@@ -380,14 +483,15 @@ const MemoizedMarkdownBlock: React.FC<{
                     id: artifactId,
                     type: ['html', 'htm', 'jsx', 'tsx', 'react'].includes(lang)
                       ? 'app'
-                      : lang === 'slidev'
+                      : lang === 'slidev' || lang === 'presentation'
                         ? 'presentation'
                         : lang === 'mermaid'
                           ? 'diagram'
                           : 'code',
-                    title,
+                    title: artTitle,
                     content: rawCode,
                     language: lang,
+                    isStreaming,
                   });
                 }}
                 className="flex items-center justify-between p-3.5 my-3 bg-[#0d0d0f] hover:bg-[#141417] border border-white/10 hover:border-white/20 rounded-xl transition-all group cursor-pointer select-none shadow-sm"
@@ -398,20 +502,18 @@ const MemoizedMarkdownBlock: React.FC<{
                   </div>
                   <div className="min-w-0">
                     <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
-                      <span className="truncate">{title}</span>
+                      <span className="truncate">{artTitle}</span>
                       <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-zinc-400 uppercase shrink-0">
                         {lang}
                       </span>
                     </div>
                     <p className="text-[11px] text-zinc-400 font-mono mt-0.5 truncate">
-                      {isStreaming
-                        ? 'Streaming live in Right Studio...'
-                        : `${lineCount} lines • View in Studio`}
+                      {lineCount} lines • {lang.toUpperCase()}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 group-hover:bg-white/10 border border-white/10 text-zinc-300 group-hover:text-white text-xs font-medium transition-colors shrink-0 ml-3">
-                  <span>Open in Studio</span>
+                  <span>Code Block</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                 </div>
               </div>
@@ -673,7 +775,11 @@ export const MarkdownContent: React.FC<{
     title: string;
     content: string;
     language?: string;
+    isStreaming?: boolean;
   }) => void;
+  messageId?: string;
+  userPrompt?: string;
+  hasSupersededArtifact?: boolean;
 }> = memo(
   ({
     content,
@@ -685,49 +791,166 @@ export const MarkdownContent: React.FC<{
     audios,
     onOpenLightbox,
     onArtifactClick,
+    messageId,
+    userPrompt,
+    hasSupersededArtifact,
   }) => {
     // Hide raw XML artifact tags from being rendered in text bubble
     const cleanText = (text: string) => {
       return text.replace(/<nyx_artifact[\s\S]*?(?:<\/nyx_artifact>|$)/g, '');
     };
 
-    const cleanedContent = cleanText(content);
-
-    // During streaming: skip distributeMediaIntoMarkdown to prevent layout jumping
-    // as headings arrive incrementally. Apply media distribution only once stream completes.
-    const blocksToRender = useMemo(() => {
+    const rawCombined = useMemo(() => {
       if (blocks?.length) {
-        const combined = blocks.map((b) => cleanText(b)).join('\n\n');
-        if (isStreaming) return [combined];
-        return [distributeMediaIntoMarkdown(combined, images, videos, audios)];
+        return blocks.map((b) => cleanText(b)).join('\n\n');
       }
-      if (isStreaming) return [cleanedContent];
-      return [distributeMediaIntoMarkdown(cleanedContent, images, videos, audios)];
-    }, [blocks, cleanedContent, images, videos, audios, isStreaming]);
+      return cleanText(content);
+    }, [blocks, content]);
+
+    // Extract artifact code blocks so conversational response text is ABOVE
+    // and the artifact card box is rendered AT THE BOTTOM of the message.
+    const { textContent, extractedArtifacts } = useMemo(() => {
+      const artifacts: Array<{
+        id: string;
+        type: string;
+        title: string;
+        content: string;
+        language: string;
+        lineCount: number;
+      }> = [];
+
+      const nonArtifactLangs = ['markdown', 'md', 'text', 'txt', 'table'];
+
+      // Regex to match code fences:
+      // Matches ```lang\ncode\n``` OR open fence ```lang\ncode at end of string (streaming)
+      const FENCE_REGEX = /(?:^|\n)```([a-zA-Z0-9_-]*)[ \t]*\r?\n([\s\S]*?)(?:\n```|$)/g;
+
+      const strippedText = rawCombined.replace(FENCE_REGEX, (match, rawLang, rawCode) => {
+        const lang = (rawLang || 'html').toLowerCase().trim();
+        const code = (rawCode || '').trim();
+
+        // Keep markdown/text fences inline
+        if (nonArtifactLangs.includes(lang)) {
+          return match;
+        }
+
+        // Keep short terminal commands (<= 2 lines) inline
+        const isShortCommand =
+          ['bash', 'sh', 'shell', 'cmd', 'powershell', 'zsh', 'terminal'].includes(lang) &&
+          code.split('\n').length <= 2;
+        if (isShortCommand) {
+          return match;
+        }
+
+        // Don't extract empty code
+        if (!code) {
+          return '';
+        }
+
+        const artTitle = extractArtifactTitle(code, lang, userPrompt);
+        const artId = messageId ? `artifact-${messageId}` : `artifact-${lang}-block`;
+        const lineCount = code.split('\n').length;
+
+        artifacts.push({
+          id: artId,
+          type: ['html', 'htm', 'jsx', 'tsx', 'react'].includes(lang)
+            ? 'app'
+            : lang === 'slidev' || lang === 'presentation'
+              ? 'presentation'
+              : lang === 'mermaid'
+                ? 'diagram'
+                : 'code',
+          title: artTitle,
+          content: code,
+          language: lang,
+          lineCount,
+        });
+
+        // Replace the fence with spacing so adjacent text flows naturally
+        return '\n\n';
+      });
+
+      return {
+        textContent: strippedText.trim(),
+        extractedArtifacts: artifacts,
+      };
+    }, [rawCombined, userPrompt, messageId]);
+
+    // Distribute media only after streaming completes
+    const contentToRender = useMemo(() => {
+      if (isStreaming || (!images?.length && !videos?.length && !audios?.length)) {
+        return textContent;
+      }
+      return distributeMediaIntoMarkdown(textContent, images, videos, audios);
+    }, [textContent, images, videos, audios, isStreaming]);
 
     return (
       <div className="prose-nyx w-full">
-        {blocksToRender.map((block, idx) => {
-          const isLastBlock = idx === blocksToRender.length - 1;
-          return (
-            <MemoizedMarkdownBlock
-              key={idx}
-              content={block}
-              isStreaming={isStreaming && isLastBlock}
-              citations={citations}
-              onOpenLightbox={onOpenLightbox}
-              onArtifactClick={onArtifactClick}
-            />
-          );
-        })}
+        {/* Conversational response rendered ABOVE */}
+        {contentToRender.length > 0 && (
+          <MemoizedMarkdownBlock
+            content={contentToRender}
+            isStreaming={isStreaming}
+            citations={citations}
+            onOpenLightbox={onOpenLightbox}
+            onArtifactClick={onArtifactClick}
+            messageId={messageId}
+            userPrompt={userPrompt}
+          />
+        )}
         {isStreaming && <StreamingCursor />}
+
+        {/* Code Block Box rendered AT THE BOTTOM (superseded when newer response has updated code) */}
+        {!hasSupersededArtifact &&
+          extractedArtifacts.map((art) => (
+            <div
+              key={art.id}
+              role="button"
+              tabIndex={0}
+              onClick={() =>
+                onArtifactClick?.({
+                  id: art.id,
+                  type: art.type,
+                  title: art.title,
+                  content: art.content,
+                  language: art.language,
+                  isStreaming,
+                })
+              }
+              className="flex items-center justify-between p-3.5 my-3 bg-[#0d0d0f] hover:bg-[#141417] border border-white/10 hover:border-white/20 rounded-xl transition-all group cursor-pointer select-none shadow-sm"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-zinc-300 group-hover:text-white shrink-0">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                    <span className="truncate">{art.title}</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-zinc-400 uppercase shrink-0">
+                      {art.language}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 font-mono mt-0.5 truncate">
+                    {art.lineCount} lines • {art.language.toUpperCase()}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 group-hover:bg-white/10 border border-white/10 text-zinc-300 group-hover:text-white text-xs font-medium transition-colors shrink-0 ml-3">
+                <span>Code Block</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </div>
+            </div>
+          ))}
       </div>
     );
   },
   (prevProps, nextProps) => {
     if (prevProps.content !== nextProps.content) return false;
     if (prevProps.isStreaming !== nextProps.isStreaming) return false;
+    if (prevProps.hasSupersededArtifact !== nextProps.hasSupersededArtifact) return false;
     if (prevProps.blocks?.length !== nextProps.blocks?.length) return false;
+    if (prevProps.messageId !== nextProps.messageId) return false;
+    if (prevProps.userPrompt !== nextProps.userPrompt) return false;
     if ((prevProps.citations?.length || 0) !== (nextProps.citations?.length || 0)) return false;
     if ((prevProps.images?.length || 0) !== (nextProps.images?.length || 0)) return false;
     if ((prevProps.videos?.length || 0) !== (nextProps.videos?.length || 0)) return false;
@@ -1353,6 +1576,41 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = memo(
       return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
+    // Determine the index of the latest assistant message containing an artifact/code block.
+    // When a newer response provides an updated artifact, older code blocks are superseded so
+    // that the previous response retains its conversational explanations while the code block
+    // card is attached exclusively to the latest response.
+    const latestArtifactMessageIndex = useMemo(() => {
+      const nonArtifactLangs = ['markdown', 'md', 'text', 'txt', 'table'];
+      const fenceRegex = /(?:^|\n)```([a-zA-Z0-9_-]*)[ \t]*\r?\n([\s\S]*?)(?:\n```|$)/g;
+
+      for (let i = allMessages.length - 1; i >= 0; i--) {
+        const msg = allMessages[i];
+        if (msg.role !== 'assistant') continue;
+        const text = typeof msg.content === 'string' ? msg.content : '';
+        fenceRegex.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        let hasArtifact = false;
+        while ((match = fenceRegex.exec(text)) !== null) {
+          const lang = (match[1] || 'html').toLowerCase().trim();
+          const code = (match[2] || '').trim();
+          if (!nonArtifactLangs.includes(lang) && code.length > 0) {
+            const isShortCmd =
+              ['bash', 'sh', 'shell', 'cmd', 'powershell', 'zsh', 'terminal'].includes(lang) &&
+              code.split('\n').length <= 2;
+            if (!isShortCmd) {
+              hasArtifact = true;
+              break;
+            }
+          }
+        }
+        if (hasArtifact) {
+          return i;
+        }
+      }
+      return -1;
+    }, [allMessages]);
+
     return (
       <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden w-full bg-background">
         <div
@@ -1386,12 +1644,14 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = memo(
               style={{ overflowAnchor: 'none' }}
               onScroll={handleScroll}
             >
-              <div className="flex flex-col gap-4 py-4 px-3 md:px-4 w-full max-w-3xl mx-auto">
+              <div className="flex flex-col gap-4 pt-14 pb-4 px-3 md:px-4 w-full max-w-3xl mx-auto">
                 {allMessages.map((msg, index) => {
                   const isLast = index === allMessages.length - 1;
                   const isStreaming = isLast && (activeStreamMessage ? true : isLoading);
                   const msgKey =
                     msg.id || (msg.timestamp ? `${msg.timestamp}-${index}` : `msg-${index}`);
+                  const hasSupersededArtifact =
+                    latestArtifactMessageIndex !== -1 && index < latestArtifactMessageIndex;
 
                   return (
                     <div key={msgKey} className="w-full">
@@ -1401,6 +1661,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = memo(
                         index={index}
                         isLast={isLast}
                         isStreaming={isStreaming}
+                        hasSupersededArtifact={hasSupersededArtifact}
                         onCopy={onCopy}
                         copiedId={copiedId}
                         submitReward={submitReward}

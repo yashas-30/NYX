@@ -10,6 +10,7 @@ import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 import ChatView from '@src/views/ChatView';
 import ModelRegistryView from '@src/views/ModelRegistryView';
 import SettingsView from '@src/views/SettingsView';
+import OpenCodeView from '@src/views/OpenCodeView';
 
 export interface ModelSettings {
   temperature?: number;
@@ -125,6 +126,10 @@ export function AppRouter({
         />
       </KeepAlive>
 
+      <KeepAlive active={activeMode === 'opencode'} name="OpenCodePage">
+        <OpenCodeView />
+      </KeepAlive>
+
       <KeepAlive active={activeMode === 'settings'} name="SettingsPage">
         <SettingsView
           apiKeys={apiKeys}
@@ -140,7 +145,7 @@ export function AppRouter({
         <Route
           path="*"
           element={
-            !['chat', 'registry', 'settings'].includes(activeMode) ? (
+            !['chat', 'opencode', 'registry', 'settings'].includes(activeMode) ? (
               <Navigate to="/" replace />
             ) : null
           }

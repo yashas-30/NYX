@@ -22,14 +22,8 @@ static GEMINI_CLIENT: LazyLock<Client> = LazyLock::new(|| build_fast_http_client
 /// Normalizes model ID aliases for Gemini API
 pub fn normalize_gemini_model(raw: &str) -> &str {
     let trimmed = raw.trim();
-    let stripped = trimmed.strip_prefix("models/").unwrap_or(trimmed);
-    match stripped {
-        "gemini-3.5-flash" => "gemini-3.5-flash-preview",
-        "gemini-3.5-flash-lite" => "gemini-3.5-flash-lite-preview",
-        "gemini-3.1-flash-lite" => "gemini-3.1-flash-lite-preview",
-        "gemini-3.7-flash" => "gemini-3.7-flash-preview",
-        other => other,
-    }
+    // Strip the "models/" prefix if present — the API endpoint already includes the path
+    trimmed.strip_prefix("models/").unwrap_or(trimmed)
 }
 
 /// Cleans OpenAPI JSON schemas into Gemini's expected subset
@@ -85,7 +79,11 @@ fn sanitize_gemini_turns(messages: Vec<UnifiedMessage>) -> Vec<UnifiedMessage> {
 
 /// Builds request payload, headers, and URL for Gemini API
 pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap), String> {
-    let max_tokens = req.max_tokens.unwrap_or(MAX_TOKENS_DEFAULT);
+    let model_id_lower = req.model_id.to_lowercase();
+    let is_gemini_3 = model_id_lower.contains("gemini-3") || model_id_lower.contains("3.");
+    let is_gemini_2_5 = model_id_lower.contains("gemini-2.5") || model_id_lower.contains("2.5");
+    let default_max = if is_gemini_3 || is_gemini_2_5 { 65536 } else { MAX_TOKENS_DEFAULT };
+    let max_tokens = req.max_tokens.unwrap_or(default_max).max(if is_gemini_3 || is_gemini_2_5 { 32768 } else { 8192 });
     let budgeted = budget_messages(&req.messages, GEMINI_CONTEXT_BUDGET_CHARS);
     let sanitized_history = sanitize_gemini_turns(budgeted);
 
@@ -134,7 +132,7 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
             }
 
             return json!({
-                "role": "function",
+                "role": "user",
                 "parts": func_parts
             });
         }
@@ -229,31 +227,52 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
         generation_config["topK"] = json!(top_k);
     }
 
-    let model_id = req.model_id.as_str();
+    let model_id = normalize_gemini_model(req.model_id.as_str());
     let is_gemini_thinking_requested = req.reasoning_enabled == Some(true);
     let is_gemini_thinking_disabled = req.reasoning_enabled == Some(false);
 
     if !is_gemma {
-        if is_gemini_thinking_disabled {
-            // Explicitly turned OFF: set thinking budget to 0 to disable thinking tokens and optimize latency
-            generation_config["thinkingConfig"] = json!({
-                "thinkingBudget": 0
-            });
+        let is_gemini_3 = model_id.contains("gemini-3") || model_id.contains("3.");
+
+        if is_gemini_thinking_disabled || req.thinking_level.as_deref() == Some("off") {
+            // Explicitly turned OFF: set lowest thinking intensity or disable
+            if is_gemini_3 {
+                generation_config["thinkingConfig"] = json!({
+                    "thinkingLevel": "low"
+                });
+            } else {
+                generation_config["thinkingConfig"] = json!({
+                    "thinkingBudget": 0
+                });
+            }
         } else if is_gemini_thinking_requested || req.reasoning_enabled.is_none() {
-            // Thinking ON: apply selected thinking level budget (0 disables, -1 unconstrained, or explicit limit)
-            let budget: i64 = match req.thinking_level.as_deref() {
-                Some("low") => 1024,
-                Some("medium") => 8192,
-                Some("max") | Some("high") => -1,
-                Some("minimal") => 512,
-                _ => -1, // dynamic unconstrained adaptive budget
-            };
-            generation_config["thinkingConfig"] = json!({
-                "thinkingBudget": budget
-            });
+            // Thinking ON: includeThoughts MUST be true for Google AI Studio API to stream thoughts
+            if is_gemini_3 {
+                let level = match req.thinking_level.as_deref() {
+                    Some("low") => "low",
+                    Some("medium") => "medium",
+                    Some("high") | Some("max") => "high",
+                    _ => "medium",
+                };
+                generation_config["thinkingConfig"] = json!({
+                    "thinkingLevel": level,
+                    "includeThoughts": true
+                });
+            } else {
+                let budget = match req.thinking_level.as_deref() {
+                    Some("low") => 1024,
+                    Some("medium") => 8192,
+                    Some("high") | Some("max") => 24576,
+                    Some("minimal") => 512,
+                    _ => 8192,
+                };
+                generation_config["thinkingConfig"] = json!({
+                    "thinkingBudget": budget,
+                    "includeThoughts": true
+                });
+            }
         }
     }
-
 
     let mut body = json!({
         "contents": contents,
@@ -288,9 +307,13 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
             if let Some(tool_arr) = tools.as_array() {
                 let decls: Vec<Value> = tool_arr.iter()
                     .filter_map(|t| {
-                        let mut func = t.get("function")?.clone();
-                        clean_gemini_schema(&mut func);
-                        Some(func)
+                        let mut func = t.get("function").cloned().unwrap_or_else(|| t.clone());
+                        if func.get("name").is_some() {
+                            clean_gemini_schema(&mut func);
+                            Some(func)
+                        } else {
+                            None
+                        }
                     })
                     .collect();
                 if !decls.is_empty() {
@@ -449,12 +472,20 @@ pub fn parse_sse_event(data: &str) -> Vec<StreamChunkPayload> {
 
         if let Some(parts) = cand.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
             for part in parts {
-                let is_thought = part.get("thought").and_then(|t| t.as_bool()).unwrap_or(false)
-                    || part.get("type").and_then(|t| t.as_str()) == Some("thought");
-                if is_thought {
+                let is_thought_flag = part.get("thought").and_then(|t| t.as_bool()).unwrap_or(false);
+                let is_thought_type = part.get("type").and_then(|t| t.as_str()) == Some("thought")
+                    || part.get("type").and_then(|t| t.as_str()) == Some("thought_summary");
+                let thought_str_field = part.get("thought").and_then(|t| t.as_str())
+                    .or_else(|| part.get("thought_summary").and_then(|t| t.as_str()));
+
+                if is_thought_flag || is_thought_type {
                     if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
                         events.push(StreamChunkPayload::thinking(text.to_string()));
+                    } else if let Some(text) = thought_str_field {
+                        events.push(StreamChunkPayload::thinking(text.to_string()));
                     }
+                } else if let Some(text) = thought_str_field {
+                    events.push(StreamChunkPayload::thinking(text.to_string()));
                 } else if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
                     events.push(StreamChunkPayload::text(text.to_string()));
                 }
@@ -476,6 +507,21 @@ pub fn parse_sse_event(data: &str) -> Vec<StreamChunkPayload> {
                     events.push(StreamChunkPayload::tool_args(args.to_string()));
                     events.push(StreamChunkPayload::tool_complete());
                 }
+            }
+        }
+
+        if let Some(finish_reason) = cand.get("finishReason").and_then(|f| f.as_str()) {
+            match finish_reason {
+                "MAX_TOKENS" => {
+                    events.push(StreamChunkPayload::text("\n\n*(Generation stopped: maximum token limit reached)*".to_string()));
+                }
+                "SAFETY" => {
+                    events.push(StreamChunkPayload::text("\n\n*(Generation stopped: safety filter triggered)*".to_string()));
+                }
+                "RECITATION" => {
+                    events.push(StreamChunkPayload::text("\n\n*(Generation stopped: recitation filter triggered)*".to_string()));
+                }
+                _ => {}
             }
         }
     }
@@ -506,13 +552,14 @@ pub async fn execute_stream(
     let (url, body, headers) = build_request(req)?;
 
     let mut attempts = 0;
-    let max_attempts = 4;
+    let max_attempts = 2;
+    let mut current_url = url.clone();
     let mut current_body = body.clone();
     let mut final_response = None;
 
     while attempts < max_attempts {
         attempts += 1;
-        let resp_res = GEMINI_CLIENT.post(&url)
+        let resp_res = GEMINI_CLIENT.post(&current_url)
             .headers(headers.clone())
             .json(&current_body)
             .send()
@@ -538,7 +585,15 @@ pub async fn execute_stream(
                     continue;
                 }
 
-                // 2. Recover on 429 (Resource Exhausted) or 503 (Model Overloaded / High Demand)
+                // 2. Seamless fallback if gemini-3.8-flash is not yet deployed or in high-load in this region
+                if (status.as_u16() == 404 || status.as_u16() == 503 || body_text.contains("NOT_FOUND") || body_text.contains("not found"))
+                    && current_url.contains("gemini-3.8-flash")
+                {
+                    current_url = current_url.replace("gemini-3.8-flash", "gemini-3.7-flash");
+                    continue;
+                }
+
+                // 3. Transient rate-limit / overload recovery (short backoff)
                 let is_transient_overload = status.as_u16() == 429
                     || status.as_u16() == 503
                     || body_text.contains("UNAVAILABLE")
@@ -546,42 +601,32 @@ pub async fn execute_stream(
                     || body_text.contains("RESOURCE_EXHAUSTED");
 
                 if is_transient_overload && attempts < max_attempts {
-                    let mut delay_secs = attempts as u64;
-                    if let Ok(err_json) = serde_json::from_str::<Value>(&body_text) {
-                        if let Some(details) = err_json.get("error").and_then(|e| e.get("details")).and_then(|d| d.as_array()) {
-                            for d in details {
-                                if let Some(delay_str) = d.get("retryDelay").and_then(|r| r.as_str()) {
-                                    if let Some(num_str) = delay_str.strip_suffix('s') {
-                                        if let Ok(s) = num_str.parse::<u64>() {
-                                            delay_secs = s.min(4);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    tokio::time::sleep(tokio::time::Duration::from_secs(delay_secs.max(1))).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
                     continue;
                 }
 
-                // Friendly diagnostic formatting
-                if status.as_u16() == 429 || body_text.contains("RESOURCE_EXHAUSTED") {
-                    let mut detail_msg = String::new();
-                    if let Ok(err_json) = serde_json::from_str::<Value>(&body_text) {
-                        if let Some(msg) = err_json.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()) {
-                            detail_msg = format!(" ({})", msg);
-                        }
+                // Detailed diagnostic formatting
+                let mut detail_msg = String::new();
+                if let Ok(err_json) = serde_json::from_str::<Value>(&body_text) {
+                    if let Some(msg) = err_json.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()) {
+                        detail_msg = format!(": {}", msg);
                     }
-                    return Err(format!("Google Gemini rate limit or quota reached on {}{}. Please wait a few seconds or switch to another Gemini model.", req.model_id, detail_msg));
+                }
+                if detail_msg.is_empty() && !body_text.is_empty() {
+                    detail_msg = format!(": {}", body_text);
+                }
+
+                if status.as_u16() == 429 || body_text.contains("RESOURCE_EXHAUSTED") {
+                    return Err(format!("Google Gemini rate limit reached on {}{}. Please wait a few seconds.", req.model_id, detail_msg));
                 } else if status.as_u16() == 503 || body_text.contains("UNAVAILABLE") || body_text.contains("overloaded") {
-                    return Err("Google Gemini servers are currently in high demand for this preview model. Please retry in a few moments or switch to Gemini 3.5 Flash.".to_string());
+                    return Err(format!("Google Gemini server temporarily unavailable on {}{}.", req.model_id, detail_msg));
                 } else {
-                    return Err(format!("Google Gemini request failed ({}): {}", status, body_text));
+                    return Err(format!("Google Gemini request failed ({}){}", status, detail_msg));
                 }
             }
             Err(e) => {
                 if attempts < max_attempts {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempts as u64)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     continue;
                 }
                 return Err(format!("Network connection to Google Gemini failed: {}", e));
@@ -661,9 +706,10 @@ pub async fn execute_stream(
     Ok(rx)
 }
 
-/// Checks API key validity for Gemini with 5-minute in-memory caching
+/// Checks API key validity for Gemini with 60-second in-memory caching
 pub async fn check_quota(api_key: Option<String>) -> Result<QuotaResponse, String> {
     let key = api_key.unwrap_or_default();
+    let key = key.trim().to_string();
     if let Some(err) = validate_key_format("gemini", &key) {
         return Ok(QuotaResponse {
             status: "invalid".to_string(),
@@ -676,7 +722,7 @@ pub async fn check_quota(api_key: Option<String>) -> Result<QuotaResponse, Strin
     let cache_key = format!("gemini:{}", key);
     if let Ok(cache) = KEY_VALIDATION_CACHE.lock() {
         if let Some((valid, timestamp)) = cache.get(&cache_key) {
-            // Reduced from 300s → 60s so transient "invalid" entries self-heal quickly
+            // Reduced to 60s so transient "invalid" entries self-heal quickly
             if timestamp.elapsed() < std::time::Duration::from_secs(60) {
                 return Ok(QuotaResponse {
                     status: if *valid { "ok".into() } else { "invalid".into() },
@@ -690,12 +736,12 @@ pub async fn check_quota(api_key: Option<String>) -> Result<QuotaResponse, Strin
 
     let url = format!("https://generativelanguage.googleapis.com/v1beta/models?key={}", key);
     let resp = GEMINI_CLIENT.get(&url).send().await;
-    // A 429 (RESOURCE_EXHAUSTED) on the models-list endpoint means the key IS valid
-    // but the validation call itself was rate-limited. Never cache a 429 as invalid.
+    // Status 200 (OK), 429 (Resource exhausted), 403 (GCP permission restriction on models.list)
+    // or 400 confirm the key reached Google API and is authenticated.
     let valid = resp.map(|r| {
         let s = r.status();
-        s.is_success() || s.as_u16() == 429
-    }).unwrap_or(false);
+        s.is_success() || s.as_u16() == 429 || s.as_u16() == 403 || s.as_u16() == 400
+    }).unwrap_or(true);
 
     if let Ok(mut cache) = KEY_VALIDATION_CACHE.lock() {
         cache.insert(cache_key, (valid, std::time::Instant::now()));

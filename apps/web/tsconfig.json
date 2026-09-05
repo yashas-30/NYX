@@ -11,6 +11,7 @@
       "@shared/*": ["./src/shared/*"],
       "@features/*": ["./src/features/*"],
       "@core/*": ["./src/core/*"],
+      "@stores/*": ["./src/stores/*"],
       "@assets/*": ["./src/assets/*"]
     }
   },

@@ -18,6 +18,12 @@ import {
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { useAppStore } from '@src/stores/useAppStore';
 import { getEffectiveApiKey } from '@src/infrastructure/utils/provider';
+import {
+  SubagentConfig,
+  CapabilitiesConfig,
+  UsageMetadata,
+  resolveSystemInstructions,
+} from './antigravity/types';
 
 // ── Types & Interfaces ────────────────────────────────────────────────────────
 
@@ -66,9 +72,12 @@ export interface AntigravityRunOptions {
   enableMedia?: boolean;
   enableSlidev?: boolean;
   enableDiagrams?: boolean;
+  subagents?: SubagentConfig[];
+  enableSubagents?: boolean;
+  capabilities?: CapabilitiesConfig;
   onDelta?: (deltaText: string) => void;
   onReasoning?: (reasoningText: string) => void;
-  onUsage?: (usage: any) => void;
+  onUsage?: (usage: UsageMetadata) => void;
   onStep?: (step: AntigravityStep) => void;
   customFunctionHandler?: (name: string, args: any) => Promise<any>;
 }
@@ -84,6 +93,7 @@ export interface AntigravityRunResult {
   steps: AntigravityStep[];
   status: 'completed' | 'error' | 'interrupted';
   totalTokens?: number;
+  usageMetadata?: UsageMetadata;
 }
 
 export interface AntigravityPlanOptions {
@@ -166,8 +176,12 @@ export class AntigravityAgentService {
     }
 
     // 3. Autonomous Coding Check (< 0.001ms)
+    // Require: (a) prompt has at least 5 words AND (b) contains a clear technical coding action verb
+    // This prevents short ambiguous prompts like "fix this" or conversational words from mis-firing
+    const wordCount = rawPrompt.trim().split(/\s+/).length;
     if (
-      /\b(?:code|refactor|function|bug|fix|implement|debug|algorithm|unit\s*test|class|struct|typescript|rust|python|component)\b/i.test(
+      wordCount >= 3 &&
+      /\b(?:(?:write|want|need|give\s+me|generate)\s+(?:a\s+|some\s+)?code|code\s+(?:for|an?|to)|implement\s+(?:a|an|the)?|refactor|debug\s+(?:this|the)|fix\s+(?:the\s+)?(?:bug|error|issue|code|function)|create\s+(?:a\s+)?(?:function|class|component|module|api|endpoint|script|hook|service|test|app|application|game|page|dashboard)|build\s+(?:a\s+)?(?:function|class|api|endpoint|module|service|app|application|game|page|dashboard)|add\s+(?:a\s+)?(?:function|method|feature|route|handler|test)|unit\s*test|integration\s*test|typescript|rust|python|javascript|sql|regex|dockerfile|react\s+component|next\.?js|tailwind|prisma|drizzle)\b/i.test(
         rawPrompt
       )
     ) {
@@ -337,6 +351,16 @@ export class AntigravityAgentService {
     // Step 1: Memory & Workspace Context Assembly
     let systemContext =
       options.systemInstruction || 'You are NYX, an advanced autonomous engineering intelligence.';
+
+    if (options.subagents && options.subagents.length > 0) {
+      const subagentList = options.subagents
+        .map((s) => `- ${s.name}: ${s.description || 'Specialized child subagent'}`)
+        .join('\n');
+      systemContext += `\n\n[Available Subagents]:\nYou can delegate specialized subtasks to child subagents using the 'start_subagent' tool (pass 'subagent_name' and 'task'):\n${subagentList}`;
+    } else if (options.enableSubagents || options.capabilities?.enable_subagents) {
+      systemContext += `\n\n[Subagents Enabled]:\nYou can spawn dynamic child subagents to execute isolated tasks or parallel work using the 'start_subagent' tool.`;
+    }
+
     if (options.enableMemory !== false) {
       try {
         const workspaceContext = JSON.stringify(await WorkspaceIntelligence.getProfile());
@@ -347,6 +371,8 @@ export class AntigravityAgentService {
         // Workspace read fallback
       }
     }
+
+    let capturedUsage: UsageMetadata | undefined = undefined;
 
     // Step 2: Autonomous ReAct Tool & Generation Loop
     const messages: Array<{ role: string; content: any }> = options.history
@@ -363,25 +389,69 @@ export class AntigravityAgentService {
       let iterationReasoning = '';
       const emittedToolCalls: Array<{ id: string; name: string; args: any }> = [];
 
+      let pendingToolName: string | undefined = undefined;
+      let pendingToolId: string | undefined = undefined;
+      let pendingToolArgs = '';
+
       const onProgress = new Channel<any>();
       onProgress.onmessage = (msg: any) => {
         if (!msg) return;
 
-        if (msg.event === 'reasoning_delta' || msg.event === 'thinking_delta') {
-          const delta = msg.data?.delta || msg.data?.text || '';
+        const evType = msg.type || msg.event_type || msg.event;
+        if (evType === 'thinking' || evType === 'reasoning_delta' || evType === 'thinking_delta') {
+          const delta = msg.content || msg.data?.delta || msg.data?.text || '';
           if (delta) {
             iterationReasoning += delta;
             accumulatedReasoning += delta;
             if (options.onReasoning) options.onReasoning(accumulatedReasoning);
           }
-        } else if (msg.event === 'text_delta' || msg.event === 'delta') {
-          const delta = msg.data?.delta || msg.data?.text || '';
+        } else if (evType === 'text' || evType === 'text_delta' || evType === 'delta') {
+          const delta = msg.content || msg.data?.delta || msg.data?.text || '';
           if (delta) {
             iterationText += delta;
             accumulatedText += delta;
             if (options.onDelta) options.onDelta(accumulatedText);
           }
-        } else if (msg.event === 'tool_call' || msg.event === 'tool_calls') {
+        } else if (evType === 'usage' || evType === 'usage_metadata') {
+          const u = msg.data || msg.usage || msg;
+          capturedUsage = {
+            total_token_count: u.total_token_count || u.total_tokens || u.totalTokens,
+            prompt_token_count: u.prompt_token_count || u.prompt_tokens || u.promptTokens,
+            candidates_token_count:
+              u.candidates_token_count || u.completion_tokens || u.completionTokens,
+          };
+          if (options.onUsage && capturedUsage) options.onUsage(capturedUsage);
+        } else if (evType === 'tool_start') {
+          pendingToolName = msg.name;
+          pendingToolId = msg.tool_call?.id || `call_${Date.now()}_${msg.name}`;
+          pendingToolArgs = '';
+        } else if (
+          evType === 'tool_call' &&
+          (msg.content !== undefined || typeof msg.data === 'string')
+        ) {
+          pendingToolArgs += msg.content || msg.data || '';
+        } else if (evType === 'tool_call_complete') {
+          if (pendingToolName) {
+            let parsedArgs: Record<string, any> = {};
+            try {
+              parsedArgs = JSON.parse(pendingToolArgs || '{}');
+            } catch {
+              parsedArgs = {};
+            }
+            emittedToolCalls.push({
+              id: pendingToolId || `call_${Date.now()}_${pendingToolName}`,
+              name: pendingToolName,
+              args: parsedArgs,
+            });
+          }
+          pendingToolName = undefined;
+          pendingToolId = undefined;
+          pendingToolArgs = '';
+        } else if (
+          msg.event === 'tool_call' ||
+          msg.event === 'tool_calls' ||
+          evType === 'tool_call'
+        ) {
           const calls = Array.isArray(msg.data) ? msg.data : [msg.data];
           for (const call of calls) {
             if (call && call.name) {
@@ -398,6 +468,37 @@ export class AntigravityAgentService {
         }
       };
 
+      let availableTools = TOOL_REGISTRY;
+      if (options.capabilities) {
+        const caps = options.capabilities;
+        if (caps.read_only) {
+          availableTools = availableTools.filter(
+            (t) =>
+              !['write_file', 'edit_file', 'create_file', 'run_terminal', 'run_command'].includes(
+                t.name
+              )
+          );
+        }
+        if (caps.enable_subagents === false && !options.subagents?.length) {
+          availableTools = availableTools.filter((t) => t.name !== 'start_subagent');
+        }
+        if (caps.enabled_tools && caps.enabled_tools.length > 0) {
+          availableTools = availableTools.filter((t) => caps.enabled_tools!.includes(t.name));
+        }
+        if (caps.disabled_tools && caps.disabled_tools.length > 0) {
+          availableTools = availableTools.filter((t) => !caps.disabled_tools!.includes(t.name));
+        }
+      }
+
+      const formattedTools = availableTools.map((t) => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        },
+      }));
+
       const isPresentation = isPresentationPrompt(options.prompt);
       const sharedReq: any = {
         provider,
@@ -412,7 +513,7 @@ export class AntigravityAgentService {
         max_tokens: isPresentation ? 16384 : 8192,
         reasoning_enabled: storeApp.reasoningEnabled !== false,
         thinking_level: (storeApp as any).geminiThinkingLevel || 'high',
-        tools: TOOL_REGISTRY,
+        tools: formattedTools,
         web_search_enabled: true,
       };
 
@@ -447,6 +548,19 @@ export class AntigravityAgentService {
         };
       }
 
+      // Check if unfinalized pending tool exists at end of stream
+      if (pendingToolName && !emittedToolCalls.some((c) => c.name === pendingToolName)) {
+        let parsedArgs: Record<string, any> = {};
+        try {
+          parsedArgs = JSON.parse(pendingToolArgs || '{}');
+        } catch {}
+        emittedToolCalls.push({
+          id: pendingToolId || `call_${Date.now()}_${pendingToolName}`,
+          name: pendingToolName,
+          args: parsedArgs,
+        });
+      }
+
       // Record iteration thought step
       if (iterationReasoning) {
         steps.push({
@@ -465,12 +579,72 @@ export class AntigravityAgentService {
 
       // Check if tools need to be executed
       if (emittedToolCalls.length > 0) {
-        messages.push({ role: 'assistant', content: iterationText || 'Executing tools...' });
+        // Append assistant tool-call turn with proper tool_call schema
+        messages.push({
+          role: 'assistant',
+          content: [
+            ...(iterationText ? [{ type: 'text', text: iterationText }] : []),
+            ...emittedToolCalls.map((c) => ({
+              type: 'tool_call',
+              id: c.id,
+              function: {
+                name: c.name,
+                arguments: typeof c.args === 'string' ? c.args : JSON.stringify(c.args),
+              },
+            })),
+          ],
+        });
 
         for (const call of emittedToolCalls) {
           let toolResultText = '';
           try {
-            if (options.customFunctionHandler) {
+            if (call.name === 'start_subagent') {
+              const targetSubName = (call.args.subagent_name || call.args.name || '').toLowerCase();
+              const matchedConfig = options.subagents?.find(
+                (s) => s.name.toLowerCase() === targetSubName
+              );
+
+              const taskPrompt = call.args.task || call.args.prompt || '';
+              const taskContext = call.args.context || '';
+              const subagentPrompt = taskContext
+                ? `Context:\n${taskContext}\n\nTask:\n${taskPrompt}`
+                : taskPrompt;
+
+              const subInstructions = matchedConfig
+                ? resolveSystemInstructions(matchedConfig.system_instructions)
+                : `You are an autonomous subagent working on a delegated task for the parent agent.\nFocus entirely on the task and return a complete, accurate response.`;
+
+              const subResult = await this.runAgentLoop({
+                provider,
+                model,
+                apiKey,
+                prompt: subagentPrompt,
+                systemInstruction: subInstructions,
+                maxIterations: 5,
+                enableSubagents: false,
+                onStep: (childStep) => {
+                  if (options.onStep) {
+                    options.onStep({
+                      iteration,
+                      thought:
+                        `[Subagent: ${matchedConfig?.name || 'dynamic'} Step ${childStep.iteration}] ${childStep.thought || ''}`.trim(),
+                      tool_name: childStep.tool_name,
+                      tool_args: childStep.tool_args,
+                      tool_result: childStep.tool_result,
+                      is_finished: false,
+                    });
+                  }
+                },
+              });
+
+              toolResultText = JSON.stringify({
+                subagent: matchedConfig?.name || 'dynamic_clone',
+                status: subResult.status,
+                output: subResult.outputText,
+                reasoning: subResult.reasoning,
+                steps_count: subResult.steps.length,
+              });
+            } else if (options.customFunctionHandler) {
               const res = await options.customFunctionHandler(call.name, call.args);
               toolResultText = typeof res === 'string' ? res : JSON.stringify(res);
             } else {
@@ -513,7 +687,13 @@ export class AntigravityAgentService {
 
           messages.push({
             role: 'tool',
-            content: [{ name: call.name, content: toolResultText }],
+            content: [
+              {
+                tool_call_id: call.id,
+                name: call.name,
+                content: toolResultText,
+              },
+            ],
           });
         }
       } else {
@@ -551,6 +731,7 @@ export class AntigravityAgentService {
       diagrams: diagrams.length > 0 ? diagrams : undefined,
       steps,
       status: 'completed',
+      usageMetadata: capturedUsage,
     };
   }
 

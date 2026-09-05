@@ -1,37 +1,27 @@
 /**
  * chatPrompts.ts
  *
- * Master prompt orchestrator and dynamic category router.
- * Dispatches to specialized prompt builders for:
- * - Slidev Presentations (presentationPrompt.ts)
- * - Grounded Web Search (websearchPrompt.ts)
- * - Deep Technical Research (researchPrompt.ts)
- * - Mermaid Architecture Diagrams (diagramPrompt.ts)
- * - Code Engineering & Refactoring (codePrompt.ts)
- * - General Claude 3H Intelligence (generalPrompt.ts)
+ * Master prompt builder for the unified Antigravity Agent.
+ * Generates the unified Antigravity System Prompt for all model providers
+ * (Gemini, Claude, GPT, Groq, Mistral, NVIDIA NIM, Ollama, Local Llama, etc.).
  */
 
 import type { ChatMessage } from '@src/infrastructure/types';
 import {
   ChatContext,
   ChatPromptBuildResult,
-  PromptCategory,
   estimatePromptTokens,
   ToolDefinition,
   UserPreferences,
-  SafetyLevel,
 } from './types';
 import { detectPromptCategory, detectSafetyLevel } from './classifier';
+import { buildAntigravityMasterPrompt } from './antigravityMasterPrompt';
 import { buildPresentationPrompt } from './presentationPrompt';
-import { buildWebSearchPrompt } from './websearchPrompt';
-import { buildResearchPrompt } from './researchPrompt';
-import { buildDiagramPrompt } from './diagramPrompt';
-import { buildCodePrompt } from './codePrompt';
-import { buildGeneralPrompt } from './generalPrompt';
 
-// Re-export all types, classifiers, and builders for backwards compatibility
+// Re-export all types, builders, and utilities
 export * from './types';
 export * from './classifier';
+export * from './antigravityMasterPrompt';
 export * from './presentationPrompt';
 export * from './websearchPrompt';
 export * from './researchPrompt';
@@ -80,7 +70,7 @@ export function buildChatPrompts(
   modelId: string,
   context: ChatContext,
   rawPrompt: string,
-  _history: ChatMessage[],
+  history: ChatMessage[],
   webSearchResults?: string,
   provider?: string,
   mediaContext?: string,
@@ -90,35 +80,39 @@ export function buildChatPrompts(
   const contextBreakdown: Record<string, number> = {};
   const isoDateStr = now.toISOString().slice(0, 10);
 
-  // Detect category
-  const category = detectPromptCategory(rawPrompt, context, webSearchResults);
+  const category = detectPromptCategory(rawPrompt, context, webSearchResults, history);
 
-  // Dispatch to the specialized system prompt builder
+  const hasPreviousCode = !!history?.some(
+    (m) =>
+      m.role === 'assistant' &&
+      typeof m.content === 'string' &&
+      /(?:^|\n)```[a-zA-Z0-9_-]*\r?\n[\s\S]*?(?:\n```|$)/.test(m.content)
+  );
+
+  const isFixOrModification =
+    hasPreviousCode &&
+    (/^(?:fix|change|update|edit|modify|add|remove|patch|repair|solve|improve|enhance|redo)\b/i.test(
+      rawPrompt.trim()
+    ) ||
+      /\b(?:previous|existing)\s+(?:code|response|app|file|function)\b/i.test(rawPrompt) ||
+      /\b(?:in|to)\s+(?:the|this|previous)\s+code\b/i.test(rawPrompt) ||
+      /\b(?:error|bug|issue|broken|doesn't work|crash|failed)\b/i.test(rawPrompt));
+
+  const codeModificationContext =
+    isFixOrModification && category === 'code'
+      ? `[Instruction: The user is requesting fixes or modifications to the code from the previous assistant response. Edit and update that existing codebase directly, preserving all existing features, UI elements, logic, and styling, and provide the complete updated code block.]`
+      : undefined;
+
+  // System prompt: presentation uses the specialized slide-count-aware builder;
+  // all other categories use the unified intent-aware master prompt.
   let systemPrompt: string;
   if (context.customSystemPrompt?.trim()) {
     systemPrompt = `${context.customSystemPrompt.trim()}\n\nToday is ${isoDateStr}.`;
+  } else if (category === 'presentation') {
+    systemPrompt = buildPresentationPrompt(context, isoDateStr, rawPrompt, modelId, provider);
   } else {
-    switch (category) {
-      case 'presentation':
-        systemPrompt = buildPresentationPrompt(context, isoDateStr, rawPrompt, modelId, provider);
-        break;
-      case 'websearch':
-        systemPrompt = buildWebSearchPrompt(context, isoDateStr, rawPrompt, modelId, provider);
-        break;
-      case 'research':
-        systemPrompt = buildResearchPrompt(context, isoDateStr, rawPrompt, modelId, provider);
-        break;
-      case 'diagram':
-        systemPrompt = buildDiagramPrompt(context, isoDateStr, rawPrompt, modelId, provider);
-        break;
-      case 'code':
-        systemPrompt = buildCodePrompt(context, isoDateStr, rawPrompt, modelId, provider);
-        break;
-      case 'general':
-      default:
-        systemPrompt = buildGeneralPrompt(context, isoDateStr, rawPrompt, modelId, provider);
-        break;
-    }
+    // Pass detected category so the prompt injects the correct focused mode directive
+    systemPrompt = buildAntigravityMasterPrompt(context, isoDateStr, modelId, provider, category);
   }
 
   // Inject user preferences block if defined
@@ -152,7 +146,8 @@ export function buildChatPrompts(
     webSearchResults,
     mediaContext,
     memoryContext,
-    isLocal
+    isLocal,
+    codeModificationContext
   );
   contextBreakdown.user = estimatePromptTokens(userPrompt);
 
@@ -160,7 +155,7 @@ export function buildChatPrompts(
     systemPrompt,
     userPrompt,
     metadata: {
-      version: '7.2.0',
+      version: '8.0.0',
       category,
       estimatedTokens: Object.values(contextBreakdown).reduce((a, b) => a + b, 0),
       contextBreakdown,
@@ -180,15 +175,20 @@ function buildUserPrompt(
   webSearchResults?: string,
   mediaContext?: string,
   memoryContext?: string,
-  _isLocalModel?: boolean
+  _isLocalModel?: boolean,
+  codeModificationContext?: string
 ): string {
   const trimmed = (rawPrompt || '').trim();
 
-  if (!webSearchResults && !mediaContext && !memoryContext) {
+  if (!webSearchResults && !mediaContext && !memoryContext && !codeModificationContext) {
     return trimmed;
   }
 
   const blocks: string[] = [];
+
+  if (codeModificationContext?.trim()) {
+    blocks.push(codeModificationContext.trim());
+  }
 
   if (memoryContext?.trim()) {
     blocks.push(`[Relevant Memory Context]\n${memoryContext.trim()}`);

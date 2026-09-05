@@ -73,11 +73,12 @@ export class LocalConnection implements Connection {
     onProgress.onmessage = (msg: any) => {
       if (!msg) return;
 
-      if (msg.event === 'reasoning_delta' || msg.event === 'thinking_delta') {
-        const delta = msg.data?.delta || msg.data?.text || '';
+      const evType = msg.type || msg.event_type || msg.event;
+      if (evType === 'thinking' || evType === 'reasoning_delta' || evType === 'thinking_delta') {
+        const delta = msg.content || msg.data?.delta || msg.data?.text || '';
         if (delta && callbacks.onThought) callbacks.onThought(delta);
-      } else if (msg.event === 'text_delta' || msg.event === 'delta') {
-        const delta = msg.data?.delta || msg.data?.text || '';
+      } else if (evType === 'text' || evType === 'text_delta' || evType === 'delta') {
+        const delta = msg.content || msg.data?.delta || msg.data?.text || '';
         if (delta && callbacks.onToken) callbacks.onToken(delta);
       } else if (msg.event === 'tool_call' || msg.event === 'tool_calls') {
         const calls = Array.isArray(msg.data) ? msg.data : [msg.data];

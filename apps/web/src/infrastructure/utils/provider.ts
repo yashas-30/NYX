@@ -28,35 +28,6 @@ export const CLOUD_PROVIDERS: string[] = [
 
 export const LOCAL_PROVIDERS: string[] = ['nyx-native'];
 
-const LOCAL_MODEL_IDS = new Set([
-  'gemma-2-2b-it',
-  'gemma-2-9b-it',
-  'gemma-3-4b-it',
-  'gemma-3-12b-it',
-  'llama-3.2-1b-native',
-  'llama-3.2-3b-native',
-  'llama-3-8b-instruct',
-  'llama-3.1-8b-native',
-  'codellama-7b-instruct',
-  'codellama-13b-instruct',
-  'phi-3-mini-instruct',
-  'phi-4-mini-instruct',
-  'phi-4-instruct',
-  'qwen2.5-1.5b-instruct',
-  'qwen2.5-coder-1.5b-native',
-  'qwen2.5-coder-3b-native',
-  'qwen2.5-coder-7b-native',
-  'qwen2.5-coder-14b-native',
-  'qwen2.5-7b-native',
-  'qwen3-8b-native',
-  'deepseek-r1-distill-qwen-1.5b',
-  'deepseek-r1-distill-qwen-7b',
-  'deepseek-r1-distill-qwen-14b',
-  'deepseek-r1-distill-llama-8b',
-  'mistral-7b-v0.3',
-  'openchat-3.5-7b',
-]);
-
 /**
 /**
  * Helper to safely extract string ID from model parameters (handles strings, objects, nulls)
@@ -128,10 +99,6 @@ export const detectProvider = (modelId: any, providerHint?: string): Provider =>
     lowerId.includes('\\unorganized\\') ||
     lowerId.includes('prism-')
   ) {
-    return 'nyx-native' as Provider;
-  }
-
-  if (LOCAL_MODEL_IDS.has(idStr)) {
     return 'nyx-native' as Provider;
   }
 
@@ -332,12 +299,27 @@ export const getModelCapabilities = (modelId: any): ModelCapabilities => {
   const idStr = resolveModelIdString(modelId);
   const lowerId = idStr.toLowerCase();
 
-  const availableModel = AVAILABLE_MODELS.find((m) => m.id === idStr);
+  // Catalog is the single source of truth. Fuzzy-match to handle version aliases
+  // (e.g. "gemini-2.5-flash-latest" not yet in the catalog).
+  const availableModel =
+    AVAILABLE_MODELS.find((m) => m.id === idStr) ||
+    AVAILABLE_MODELS.find((m) => m.id.toLowerCase() === lowerId) ||
+    AVAILABLE_MODELS.find(
+      (m) => lowerId.startsWith(m.id.toLowerCase()) || m.id.toLowerCase().startsWith(lowerId)
+    );
+
+  // Whether this model ID is explicitly catalogued
+  const inCatalog = !!availableModel;
+
+  // ── Reasoning ────────────────────────────────────────────────────────────────
+  // Prefer catalog. Fall back to isReasoningModel only for uncatalogued IDs.
   const isReasoning =
     availableModel?.capabilities?.reasoning !== undefined
       ? !!availableModel.capabilities.reasoning
       : isReasoningModel(idStr);
 
+  // ── Vision ───────────────────────────────────────────────────────────────────
+  // Prefer catalog. Fall back to name patterns only for uncatalogued IDs.
   const isVision =
     availableModel?.capabilities?.vision !== undefined
       ? !!availableModel.capabilities.vision
@@ -350,14 +332,16 @@ export const getModelCapabilities = (modelId: any): ModelCapabilities => {
         lowerId.includes('idefics') ||
         lowerId.includes('deepseek-vl') ||
         lowerId.includes('internvl') ||
-        lowerId.includes('moondream') ||
-        lowerId.includes('gemini');
+        lowerId.includes('moondream');
+  // Note: 'gemini' is NOT in the vision fallback list — all Gemini models are
+  // catalogued with explicit vision flags.
 
   const isGemini = lowerId.includes('gemini') || lowerId.includes('gemma');
   const isGemma = lowerId.includes('gemma');
   const isImageGen =
     lowerId.includes('imagen') || lowerId.includes('flux') || lowerId.includes('diffusion');
   const isGeminiFlash = lowerId.includes('gemini') && !isGemma && !isImageGen;
+
   const isStandardToolModel =
     isGemini ||
     lowerId.includes('gpt-4') ||
@@ -369,33 +353,76 @@ export const getModelCapabilities = (modelId: any): ModelCapabilities => {
     lowerId.includes('qwen-2.5') ||
     lowerId.includes('groq/');
 
-  const caps: ModelCapabilities = {
-    supportsVision: isVision || isGemini,
-    supportsStreaming: true,
-    supportsTools: (isStandardToolModel || isGemini) && !isImageGen,
-    supportsSystemPrompt: true,
-    supportsReasoning: isReasoning || isGemini,
-    contextWindow: isGemini ? (isGemma ? 262144 : 1048576) : 32768,
-    maxOutputTokens: isGemini ? (isGemma ? 32768 : 65536) : 8192,
-    supportsAudio: isGeminiFlash,
+  const parseTokenCount = (val?: string, fallback: number = 8192): number => {
+    if (!val) return fallback;
+    const cleaned = val.replace(/,/g, '');
+    const match = cleaned.match(/\b(\d+)\b/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > 0) return num;
+    }
+    return fallback;
   };
 
+  // Context window: catalog → provider-based fallback (only for unknown aliases)
+  const modelCtx = availableModel?.specs?.contextWindow
+    ? parseTokenCount(availableModel.specs.contextWindow, 131072)
+    : isGemini
+      ? isGemma
+        ? 262144
+        : 1048576
+      : 131072;
+
+  // Max output: catalog → provider-based fallback
+  const modelMaxOut = availableModel?.specs?.maxOutput
+    ? parseTokenCount(availableModel.specs.maxOutput, 8192)
+    : isGemini
+      ? isGemma
+        ? 32768
+        : 65536
+      : 8192;
+
+  // Tool calling: catalog → provider-based fallback
+  const supportsTools =
+    availableModel?.capabilities?.toolCalling !== undefined
+      ? !!availableModel.capabilities.toolCalling
+      : (availableModel?.capabilities as any)?.tools !== undefined
+        ? !!(availableModel?.capabilities as any).tools
+        : (isStandardToolModel || isGemini) && !isImageGen;
+
+  const caps: ModelCapabilities = {
+    supportsVision: isVision,
+    supportsStreaming: true,
+    supportsTools,
+    supportsSystemPrompt: true,
+    supportsReasoning: isReasoning,
+    contextWindow: modelCtx,
+    maxOutputTokens: modelMaxOut,
+    supportsAudio:
+      availableModel?.capabilities?.audio !== undefined
+        ? !!availableModel.capabilities.audio
+        : isGeminiFlash && !inCatalog,
+  };
+
+  // Apply latency class hints (catalog doesn't express latency, so always apply).
+  // Context / output / tool overrides only apply to UNCATALOGUED model aliases so
+  // we don't stomp on what the catalog deliberately specifies.
   if (isGeminiFlash) {
-    caps.supportsTools = true;
-    caps.contextWindow = 1048576; // 1,048,576 tokens (1M)
-    caps.maxOutputTokens = 65536; // 65,536 tokens (64K)
     caps.supportsAudio = true;
-    if (lowerId.includes('lite')) {
-      caps.latencyClass = 'ultra-fast';
-    } else {
-      caps.latencyClass = 'fast';
+    caps.latencyClass = lowerId.includes('lite') ? 'ultra-fast' : 'fast';
+    if (!inCatalog) {
+      caps.supportsTools = true;
+      caps.contextWindow = 1048576;
+      caps.maxOutputTokens = 65536;
     }
   } else if (isGemma) {
-    caps.supportsTools = true;
-    caps.contextWindow = 262144; // 262,144 tokens (262K)
-    caps.maxOutputTokens = 32768; // 32,768 tokens (32K)
     caps.supportsAudio = false;
     caps.latencyClass = lowerId.includes('moe') || lowerId.includes('a4b') ? 'ultra-fast' : 'fast';
+    if (!inCatalog) {
+      caps.supportsTools = true;
+      caps.contextWindow = 262144;
+      caps.maxOutputTokens = 32768;
+    }
   }
 
   return caps;
@@ -591,28 +618,7 @@ export const isReasoningModel = (modelId: any): boolean => {
     // Ignore outside Zustand
   }
 
-  // 3. Precise pattern checks for reasoning models
-  return (
-    /\b(?:deepseek-r1|deepseek-reasoner|qwq|sky-t1|o1|o3|o1-mini|o1-preview|o3-mini|claude-3\.7|claude-3-7)\b/i.test(
-      lower
-    ) ||
-    /[-_/](?:r1|qwq|reasoner|thinking|reasoning)(?:[-_/\.]|$)/i.test(lower) ||
-    lower.includes('deepseek-r1') ||
-    lower.includes('flash-thinking') ||
-    lower.includes('pro-thinking') ||
-    lower.includes('-thinking') ||
-    lower.includes('-reasoning') ||
-    lower.includes('r1-distill') ||
-    lower.includes('qwq-') ||
-    lower.includes('qwen-qwq') ||
-    lower.startsWith('gemini') ||
-    lower.startsWith('gemma') ||
-    lower.includes('gemini-') ||
-    lower.includes('gemma-') ||
-    lower.includes('gemini') ||
-    lower.includes('gemma') ||
-    lower.includes('nemotron-3-ultra') ||
-    lower.includes('nemotron-3-super') ||
-    lower.includes('nemotron-70b')
-  );
+  // Steps 1 & 2 exhausted — no metadata says this model reasons. Return false.
+  // Never infer capability from model name patterns.
+  return false;
 };

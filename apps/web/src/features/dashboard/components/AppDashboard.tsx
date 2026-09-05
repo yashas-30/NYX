@@ -27,6 +27,7 @@ import {
   FolderPlus,
   MoreHorizontal,
   Folder,
+  Terminal,
 } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { CommandPalette } from '@src/shared/components/CommandPalette';
@@ -166,6 +167,29 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 >
                   <Plus size={10} strokeWidth={2.5} />
                 </motion.button>
+              </div>
+
+              {/* OpenCode CLI Tab */}
+              <div
+                className={`w-full flex items-center justify-between rounded-md text-xs font-medium transition-all ${
+                  activeMode === 'opencode'
+                    ? 'bg-muted border border-border text-foreground font-semibold'
+                    : 'hover:bg-muted/50 border border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <button
+                  onClick={() => {
+                    setActiveMode('opencode');
+                  }}
+                  className="flex-1 flex items-center gap-2.5 px-3 py-2 text-left cursor-pointer outline-none"
+                  title="OpenCode AI Agent CLI"
+                >
+                  <Terminal
+                    size={13}
+                    className={activeMode === 'opencode' ? 'text-primary' : 'text-muted-foreground'}
+                  />
+                  <span>OpenCode</span>
+                </button>
               </div>
             </div>
 

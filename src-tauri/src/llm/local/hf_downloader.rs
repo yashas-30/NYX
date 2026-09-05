@@ -91,6 +91,53 @@ impl HfDownloaderState {
     }
 }
 
+struct SpeedEstimator {
+    window_start: std::time::Instant,
+    bytes_in_window: u64,
+    smoothed_speed: f64,
+    alpha: f64,
+    has_sample: bool,
+}
+
+impl SpeedEstimator {
+    fn new() -> Self {
+        Self {
+            window_start: std::time::Instant::now(),
+            bytes_in_window: 0,
+            smoothed_speed: 0.0,
+            alpha: 0.25,
+            has_sample: false,
+        }
+    }
+
+    fn add_bytes(&mut self, n: u64) {
+        self.bytes_in_window += n;
+        let elapsed = self.window_start.elapsed().as_secs_f64();
+        if elapsed >= 0.5 {
+            let instant_speed = (self.bytes_in_window as f64) / elapsed;
+            if !self.has_sample {
+                self.smoothed_speed = instant_speed;
+                self.has_sample = true;
+            } else {
+                self.smoothed_speed = self.alpha * instant_speed + (1.0 - self.alpha) * self.smoothed_speed;
+            }
+            self.window_start = std::time::Instant::now();
+            self.bytes_in_window = 0;
+        }
+    }
+
+    fn current_speed(&self) -> u64 {
+        if !self.has_sample {
+            let elapsed = self.window_start.elapsed().as_secs_f64();
+            if elapsed > 0.1 {
+                return ((self.bytes_in_window as f64) / elapsed).max(0.0) as u64;
+            }
+            return 0;
+        }
+        self.smoothed_speed.max(0.0) as u64
+    }
+}
+
 pub async fn download_hf_model(
     state: Arc<HfDownloaderState>,
     url: String,
@@ -99,18 +146,18 @@ pub async fn download_hf_model(
     repo_id: Option<String>,
     is_paused: Arc<AtomicBool>,
     is_cancelled: Arc<AtomicBool>,
-    on_progress: impl Fn(f32, u64, u64) + Send + Sync + 'static,
+    on_progress: impl Fn(f32, u64, u64, u64, u64) + Send + Sync + 'static,
 ) -> Result<(), String> {
-    use std::io::SeekFrom;
-    use tokio::io::AsyncSeekExt;
     use tokio::io::AsyncWriteExt;
 
-    // Use full browser User-Agent + TCP connection pooling for max CDN bandwidth
+    // Use full browser User-Agent + TCP connection pooling for max CDN bandwidth.
+    // Note: No global request timeout (which previously killed downloads > 10m).
     let client = Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-        .tcp_keepalive(std::time::Duration::from_secs(60))
-        .pool_max_idle_per_host(32)
-        .timeout(std::time::Duration::from_secs(600))
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        .tcp_nodelay(true)
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .pool_max_idle_per_host(16)
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -180,8 +227,7 @@ pub async fn download_hf_model(
     let total_size = head_resp.content_length().unwrap_or(0);
 
     // Calculate actual initial downloaded bytes.
-    // Pre-allocation expands .part file to total_size on disk.
-    // We must ignore disk_part_size if it matches total_size and use saved_downloaded instead.
+    // If disk_part_size matches total_size but saved_downloaded is smaller, truncate preallocated file.
     let initial_downloaded = if saved_downloaded > 0 && total_size > 0 && saved_downloaded < total_size {
         saved_downloaded
     } else if disk_part_size > 0 && total_size > 0 && disk_part_size < total_size {
@@ -189,6 +235,12 @@ pub async fn download_hf_model(
     } else {
         0
     };
+
+    if initial_downloaded < disk_part_size {
+        if let Ok(file) = tokio::fs::OpenOptions::new().write(true).open(&dest_part).await {
+            let _ = file.set_len(initial_downloaded).await;
+        }
+    }
 
     // Save download persistence state
     {
@@ -204,176 +256,124 @@ pub async fn download_hf_model(
     }
     state.save_persistence().await;
 
-    let on_progress_arc = Arc::new(on_progress);
+    let mut downloaded = initial_downloaded;
+    let mut speed_estimator = SpeedEstimator::new();
+    let mut last_emit = std::time::Instant::now();
+    let mut last_persist = std::time::Instant::now();
 
-    // Use 8 parallel worker connections for files > 32 MB
-    let supports_range = total_size > 32 * 1024 * 1024;
-
-    if supports_range {
-        // Pre-allocate destination file size
-        let file = tokio::fs::OpenOptions::new()
-            .write(true)
-            .open(&dest_part).await
-            .map_err(|e| e.to_string())?;
-        file.set_len(total_size).await.map_err(|e| e.to_string())?;
-        drop(file);
-
-        // Fixed 4 MB chunk size for dynamic work-stealing queue
-        let chunk_size: u64 = 4 * 1024 * 1024;
-        let total_chunks = (total_size + chunk_size - 1) / chunk_size;
-
-        // Compute initial chunk index to resume cleanly without disk byte gaps
-        let initial_chunk = initial_downloaded / chunk_size;
-        let effective_initial_downloaded = initial_chunk * chunk_size;
-
-        let next_chunk_index = Arc::new(std::sync::atomic::AtomicU64::new(initial_chunk));
-        let downloaded_bytes = Arc::new(std::sync::atomic::AtomicU64::new(effective_initial_downloaded));
-
-        let num_workers = 8;
-        let mut tasks = Vec::new();
-
-        let last_emit_arc = Arc::new(tokio::sync::Mutex::new(std::time::Instant::now()));
-
-        for _ in 0..num_workers {
-            let client_worker = client.clone();
-            let url_worker = url.clone();
-            let dest_part_worker = dest_part.clone();
-            let token_opt = state.get_token().await;
-            let is_paused_w = is_paused.clone();
-            let is_cancelled_w = is_cancelled.clone();
-            let downloaded_bytes_w = downloaded_bytes.clone();
-            let next_chunk_w = next_chunk_index.clone();
-            let on_progress_w = on_progress_arc.clone();
-            let last_emit_w = last_emit_arc.clone();
-
-            let state_worker = state.clone();
-            let mid_worker = model_id.clone();
-
-            tasks.push(tokio::spawn(async move {
-                let mut file_w = tokio::fs::OpenOptions::new()
-                    .write(true)
-                    .open(&dest_part_worker).await
-                    .map_err(|e| e.to_string())?;
-
-                loop {
-                    if is_cancelled_w.load(Ordering::SeqCst) || is_paused_w.load(Ordering::SeqCst) {
-                        return Err("Cancelled or paused".to_string());
-                    }
-
-                    let chunk_idx = next_chunk_w.fetch_add(1, Ordering::SeqCst);
-                    if chunk_idx >= total_chunks {
-                        break;
-                    }
-
-                    let start = chunk_idx * chunk_size;
-                    let end = ((chunk_idx + 1) * chunk_size - 1).min(total_size - 1);
-
-                    // Fetch chunk with per-chunk retry logic (up to 3 retries)
-                    let mut attempts = 0;
-                    let mut bytes_data = None;
-
-                    while attempts < 3 {
-                        if is_cancelled_w.load(Ordering::SeqCst) || is_paused_w.load(Ordering::SeqCst) {
-                            return Err("Cancelled or paused".to_string());
-                        }
-
-                        let mut req_w = client_worker.get(&url_worker)
-                            .header(RANGE, format!("bytes={}-{}", start, end));
-                        if let Some(ref t) = token_opt {
-                            req_w = req_w.header(AUTHORIZATION, format!("Bearer {}", t));
-                        }
-
-                        match tokio::time::timeout(std::time::Duration::from_secs(30), req_w.send()).await {
-                            Ok(Ok(resp)) if resp.status().is_success() || resp.status() == reqwest::StatusCode::PARTIAL_CONTENT => {
-                                match tokio::time::timeout(std::time::Duration::from_secs(30), resp.bytes()).await {
-                                    Ok(Ok(b)) => {
-                                        bytes_data = Some(b);
-                                        break;
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            _ => {}
-                        }
-
-                        attempts += 1;
-                        if attempts < 3 {
-                            tokio::time::sleep(std::time::Duration::from_millis(500 * attempts as u64)).await;
-                        }
-                    }
-
-                    let chunk_bytes = match bytes_data {
-                        Some(b) => b,
-                        None => return Err(format!("Chunk {} (bytes {}-{}) failed after retries", chunk_idx, start, end)),
-                    };
-
-                    file_w.seek(SeekFrom::Start(start)).await.map_err(|e| e.to_string())?;
-                    file_w.write_all(&chunk_bytes).await.map_err(|e| e.to_string())?;
-
-                    let total_d = downloaded_bytes_w.fetch_add(chunk_bytes.len() as u64, Ordering::SeqCst) + chunk_bytes.len() as u64;
-
-                    if total_size > 0 {
-                        let mut last = last_emit_w.lock().await;
-                        if last.elapsed().as_millis() >= 150 {
-                            *last = std::time::Instant::now();
-                            drop(last);
-                            let pct = (total_d as f32 / total_size as f32) * 100.0;
-                            on_progress_w(pct.min(100.0), total_d, total_size);
-
-                            {
-                                let mut pd = state_worker.persistent_downloads.lock().await;
-                                if let Some(item) = pd.get_mut(&mid_worker) {
-                                    item.downloaded = total_d;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                file_w.flush().await.map_err(|e| e.to_string())?;
-                Ok(())
-            }));
-        }
-
-        let results = futures::future::join_all(tasks).await;
-        for r in results {
-            match r {
-                Ok(Ok(())) => {},
-                Ok(Err(e)) => {
-                    if is_paused.load(Ordering::SeqCst) {
-                        return Err("Download paused".to_string());
-                    }
-                    if is_cancelled.load(Ordering::SeqCst) {
-                        let _ = tokio::fs::remove_file(&dest_part).await;
-                        return Err("Download cancelled".to_string());
-                    }
-                    return Err(e);
-                }
-                Err(e) => return Err(format!("Worker thread panicked: {}", e)),
-            }
-        }
+    // Initial progress emission
+    let initial_pct = if total_size > 0 {
+        ((downloaded as f32 / total_size as f32) * 100.0).min(100.0)
     } else {
-        // Single-stream fallback
-        let file = tokio::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&dest_part).await
-            .map_err(|e| e.to_string())?;
+        0.0
+    };
+    on_progress(initial_pct, downloaded, total_size, 0, 0);
 
-        let mut downloaded = initial_downloaded;
-        let mut req_s = client.get(&url);
+    let mut retries = 0;
+    const MAX_RETRIES: u32 = 8;
+
+    while (total_size == 0 || downloaded < total_size) && !is_cancelled.load(Ordering::SeqCst) {
+        if is_paused.load(Ordering::SeqCst) {
+            return Err("Download paused".to_string());
+        }
+
+        let file = if downloaded > 0 {
+            tokio::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&dest_part)
+                .await
+                .map_err(|e| e.to_string())?
+        } else {
+            tokio::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&dest_part)
+                .await
+                .map_err(|e| e.to_string())?
+        };
+
+        let mut writer = tokio::io::BufWriter::with_capacity(8 * 1024 * 1024, file);
+
+        let mut req_stream = client.get(&url);
         if downloaded > 0 {
-            req_s = req_s.header(RANGE, format!("bytes={}-", downloaded));
+            req_stream = req_stream.header(RANGE, format!("bytes={}-", downloaded));
         }
         if let Some(token) = state.get_token().await {
-            req_s = req_s.header(AUTHORIZATION, format!("Bearer {}", token));
+            req_stream = req_stream.header(AUTHORIZATION, format!("Bearer {}", token));
         }
 
-        let mut response = req_s.send().await.map_err(|e| e.to_string())?;
-        let mut writer = tokio::io::BufWriter::with_capacity(4 * 1024 * 1024, file);
-        let mut last_emit = std::time::Instant::now();
+        let resp_result = tokio::time::timeout(std::time::Duration::from_secs(30), req_stream.send()).await;
+        let mut response = match resp_result {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(e)) => {
+                retries += 1;
+                if retries > MAX_RETRIES {
+                    return Err(format!("Download failed after {} retries: {}", MAX_RETRIES, e));
+                }
+                let backoff = std::cmp::min(retries * 1000, 5000);
+                tokio::time::sleep(std::time::Duration::from_millis(backoff as u64)).await;
+                continue;
+            }
+            Err(_) => {
+                retries += 1;
+                if retries > MAX_RETRIES {
+                    return Err("Connection timed out repeatedly".to_string());
+                }
+                let backoff = std::cmp::min(retries * 1000, 5000);
+                tokio::time::sleep(std::time::Duration::from_millis(backoff as u64)).await;
+                continue;
+            }
+        };
 
-        while !is_cancelled.load(Ordering::SeqCst) {
+        let status = response.status();
+        if downloaded > 0 && status == reqwest::StatusCode::OK {
+            // Mirror ignored Range header; restart cleanly from 0
+            downloaded = 0;
+            let _ = writer.flush().await;
+            drop(writer);
+            let _ = tokio::fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(&dest_part)
+                .await;
+            continue;
+        }
+
+        if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+            if total_size > 0 && downloaded >= total_size {
+                break;
+            }
+            // Range error, restart from zero
+            downloaded = 0;
+            let _ = writer.flush().await;
+            drop(writer);
+            let _ = tokio::fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(&dest_part)
+                .await;
+            continue;
+        }
+
+        if !status.is_success() && status != reqwest::StatusCode::PARTIAL_CONTENT {
+            retries += 1;
+            if retries > MAX_RETRIES {
+                return Err(format!("Download failed ({}): {}", status, url));
+            }
+            let backoff = std::cmp::min(retries * 1000, 5000);
+            tokio::time::sleep(std::time::Duration::from_millis(backoff as u64)).await;
+            continue;
+        }
+
+        let mut stream_interrupted = false;
+        loop {
+            if is_cancelled.load(Ordering::SeqCst) {
+                let _ = writer.flush().await;
+                let _ = tokio::fs::remove_file(&dest_part).await;
+                return Err("Download cancelled".to_string());
+            }
             if is_paused.load(Ordering::SeqCst) {
                 let _ = writer.flush().await;
                 return Err("Download paused".to_string());
@@ -383,17 +383,42 @@ pub async fn download_hf_model(
             let chunk = match chunk_res {
                 Ok(Ok(Some(c))) => c,
                 Ok(Ok(None)) => break,
-                Ok(Err(e)) => return Err(e.to_string()),
-                Err(_) => return Err("Connection timeout".to_string()),
+                Ok(Err(e)) => {
+                    eprintln!("[hf_downloader] Stream chunk error: {}, resuming...", e);
+                    stream_interrupted = true;
+                    break;
+                }
+                Err(_) => {
+                    eprintln!("[hf_downloader] Stream chunk read timeout (30s), resuming...");
+                    stream_interrupted = true;
+                    break;
+                }
             };
 
             writer.write_all(&chunk).await.map_err(|e| e.to_string())?;
-            downloaded += chunk.len() as u64;
+            let chunk_len = chunk.len() as u64;
+            downloaded += chunk_len;
+            retries = 0; // Reset retries on productive chunk
 
-            if total_size > 0 && last_emit.elapsed().as_millis() > 250 {
-                on_progress_arc((downloaded as f32 / total_size as f32) * 100.0, downloaded, total_size);
+            speed_estimator.add_bytes(chunk_len);
+
+            if last_emit.elapsed().as_millis() >= 150 {
                 last_emit = std::time::Instant::now();
-                {
+                let speed = speed_estimator.current_speed();
+                let eta = if speed > 0 && total_size > downloaded {
+                    (total_size - downloaded) / speed
+                } else {
+                    0
+                };
+                let pct = if total_size > 0 {
+                    ((downloaded as f32 / total_size as f32) * 100.0).min(100.0)
+                } else {
+                    0.0
+                };
+                on_progress(pct, downloaded, total_size, speed, eta);
+
+                if last_persist.elapsed().as_secs() >= 2 {
+                    last_persist = std::time::Instant::now();
                     let mut pd = state.persistent_downloads.lock().await;
                     if let Some(item) = pd.get_mut(&model_id) {
                         item.downloaded = downloaded;
@@ -401,7 +426,21 @@ pub async fn download_hf_model(
                 }
             }
         }
+
         writer.flush().await.map_err(|e| e.to_string())?;
+
+        if stream_interrupted {
+            retries += 1;
+            if retries > MAX_RETRIES {
+                return Err(format!("Download stream stalled after {} retries", MAX_RETRIES));
+            }
+            let backoff = std::cmp::min(retries * 500, 3000);
+            tokio::time::sleep(std::time::Duration::from_millis(backoff as u64)).await;
+        } else if total_size > 0 && downloaded >= total_size {
+            break;
+        } else if total_size == 0 {
+            break;
+        }
     }
 
     if is_cancelled.load(Ordering::SeqCst) {
@@ -413,21 +452,224 @@ pub async fn download_hf_model(
     { state.persistent_downloads.lock().await.remove(&model_id); }
     state.save_persistence().await;
 
-    on_progress_arc(100.0, total_size, total_size);
+    let final_total = if total_size > 0 { total_size } else { downloaded };
+    on_progress(100.0, final_total, final_total, 0, 0);
 
     tokio::fs::rename(&dest_part, &dest).await
         .map_err(|e| format!("Failed to finalise download: {}", e))?;
 
-    if let Some(rid) = repo_id {
-        let author = rid.split('/').next().unwrap_or("Hugging Face").to_string();
-        let fname = dest.file_name().unwrap_or_default().to_string_lossy().to_string();
-        let meta_path = dest.parent().unwrap_or(&dest).join(format!("{}.meta.json", fname));
-        let meta = serde_json::json!({ "author": author, "repo_id": rid });
-        let _ = tokio::fs::write(&meta_path, meta.to_string()).await.ok();
+    let mut author = "Hugging Face".to_string();
+    let mut tags: Vec<String> = Vec::new();
+    let mut pipeline_tag: Option<String> = None;
+    let mut supports_reasoning = false;
+    let mut supports_vision = false;
+    let mut supports_audio = false;
+    let mut supports_tools = false;
+    let mut context_length: Option<u32> = None;
+    let mut architecture: Option<String> = None;
+
+    if let Some(ref rid) = repo_id {
+        author = rid.split('/').next().unwrap_or("Hugging Face").to_string();
+        let token_opt = state.token.lock().await.clone();
+        if let Some(hf_info) = fetch_hf_model_metadata(&client, rid, token_opt.as_deref()).await {
+            pipeline_tag = hf_info.get("pipeline_tag").and_then(|v| v.as_str()).map(String::from);
+            
+            // Extract from tags
+            if let Some(arr) = hf_info.get("tags").and_then(|v| v.as_array()) {
+                for t in arr {
+                    if let Some(s) = t.as_str() {
+                        let sl = s.to_lowercase();
+                        if sl == "reasoning" || sl == "thinking" || sl == "thought" || sl.contains("reasoning") || sl.contains("chain-of-thought") {
+                            supports_reasoning = true;
+                        }
+                        if sl == "vision" || sl == "multimodal" || sl.contains("vision") || sl.contains("image-to-text") || sl.contains("image-text-to-text") {
+                            supports_vision = true;
+                        }
+                        if sl == "audio" || sl == "speech" || sl == "whisper" || sl.contains("audio") || sl.contains("speech") || sl.contains("voice") {
+                            supports_audio = true;
+                        }
+                        if sl == "tool-use" || sl == "function-calling" || sl == "tools" || sl == "agentic" {
+                            supports_tools = true;
+                        }
+                        tags.push(s.to_string());
+                    }
+                }
+            }
+
+            // Inspect live GGUF metadata from HF API
+            if let Some(gguf_val) = hf_info.get("gguf") {
+                if let Some(ctx) = gguf_val.get("context_length").and_then(|v| v.as_u64()) {
+                    context_length = Some(ctx as u32);
+                }
+                if let Some(arch) = gguf_val.get("architecture").and_then(|v| v.as_str()) {
+                    architecture = Some(arch.to_string());
+                }
+                if let Some(tpl) = gguf_val.get("chat_template").and_then(|v| v.as_str()) {
+                    let tpl_lower = tpl.to_lowercase();
+                    if tpl.contains("<think>")
+                        || tpl.contains("<|thought|>")
+                        || tpl.contains("<|channel>thought")
+                        || tpl.contains("thought\n")
+                        || tpl_lower.contains("enable_thinking")
+                        || tpl_lower.contains("strip_thinking")
+                        || tpl.contains("[think]")
+                        || tpl_lower.contains("reasoning_content")
+                    {
+                        supports_reasoning = true;
+                    }
+                    if tpl_lower.contains("tool_call")
+                        || tpl_lower.contains("tool_response")
+                        || tpl_lower.contains("declaration:")
+                        || tpl_lower.contains("<|tool")
+                    {
+                        supports_tools = true;
+                    }
+                    if tpl.contains("<|image|>") || tpl_lower.contains("image_url") {
+                        supports_vision = true;
+                    }
+                    if tpl.contains("<|audio|>") || tpl_lower.contains("audio_url") {
+                        supports_audio = true;
+                    }
+                }
+            }
+
+            if pipeline_tag.as_deref() == Some("image-to-text")
+                || pipeline_tag.as_deref() == Some("image-text-to-text")
+                || pipeline_tag.as_deref() == Some("visual-question-answering")
+            {
+                supports_vision = true;
+            }
+            if pipeline_tag.as_deref() == Some("automatic-speech-recognition")
+                || pipeline_tag.as_deref() == Some("audio-to-text")
+                || pipeline_tag.as_deref() == Some("text-to-speech")
+                || pipeline_tag.as_deref() == Some("audio-classification")
+            {
+                supports_audio = true;
+            }
+
+            if let Some(cfg) = hf_info.get("config") {
+                if context_length.is_none() {
+                    context_length = cfg.get("max_position_embeddings")
+                        .or_else(|| cfg.get("context_length"))
+                        .or_else(|| cfg.get("max_sequence_length"))
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v as u32);
+                }
+                if architecture.is_none() {
+                    if let Some(m_type) = cfg.get("model_type").and_then(|v| v.as_str()) {
+                        architecture = Some(m_type.to_string());
+                    } else if let Some(arch_arr) = cfg.get("architectures").and_then(|v| v.as_array()) {
+                        if let Some(first_arch) = arch_arr.first().and_then(|v| v.as_str()) {
+                            architecture = Some(first_arch.to_string());
+                        }
+                    }
+                }
+            }
+
+            // Inherit from base_model if tags are sparse
+            let base_model_id = hf_info.get("cardData")
+                .and_then(|cd| cd.get("base_model"))
+                .and_then(|bm| bm.as_str().or_else(|| bm.as_array().and_then(|a| a.first()?.as_str())))
+                .map(String::from);
+
+            if let Some(base_id) = base_model_id {
+                if let Some(base_info) = fetch_hf_model_metadata(&client, &base_id, token_opt.as_deref()).await {
+                    if let Some(arr) = base_info.get("tags").and_then(|v| v.as_array()) {
+                        for t in arr {
+                            if let Some(s) = t.as_str() {
+                                let sl = s.to_lowercase();
+                                if sl == "reasoning" || sl == "thinking" || sl == "thought" || sl.contains("reasoning") || sl.contains("chain-of-thought") {
+                                    supports_reasoning = true;
+                                }
+                                if sl == "vision" || sl == "multimodal" || sl.contains("vision") || sl.contains("image-to-text") || sl.contains("image-text-to-text") {
+                                    supports_vision = true;
+                                }
+                                if sl == "audio" || sl == "speech" || sl == "whisper" || sl.contains("audio") || sl.contains("speech") || sl.contains("voice") {
+                                    supports_audio = true;
+                                }
+                                if sl == "tool-use" || sl == "function-calling" || sl == "tools" || sl == "agentic" {
+                                    supports_tools = true;
+                                }
+                                if !tags.iter().any(|existing| existing.eq_ignore_ascii_case(s)) {
+                                    tags.push(s.to_string());
+                                }
+                            }
+                        }
+                    }
+                    if pipeline_tag.is_none() {
+                        pipeline_tag = base_info.get("pipeline_tag").and_then(|v| v.as_str()).map(String::from);
+                    }
+                    if pipeline_tag.as_deref() == Some("image-to-text")
+                        || pipeline_tag.as_deref() == Some("image-text-to-text")
+                        || pipeline_tag.as_deref() == Some("visual-question-answering")
+                    {
+                        supports_vision = true;
+                    }
+                    if pipeline_tag.as_deref() == Some("automatic-speech-recognition")
+                        || pipeline_tag.as_deref() == Some("audio-to-text")
+                        || pipeline_tag.as_deref() == Some("text-to-speech")
+                        || pipeline_tag.as_deref() == Some("audio-classification")
+                    {
+                        supports_audio = true;
+                    }
+                }
+            }
+        }
     }
+
+    // Also inspect GGUF header if GGUF file
+    let is_gguf = dest.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("gguf")).unwrap_or(false);
+    if is_gguf {
+        if let Ok(gguf_meta) = super::scheduler::parse_gguf_metadata(&dest) {
+            if gguf_meta.supports_reasoning {
+                supports_reasoning = true;
+            }
+            if context_length.is_none() {
+                context_length = gguf_meta.context_length;
+            }
+            if architecture.is_none() {
+                architecture = gguf_meta.architecture.clone();
+            }
+            for t in gguf_meta.tags {
+                if !tags.contains(&t) {
+                    tags.push(t);
+                }
+            }
+        }
+    }
+
+    let fname = dest.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let meta_path = dest.parent().unwrap_or(&dest).join(format!("{}.meta.json", fname));
+    let meta = serde_json::json!({
+        "author": author,
+        "repo_id": repo_id,
+        "pipeline_tag": pipeline_tag,
+        "tags": tags,
+        "supports_reasoning": supports_reasoning,
+        "supports_vision": supports_vision,
+        "supports_audio": supports_audio,
+        "supports_tools": supports_tools,
+        "context_length": context_length,
+        "architecture": architecture,
+    });
+    let _ = tokio::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap_or_else(|_| meta.to_string())).await.ok();
 
     invalidate_local_models_cache();
     Ok(())
+}
+
+async fn fetch_hf_model_metadata(client: &Client, repo_id: &str, token: Option<&str>) -> Option<serde_json::Value> {
+    let url = format!("https://huggingface.co/api/models/{}", repo_id);
+    let mut req = client.get(&url).header("User-Agent", "NYX-App/1.0");
+    if let Some(t) = token {
+        if !t.is_empty() {
+            req = req.header("Authorization", format!("Bearer {}", t));
+        }
+    }
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => resp.json::<serde_json::Value>().await.ok(),
+        _ => None,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

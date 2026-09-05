@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub mod sandbox;
-pub mod cline_fs;
+pub mod workspace_fs;
 
 pub use sandbox::WorkspaceSandbox;
-pub use cline_fs::{ClineFsTools, FileReadResult, DiffMatchError};
+pub use workspace_fs::{WorkspaceFsTools, FileReadResult, DiffMatchError};

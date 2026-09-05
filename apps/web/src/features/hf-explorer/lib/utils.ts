@@ -261,11 +261,15 @@ export function analyzeHardwareMatch(
   const fileSizeGb = fileSizeBytes / 1024 ** 3;
 
   // Runtime buffer required for KV cache, context window (4k-8k tokens), activations, llama.cpp context
-  const contextBufferGb = Math.min(Math.max(1.2, fileSizeGb * 0.15), 3.5);
+  const contextBufferGb = Math.min(Math.max(1.0, fileSizeGb * 0.12), 3.0);
   const memoryRequiredGb = fileSizeGb + contextBufferGb;
   const memoryRequiredBytes = memoryRequiredGb * 1024 ** 3;
 
-  // 1. Full GPU Acceleration: Entire model + context fits inside VRAM
+  // Windows WDDM Shared GPU Memory: up to 50% of system RAM can be mapped as shared GPU memory
+  const sharedGpuBudgetGb = Math.min(totalRamGb * 0.5, Math.max(0, totalRamGb - 2.0));
+  const totalGpuCapacityGb = vramGb + sharedGpuBudgetGb;
+
+  // 1. Full Dedicated GPU Acceleration: Entire model + context fits inside dedicated VRAM
   if (vramGb >= 2 && memoryRequiredGb <= vramGb * 0.95) {
     return {
       tier: 'full_gpu',
@@ -275,7 +279,22 @@ export function analyzeHardwareMatch(
       estimatedOffloadPercent: 100,
       memoryRequiredBytes,
       isRecommended: false, // Calculated separately in pickBestFile
-      explanation: `Fits entirely in ${vramGb.toFixed(1)} GB VRAM. Maximum inference speed.`,
+      explanation: `Fits entirely in ${vramGb.toFixed(1)} GB dedicated VRAM. Maximum inference speed.`,
+    };
+  }
+
+  // 1b. Windows Shared GPU Memory: 100% GPU accelerated across dedicated VRAM + host Shared GPU Memory
+  if (vramGb >= 2 && memoryRequiredGb <= totalGpuCapacityGb * 0.95) {
+    const sharedUsedGb = Math.max(0, memoryRequiredGb - vramGb);
+    return {
+      tier: 'full_gpu',
+      label: 'GPU + Shared Memory',
+      badgeText: '⚡ 100% GPU (Shared RAM)',
+      color: 'emerald',
+      estimatedOffloadPercent: 100,
+      memoryRequiredBytes,
+      isRecommended: false,
+      explanation: `100% GPU accelerated using ${vramGb.toFixed(1)} GB dedicated VRAM + ${sharedUsedGb.toFixed(1)} GB Shared GPU Memory.`,
     };
   }
 
@@ -355,13 +374,14 @@ export function pickBestFile(
     else if (match.tier === 'cpu_only') score += 100;
 
     const fn = f.filename.toLowerCase();
-    if (fn.includes('q4_k_m')) score += 60;
-    else if (fn.includes('q5_k_m')) score += 55;
-    else if (fn.includes('iq4_xs') || fn.includes('q4_k_s') || fn.includes('q4_0')) score += 45;
+    if (fn.includes('q4_k_m')) score += 75;
+    else if (fn.includes('q4_k') || fn.includes('q4_0')) score += 70;
+    else if (fn.includes('q5_k_m') || fn.includes('q5_k')) score += 65;
+    else if (fn.includes('iq4_xs') || fn.includes('q4_k_s')) score += 55;
     else if (fn.includes('q8_0') && match.tier === 'full_gpu')
-      score += 58; // Q8 is great if full GPU fits
-    else if (fn.includes('q6_k')) score += 40;
-    else if (fn.includes('q3_k_m') || fn.includes('iq3_m')) score += 25;
+      score += 68; // Q8 is great if full GPU fits
+    else if (fn.includes('q6_k')) score += 50;
+    else if (fn.includes('q3_k_m') || fn.includes('iq3_m')) score += 30;
     else if (fn.includes('q2_k')) score += 5;
 
     return { file: f, score };

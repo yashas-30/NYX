@@ -31,7 +31,7 @@ if exist "%BIN_DIR%\llama-server.exe" (
     echo  --^> llama-server.exe is already present.
 ) else (
     echo  --^> Downloading high-performance GPU server binary...
-    curl -# -L -o "%BIN_DIR%\llama-server.zip" "https://github.com/ggerganov/llama.cpp/releases/download/b5710/llama-b5710-bin-win-cuda-12.4-x64.zip"
+    curl -# -L -o "%BIN_DIR%\llama-server.zip" "https://github.com/ggml-org/llama.cpp/releases/download/b10798/llama-b10798-bin-win-cuda-12.4-x64.zip"
     powershell -NoProfile -Command "Expand-Archive -Path '%BIN_DIR%\llama-server.zip' -DestinationPath '%BIN_DIR%' -Force"
     if exist "%BIN_DIR%\llama-server.zip" del "%BIN_DIR%\llama-server.zip"
     echo  --^> GPU inference server installed.

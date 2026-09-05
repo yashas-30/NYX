@@ -49,7 +49,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["../apps/web/dist"],
+    "resources": {
+      "../.agents/skills": "skills",
+      "opencode": "opencode"
+    },
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" }
     },

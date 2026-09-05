@@ -65,8 +65,17 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
             if code.trim().is_empty() {
                 return "Error: Python code is empty".to_string();
             }
-            let mut cmd = Command::new("python");
-            cmd.args(["-c", code]);
+            let (prog, base_args) = crate::commands::agent_pipeline::resolve_python_runner();
+            let mut cmd = Command::new(&prog);
+            for arg in base_args {
+                cmd.arg(arg);
+            }
+            if prog == "uv" {
+                cmd.args(["python", "-c", code]);
+            } else {
+                cmd.args(["-c", code]);
+            }
+            cmd.env("PYTHONUNBUFFERED", "1");
             cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
             match tokio::time::timeout(Duration::from_secs(30), cmd.output()).await {
@@ -664,8 +673,13 @@ async fn crawl4ai_fetch_page(url: &str) -> Option<String> {
         return None;
     }
 
-    let mut cmd = Command::new("python");
+    let (prog, base_args) = crate::commands::agent_pipeline::resolve_python_runner();
+    let mut cmd = Command::new(&prog);
+    for arg in base_args {
+        cmd.arg(arg);
+    }
     cmd.arg(&script_path).arg("--url").arg(url).arg("--max-chars").arg("15000");
+    cmd.env("PYTHONUNBUFFERED", "1");
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     match tokio::time::timeout(Duration::from_secs(12), cmd.output()).await {

@@ -26,10 +26,37 @@ export interface HfModelResult {
   created_at?: string;
   last_modified?: string;
   gated?: boolean | string;
-  trendingScore?: number;
+  trending_score?: number;
   pipeline_tag?: string;
   authorData?: HfAuthorData;
   numParameters?: number;
+  siblings?: Array<{ rfilename: string }>;
+  author?: string;
+  gguf?: {
+    architecture?: string;
+    context_length?: number;
+    chat_template?: string;
+    bos_token?: string;
+    eos_token?: string;
+    totalFileSize?: number;
+    total?: number;
+  };
+  config?: {
+    architectures?: string[];
+    model_type?: string;
+    max_position_embeddings?: number;
+    context_length?: number;
+    [key: string]: any;
+  };
+  cardData?: {
+    base_model?: string | string[];
+    tags?: string[];
+    pipeline_tag?: string;
+    license?: string;
+    license_name?: string;
+    [key: string]: any;
+  };
+  baseModels?: any;
 }
 
 export interface HfModelFile {
@@ -50,6 +77,8 @@ export interface DownloadProgress {
   progress: number;
   downloaded: number;
   total: number;
+  speed?: number;
+  eta?: number;
 }
 
 export type DownloadStatus = 'pending' | 'downloading' | 'paused' | 'completed' | 'error';

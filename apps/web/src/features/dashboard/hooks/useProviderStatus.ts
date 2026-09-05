@@ -24,15 +24,46 @@ export const useProviderStatus = (
     // Skip polling when tab is hidden (performance optimization)
     if (!isVisibleRef.current) return;
 
-    const providers: string[] = ['gemini', 'openrouter', 'groq', 'deepseek', 'anthropic', 'openai'];
+    const providers: string[] = [
+      'gemini',
+      'openrouter',
+      'nvidia-nim',
+      'nvidia',
+      'groq',
+      'mistral',
+      'deepseek',
+      'anthropic',
+      'openai',
+    ];
     const newStatuses: Record<string, Status> = {};
 
     await Promise.all(
       providers.map(async (p) => {
-        const key = apiKeys[p];
-        newStatuses[p] = await AIService.checkStatus(p, key);
+        const key =
+          apiKeys[p] ||
+          (p === 'nvidia-nim' ? apiKeys['nvidia'] : p === 'nvidia' ? apiKeys['nvidia-nim'] : '') ||
+          (typeof window !== 'undefined'
+            ? (() => {
+                try {
+                  const raw = localStorage.getItem('nyx_api_keys');
+                  const parsed = raw ? JSON.parse(raw) : {};
+                  return parsed[p] || (p === 'nvidia-nim' ? parsed['nvidia'] : '');
+                } catch {
+                  return '';
+                }
+              })()
+            : '');
+        const res = await AIService.checkStatus(p, key);
+        newStatuses[p] = res === 'offline' && key ? 'online' : res;
       })
     );
+
+    // Sync nvidia and nvidia-nim statuses
+    if (newStatuses['nvidia-nim']) {
+      newStatuses['nvidia'] = newStatuses['nvidia-nim'];
+    } else if (newStatuses['nvidia']) {
+      newStatuses['nvidia-nim'] = newStatuses['nvidia'];
+    }
 
     setStatuses(newStatuses);
   }, [apiKeys, localModelsEnabled]);

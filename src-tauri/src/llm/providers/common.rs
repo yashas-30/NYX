@@ -95,35 +95,35 @@ pub fn budget_messages(messages: &[UnifiedMessage], budget_chars: usize) -> Vec<
     messages[start_idx..].to_vec()
 }
 
-/// Fast syntactic validation for provider API key formats
 pub fn validate_key_format(provider: &str, key: &str) -> Option<String> {
+    let key = key.trim();
     if key.is_empty() {
         return Some("API key is empty.".to_string());
     }
     match provider {
         "gemini" | "gemma" => {
-            if !key.starts_with("AIza") || key.len() < 30 {
-                return Some("Google API keys should start with 'AIza'.".to_string());
+            if key.len() < 10 {
+                return Some("Google API keys should be at least 10 characters.".to_string());
             }
         }
         "openrouter" => {
-            if !key.starts_with("sk-or-") || key.len() < 15 {
-                return Some("OpenRouter keys should start with 'sk-or-'.".to_string());
+            if key.len() < 10 {
+                return Some("OpenRouter keys should be at least 10 characters.".to_string());
             }
         }
         "groq" => {
-            if !key.starts_with("gsk_") || key.len() < 20 {
-                return Some("Groq keys should start with 'gsk_'.".to_string());
+            if key.len() < 10 {
+                return Some("Groq keys should be at least 10 characters.".to_string());
             }
         }
         "nvidia-nim" | "nvidia" => {
-            if !key.starts_with("nvapi-") || key.len() < 20 {
-                return Some("NVIDIA NIM keys should start with 'nvapi-'.".to_string());
+            if key.len() < 10 {
+                return Some("NVIDIA NIM keys should be at least 10 characters.".to_string());
             }
         }
         "mistral" => {
-            if key.len() < 20 {
-                return Some("Mistral keys should be at least 20 characters.".to_string());
+            if key.len() < 10 {
+                return Some("Mistral keys should be at least 10 characters.".to_string());
             }
         }
         _ => {}

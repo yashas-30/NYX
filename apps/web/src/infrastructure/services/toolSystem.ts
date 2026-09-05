@@ -546,6 +546,80 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       required: [],
     },
   },
+  {
+    name: 'start_subagent',
+    description:
+      'Spawn and delegate a complex or isolated subtask to a specialized child subagent with its own independent context window and execution lifecycle.',
+    parameters: {
+      type: 'object',
+      properties: {
+        task: {
+          type: 'string',
+          description: 'Detailed instructions, prompt, or goal for the child subagent to execute.',
+        },
+        subagent_name: {
+          type: 'string',
+          description:
+            'Optional name of a registered subagent (e.g., "code_reviewer"), or omit for dynamic self-cloning.',
+        },
+        context: {
+          type: 'string',
+          description: 'Optional background context or file content for the subagent.',
+        },
+      },
+      required: ['task'],
+    },
+  },
+  {
+    name: 'read_url_content',
+    description: 'Fetch and extract text content from a web URL.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'The HTTP or HTTPS URL to fetch content from.',
+        },
+      },
+      required: ['url'],
+    },
+  },
+  {
+    name: 'ask_question',
+    description: 'Prompt user with a question or decision options.',
+    parameters: {
+      type: 'object',
+      properties: {
+        question: {
+          type: 'string',
+          description: 'The question to ask the user.',
+        },
+        options: {
+          type: 'array',
+          description: 'Optional selectable options.',
+          items: {
+            type: 'string',
+          },
+        },
+      },
+      required: ['question'],
+    },
+  },
+  {
+    name: 'finish',
+    description:
+      'Signal that the autonomous agent has completed all tasks and return final output.',
+    parameters: {
+      type: 'object',
+      properties: {
+        output: {
+          type: 'string',
+          description: 'Final summary or synthesized response.',
+        },
+      },
+      required: ['output'],
+    },
+  },
 ];
 
 // ============================================================================
@@ -746,9 +820,14 @@ export class ToolExecutor {
       .replace(/^gemini:/i, '')
       .trim();
 
-    if (toolName === 'google_search') toolName = 'web_search';
-    if (toolName === 'code_execution') toolName = 'run_terminal';
-    if (toolName === 'file_search') toolName = 'grep_search';
+    if (toolName === 'google_search' || toolName === 'search_web') toolName = 'web_search';
+    if (toolName === 'code_execution' || toolName === 'run_command') toolName = 'run_terminal';
+    if (toolName === 'file_search' || toolName === 'search_directory') toolName = 'grep_search';
+    if (toolName === 'view_file') toolName = 'read_file';
+    if (toolName === 'create_file') toolName = 'write_file';
+    if (toolName === 'find_file') toolName = 'find_by_name';
+    if (toolName === 'list_dir') toolName = 'list_directory';
+    if (toolName === 'generate_image') toolName = 'generate_visual_asset';
 
     switch (toolName) {
       case 'read_file': {
@@ -1233,6 +1312,66 @@ export class ToolExecutor {
         } catch (e: any) {
           throw new Error(e?.message || e || 'Failed to fetch git status');
         }
+      }
+
+      case 'start_subagent': {
+        const task = params.task || params.prompt || params.instructions || '';
+        if (!task) throw new Error('Missing task parameter for start_subagent');
+        const subagentName = params.subagent_name || params.name || params.role;
+        const context = params.context || '';
+
+        try {
+          const { antigravityAgent } = await import('@src/core/agents/antigravityAgent');
+          const subResult = await antigravityAgent.runAgentLoop({
+            prompt: context ? `Context:\n${context}\n\nTask:\n${task}` : task,
+            maxIterations: 5,
+          });
+
+          return {
+            subagent: subagentName || 'dynamic_clone',
+            status: subResult.status,
+            output: subResult.outputText,
+            reasoning: subResult.reasoning,
+            steps_count: subResult.steps.length,
+          };
+        } catch (subErr: any) {
+          throw new Error(`Subagent delegation failed: ${subErr?.message || subErr}`);
+        }
+      }
+
+      case 'read_url_content': {
+        const url = params.url || params.Url || params.uri || params.link;
+        if (!url) throw new Error('Missing url parameter for read_url_content');
+        try {
+          const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+          const html = await resp.text();
+          const cleanText = html
+            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          return cleanText.length > 8000
+            ? cleanText.substring(0, 8000) + '\n...[truncated]'
+            : cleanText;
+        } catch (e: any) {
+          throw new Error(`Failed to read URL ${url}: ${e?.message || e}`);
+        }
+      }
+
+      case 'ask_question': {
+        const question = params.question || params.prompt || '';
+        return {
+          question,
+          options: params.options || [],
+          status: 'question_presented',
+        };
+      }
+
+      case 'finish': {
+        const output =
+          params.output || params.response || params.content || 'Task completed successfully.';
+        return { status: 'finished', output };
       }
 
       default:

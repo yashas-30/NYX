@@ -1,4 +1,7 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use crate::rag::lancedb_store::LanceDbStore;
 use crate::commands::db::ChatMessagePayload;
 
@@ -8,6 +11,9 @@ pub struct TurbovecStore {
     pub inner: LanceDbStore,
     pub db_path: PathBuf,
     pub mode: String,
+    /// In-memory cache of synced turn keys ("{session_id}:{turn_index}")
+    /// to avoid redundant re-embeddings and runaway LanceDB fragment accumulation.
+    synced_turns: Arc<RwLock<HashSet<String>>>,
 }
 
 impl TurbovecStore {
@@ -24,6 +30,7 @@ impl TurbovecStore {
             inner,
             db_path,
             mode: mode.to_string(),
+            synced_turns: Arc::new(RwLock::new(HashSet::new())),
         }
     }
     
@@ -32,12 +39,24 @@ impl TurbovecStore {
     }
 
     pub async fn add_memory_with_meta(&self, text: &str, metadata: &str) {
-        let doc_id = uuid::Uuid::new_v4().to_string();
+        self.add_memories_batch(vec![(text.to_string(), metadata.to_string())]).await;
+    }
+
+    /// Batch embeds and inserts multiple items in a single LanceDB commit
+    pub async fn add_memories_batch(&self, items: Vec<(String, String)>) {
+        if items.is_empty() {
+            return;
+        }
+
+        let texts: Vec<String> = items.iter().map(|(t, _)| t.clone()).collect();
         if let Ok(embedder) = crate::rag::embeddings::Embedder::new() {
-            if let Ok(vecs) = embedder.embed(vec![text.to_string()]).await {
-                if let Some(vector) = vecs.into_iter().next() {
-                    let _ = self.inner.insert(doc_id, text.to_string(), vector, metadata.to_string()).await;
+            if let Ok(vecs) = embedder.embed(texts).await {
+                let mut batch_records = Vec::with_capacity(items.len());
+                for ((text, meta), vector) in items.into_iter().zip(vecs.into_iter()) {
+                    let doc_id = uuid::Uuid::new_v4().to_string();
+                    batch_records.push((doc_id, text, vector, meta));
                 }
+                let _ = self.inner.insert_batch(batch_records).await;
             }
         }
     }
@@ -54,6 +73,7 @@ impl TurbovecStore {
         let total = chars.len();
         let mut start = 0;
         let mut chunk_idx = 1;
+        let mut items = Vec::new();
 
         while start < total {
             let end = usize::min(start + CHUNK_SIZE, total);
@@ -65,7 +85,7 @@ impl TurbovecStore {
             );
             let meta = format!("web_scrape|url:{}|title:{}|chunk:{}", url, title, chunk_idx);
 
-            self.add_memory_with_meta(&structured, &meta).await;
+            items.push((structured, meta));
 
             if end >= total {
                 break;
@@ -73,75 +93,12 @@ impl TurbovecStore {
             start += CHUNK_SIZE.saturating_sub(200);
             chunk_idx += 1;
         }
-    }
 
-    /// Stores a single structured conversation turn (User Prompt + Model Response) into vector memory.
-    pub async fn add_structured_turn(
-        &self,
-        session_id: &str,
-        session_title: &str,
-        turn_index: usize,
-        user_prompt: &str,
-        assistant_response: &str,
-        model: &str,
-        timestamp: i64,
-    ) {
-        let user_text = user_prompt.trim();
-        let assistant_text = assistant_response.trim();
-        if user_text.is_empty() && assistant_text.is_empty() {
-            return;
-        }
-
-        let title_clean = if session_title.trim().is_empty() { "Untitled Session" } else { session_title.trim() };
-        let model_clean = if model.trim().is_empty() { "default" } else { model.trim() };
-
-        // If the assistant response is large (> 1500 chars), split it into contextual chunks with the user prompt header
-        const MAX_CHUNK_LEN: usize = 1500;
-        if assistant_text.len() > MAX_CHUNK_LEN {
-            let response_chars: Vec<char> = assistant_text.chars().collect();
-            let mut start = 0;
-            let total = response_chars.len();
-            let mut chunk_idx = 1;
-
-            while start < total {
-                let end = usize::min(start + MAX_CHUNK_LEN, total);
-                let part: String = response_chars[start..end].iter().collect();
-
-                let structured_text = format!(
-                    "### Conversation: \"{}\" [Session: {} | Turn #{}.{} | Model: {}]\n**User Prompt**:\n{}\n\n**Assistant Response (Part {})**:\n{}",
-                    title_clean, session_id, turn_index, chunk_idx, model_clean, user_text, chunk_idx, part
-                );
-
-                let meta = format!(
-                    "chat_turn|session_id:{}|title:{}|turn:{}.{}|model:{}|ts:{}",
-                    session_id, title_clean, turn_index, chunk_idx, model_clean, timestamp
-                );
-
-                self.add_memory_with_meta(&structured_text, &meta).await;
-
-                if end >= total {
-                    break;
-                }
-                start += MAX_CHUNK_LEN.saturating_sub(200); // 200 chars overlap
-                chunk_idx += 1;
-            }
-        } else {
-            let structured_text = format!(
-                "### Conversation: \"{}\" [Session: {} | Turn #{} | Model: {}]\n**User Prompt**:\n{}\n\n**Assistant Response**:\n{}",
-                title_clean, session_id, turn_index, model_clean, user_text, assistant_text
-            );
-
-            let meta = format!(
-                "chat_turn|session_id:{}|title:{}|turn:{}|model:{}|ts:{}",
-                session_id, title_clean, turn_index, model_clean, timestamp
-            );
-
-            self.add_memory_with_meta(&structured_text, &meta).await;
-        }
+        self.add_memories_batch(items).await;
     }
 
     /// Iterates through ALL messages across an entire chat session, organizes them into
-    /// structured prompt-response dialogue turns, and indexes every turn into TurboVec vector memory.
+    /// structured prompt-response dialogue turns, and indexes only NEW unindexed turns into LanceDB.
     pub async fn sync_session_messages(
         &self,
         session_id: &str,
@@ -155,76 +112,138 @@ impl TurbovecStore {
         let now = chrono::Utc::now().timestamp();
         let mut turn_index = 1;
         let mut i = 0;
+        let mut items_to_index: Vec<(String, String)> = Vec::new();
+        let mut newly_synced_keys: Vec<String> = Vec::new();
 
-        while i < messages.len() {
-            let msg = &messages[i];
-            let role = msg.role.to_lowercase();
+        let title_clean = if session_title.trim().is_empty() { "Untitled Session" } else { session_title.trim() };
 
-            if role == "user" {
-                let user_prompt = msg.content.clone();
-                let user_ts = msg.timestamp.unwrap_or(now);
-                let model_name = msg.model.clone().unwrap_or_else(|| "default".to_string());
+        {
+            let synced = self.synced_turns.read().await;
 
-                // Check if the next message is the corresponding assistant response
-                if i + 1 < messages.len() && messages[i + 1].role.to_lowercase() == "assistant" {
-                    let assistant_msg = &messages[i + 1];
-                    let assistant_response = assistant_msg.content.clone();
-                    let effective_model = assistant_msg.model.clone().unwrap_or(model_name);
+            while i < messages.len() {
+                let msg = &messages[i];
+                let role = msg.role.to_lowercase();
+                let turn_key = format!("{}:{}", session_id, turn_index);
 
-                    self.add_structured_turn(
-                        session_id,
-                        session_title,
-                        turn_index,
-                        &user_prompt,
-                        &assistant_response,
-                        &effective_model,
-                        user_ts,
-                    ).await;
+                if role == "user" {
+                    let user_prompt = msg.content.clone();
+                    let user_ts = msg.timestamp.unwrap_or(now);
+                    let model_name = msg.model.clone().unwrap_or_else(|| "default".to_string());
 
-                    turn_index += 1;
-                    i += 2;
-                } else {
-                    // Standalone user prompt without response yet
-                    let title_clean = if session_title.trim().is_empty() { "Untitled Session" } else { session_title.trim() };
-                    let structured_text = format!(
-                        "### Conversation: \"{}\" [Session: {} | Turn #{} (User Query)]\n**User Prompt**:\n{}",
-                        title_clean, session_id, turn_index, user_prompt.trim()
-                    );
-                    let meta = format!(
-                        "chat_prompt|session_id:{}|title:{}|turn:{}|model:{}|ts:{}",
-                        session_id, title_clean, turn_index, model_name, user_ts
-                    );
-                    self.add_memory_with_meta(&structured_text, &meta).await;
+                    // Check if the next message is the corresponding assistant response
+                    if i + 1 < messages.len() && messages[i + 1].role.to_lowercase() == "assistant" {
+                        let assistant_msg = &messages[i + 1];
+                        let assistant_response = assistant_msg.content.clone();
+                        let effective_model = assistant_msg.model.clone().unwrap_or(model_name);
+
+                        // Only index if this turn hasn't already been committed in this runtime session
+                        if !synced.contains(&turn_key) {
+                            let user_text = user_prompt.trim();
+                            let assistant_text = assistant_response.trim();
+
+                            if !user_text.is_empty() || !assistant_text.is_empty() {
+                                const MAX_CHUNK_LEN: usize = 1500;
+                                if assistant_text.len() > MAX_CHUNK_LEN {
+                                    let response_chars: Vec<char> = assistant_text.chars().collect();
+                                    let mut start = 0;
+                                    let total = response_chars.len();
+                                    let mut chunk_idx = 1;
+
+                                    while start < total {
+                                        let end = usize::min(start + MAX_CHUNK_LEN, total);
+                                        let part: String = response_chars[start..end].iter().collect();
+
+                                        let structured_text = format!(
+                                            "### Conversation: \"{}\" [Session: {} | Turn #{}.{} | Model: {}]\n**User Prompt**:\n{}\n\n**Assistant Response (Part {})**:\n{}",
+                                            title_clean, session_id, turn_index, chunk_idx, effective_model, user_text, chunk_idx, part
+                                        );
+                                        let meta = format!(
+                                            "chat_turn|session_id:{}|title:{}|turn:{}.{}|model:{}|ts:{}",
+                                            session_id, title_clean, turn_index, chunk_idx, effective_model, user_ts
+                                        );
+                                        items_to_index.push((structured_text, meta));
+
+                                        if end >= total {
+                                            break;
+                                        }
+                                        start += MAX_CHUNK_LEN.saturating_sub(200);
+                                        chunk_idx += 1;
+                                    }
+                                } else {
+                                    let structured_text = format!(
+                                        "### Conversation: \"{}\" [Session: {} | Turn #{} | Model: {}]\n**User Prompt**:\n{}\n\n**Assistant Response**:\n{}",
+                                        title_clean, session_id, turn_index, effective_model, user_text, assistant_text
+                                    );
+                                    let meta = format!(
+                                        "chat_turn|session_id:{}|title:{}|turn:{}|model:{}|ts:{}",
+                                        session_id, title_clean, turn_index, effective_model, user_ts
+                                    );
+                                    items_to_index.push((structured_text, meta));
+                                }
+                            }
+                            newly_synced_keys.push(turn_key);
+                        }
+
+                        turn_index += 1;
+                        i += 2;
+                    } else {
+                        // Standalone user prompt
+                        if !synced.contains(&turn_key) {
+                            let structured_text = format!(
+                                "### Conversation: \"{}\" [Session: {} | Turn #{} (User Query)]\n**User Prompt**:\n{}",
+                                title_clean, session_id, turn_index, user_prompt.trim()
+                            );
+                            let meta = format!(
+                                "chat_prompt|session_id:{}|title:{}|turn:{}|model:{}|ts:{}",
+                                session_id, title_clean, turn_index, model_name, user_ts
+                            );
+                            items_to_index.push((structured_text, meta));
+                            newly_synced_keys.push(turn_key);
+                        }
+
+                        turn_index += 1;
+                        i += 1;
+                    }
+                } else if role == "assistant" {
+                    // Standalone assistant message
+                    if !synced.contains(&turn_key) {
+                        let model_name = msg.model.clone().unwrap_or_else(|| "default".to_string());
+                        let ts = msg.timestamp.unwrap_or(now);
+
+                        let structured_text = format!(
+                            "### Conversation: \"{}\" [Session: {} | Turn #{} (Assistant Output)]\n**Assistant ({})**:\n{}",
+                            title_clean, session_id, turn_index, model_name, msg.content.trim()
+                        );
+                        let meta = format!(
+                            "chat_response|session_id:{}|title:{}|turn:{}|model:{}|ts:{}",
+                            session_id, title_clean, turn_index, model_name, ts
+                        );
+                        items_to_index.push((structured_text, meta));
+                        newly_synced_keys.push(turn_key);
+                    }
 
                     turn_index += 1;
                     i += 1;
+                } else {
+                    i += 1;
                 }
-            } else if role == "assistant" {
-                // Standalone assistant message
-                let title_clean = if session_title.trim().is_empty() { "Untitled Session" } else { session_title.trim() };
-                let model_name = msg.model.clone().unwrap_or_else(|| "default".to_string());
-                let ts = msg.timestamp.unwrap_or(now);
+            }
+        }
 
-                let structured_text = format!(
-                    "### Conversation: \"{}\" [Session: {} | Turn #{} (Assistant Output)]\n**Assistant ({})**:\n{}",
-                    title_clean, session_id, turn_index, model_name, msg.content.trim()
-                );
-                let meta = format!(
-                    "chat_response|session_id:{}|title:{}|turn:{}|model:{}|ts:{}",
-                    session_id, title_clean, turn_index, model_name, ts
-                );
-                self.add_memory_with_meta(&structured_text, &meta).await;
+        // Perform single-batch insert for all new turns
+        if !items_to_index.is_empty() {
+            self.add_memories_batch(items_to_index).await;
 
-                turn_index += 1;
-                i += 1;
-            } else {
-                i += 1;
+            // Mark turns as synced in-memory
+            let mut synced_guard = self.synced_turns.write().await;
+            for key in newly_synced_keys {
+                synced_guard.insert(key);
             }
         }
     }
 
-    /// Chunks large documents (e.g. scraped webpages or full session logs) into ~1000 char segments
-    /// with overlapping context and stores each chunk into LanceDB with metadata tags.
+    /// Chunks large documents into ~1000 char segments with overlapping context
+    /// and stores all chunks into LanceDB in a single batch.
     pub async fn add_document_chunks(&self, full_text: &str, metadata_tag: &str) {
         let text = full_text.trim();
         if text.is_empty() {
@@ -238,12 +257,12 @@ impl TurbovecStore {
         let mut start = 0;
         let total = chars.len();
 
-        let mut chunks = Vec::new();
+        let mut items = Vec::new();
         while start < total {
             let end = usize::min(start + CHUNK_SIZE, total);
             let chunk_str: String = chars[start..end].iter().collect();
             if chunk_str.trim().len() >= 30 {
-                chunks.push(chunk_str);
+                items.push((chunk_str, metadata_tag.to_string()));
             }
             if end >= total {
                 break;
@@ -251,18 +270,11 @@ impl TurbovecStore {
             start += CHUNK_SIZE.saturating_sub(OVERLAP);
         }
 
-        if chunks.is_empty() {
+        if items.is_empty() {
             return;
         }
 
-        if let Ok(embedder) = crate::rag::embeddings::Embedder::new() {
-            if let Ok(vecs) = embedder.embed(chunks.clone()).await {
-                for (chunk_text, vector) in chunks.into_iter().zip(vecs.into_iter()) {
-                    let doc_id = uuid::Uuid::new_v4().to_string();
-                    let _ = self.inner.insert(doc_id, chunk_text, vector, metadata_tag.to_string()).await;
-                }
-            }
-        }
+        self.add_memories_batch(items).await;
     }
 
     pub async fn search_memory(&self, query: &str, limit: usize) -> Vec<(String, String)> {

@@ -38,6 +38,7 @@ import { ChatArtifact } from '@nyx/shared';
 import { isModelLoaded } from '@src/shared/hooks/useLocalModels';
 import { extractCoreSubject } from '@src/core/services/intelligentQueryEngine';
 import { antigravityAgent } from '@src/core/agents/antigravityAgent';
+import { isCodePrompt } from '@src/core/prompts/classifier';
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -219,6 +220,8 @@ export function useChatPipeline({
       let isCloud = [
         'gemini',
         'openrouter',
+        'nvidia-nim',
+        'nvidia',
         'openai',
         'anthropic',
         'deepseek',
@@ -233,11 +236,15 @@ export function useChatPipeline({
           const providerName =
             resolvedProviderEarly === 'openrouter'
               ? 'OpenRouter'
-              : resolvedProviderEarly.charAt(0).toUpperCase() + resolvedProviderEarly.slice(1);
+              : resolvedProviderEarly === 'nvidia-nim' || resolvedProviderEarly === 'nvidia'
+                ? 'NVIDIA NIM'
+                : resolvedProviderEarly.charAt(0).toUpperCase() + resolvedProviderEarly.slice(1);
           const extraHint =
             resolvedProviderEarly === 'openrouter'
               ? ' OpenRouter models require a free API key from openrouter.ai/keys.'
-              : '';
+              : resolvedProviderEarly === 'nvidia-nim' || resolvedProviderEarly === 'nvidia'
+                ? ' NVIDIA NIM models require an API key from build.nvidia.com.'
+                : '';
           toast.error(
             `No API key found for ${providerName}.${extraHint} Go to Settings → API Keys and add your ${providerName} key to use ${modelToUse}.`,
             { duration: 7000 }
@@ -328,7 +335,9 @@ export function useChatPipeline({
               modelId: modelToUse,
               contextSize: modelSettings?.contextSize ?? 0,
               gpuLayers:
-                modelSettings?.gpuLayers === -1 ? null : (modelSettings?.gpuLayers ?? null),
+                !modelSettings?.gpuLayers || modelSettings.gpuLayers <= 0
+                  ? null
+                  : modelSettings.gpuLayers,
               cpuThreads: modelSettings?.threads || 0,
               flashAttention: modelSettings?.flashAttention ?? false,
               kvCacheType: modelSettings?.kvCacheType || 'auto',
@@ -388,10 +397,10 @@ export function useChatPipeline({
       }
 
       // dynamically size effectiveMaxCtx
-      let effectiveMaxCtx = maxContextTokens;
-      if (isLocalModel && modelSettings?.contextSize && modelSettings.contextSize > 0) {
-        effectiveMaxCtx = modelSettings.contextSize;
-      }
+      const earlyCaps = getModelCapabilities(modelToUse);
+      let effectiveMaxCtx = isLocalModel
+        ? (nyxState.modelConfigs?.[modelToUse]?.contextSize ?? modelSettings?.contextSize ?? 32768)
+        : earlyCaps.contextWindow || (maxContextTokens > 0 ? maxContextTokens : 131072);
 
       let llmHistory = historyRef.current;
       if (projectedTotal > effectiveMaxCtx) {
@@ -573,14 +582,20 @@ export function useChatPipeline({
         }
 
         let initialWarning = '';
-        const contextSize = modelSettings?.contextSize ?? 0;
-        const isContextTooSmall = contextSize > 0 && contextSize < 4096;
-        const isContextNearLimit = contextSize > 0 && projectedTotal > contextSize * 0.8;
+        const actualContextLimit = isLocalModel
+          ? (nyxState.modelConfigs?.[modelToUse]?.contextSize ??
+            modelSettings?.contextSize ??
+            32768)
+          : earlyCaps.contextWindow || (maxContextTokens > 0 ? maxContextTokens : 131072);
+        const isContextTooSmall =
+          isLocalModel && actualContextLimit > 0 && actualContextLimit < 4096;
+        const isContextNearLimit =
+          actualContextLimit > 0 && projectedTotal > actualContextLimit * 0.85;
 
         if (isContextTooSmall) {
-          initialWarning = `> ⚠️ **Low Context Length**: The configured context length of the model is low (${contextSize} tokens). Auto mode recommended.\n\n`;
+          initialWarning = `> ⚠️ **Low Context Length**: The configured context length of the model is low (${actualContextLimit} tokens). Auto mode recommended.\n\n`;
         } else if (isContextNearLimit) {
-          initialWarning = `> ⚠️ **Context Near Limit**: Total tokens (${projectedTotal}) are close to configured context size (${contextSize} tokens).\n\n`;
+          initialWarning = `> ⚠️ **Context Near Limit**: Total tokens (${projectedTotal}) are close to configured context size (${actualContextLimit} tokens).\n\n`;
         }
 
         const assistantMsg: ChatMessage = {
@@ -630,12 +645,16 @@ export function useChatPipeline({
         const resolvedDiagramFormat =
           rustRouteDecision?.target_diagram_format ?? fastDecision.target_diagram_format;
 
+        const isCodeReq =
+          promptCat === 'code' || resolvedIntent === 'AutonomousCoding' || isCodePrompt(prompt);
+
         const isExplicitSearchOrResearch =
-          resolvedNeedsSearch ||
-          resolvedIntent === 'DeepResearch' ||
-          promptCat === 'websearch' ||
-          promptCat === 'research' ||
-          isWebSearchPrompt(prompt);
+          !isCodeReq &&
+          (resolvedNeedsSearch ||
+            resolvedIntent === 'DeepResearch' ||
+            promptCat === 'websearch' ||
+            promptCat === 'research' ||
+            isWebSearchPrompt(prompt));
 
         const isGreetingOrTrivial =
           /^(?:hi|hello|hey|greetings|howdy|yo|sup|thanks|thank you|good\s+(?:morning|afternoon|evening))\b/i.test(
@@ -650,6 +669,7 @@ export function useChatPipeline({
         const liveWebSearchEnabled =
           !isGreetingOrTrivial &&
           !isPureDiagramSyntax &&
+          (!isCodeReq || useAppStore.getState().webSearchEnabled || webSearchEnabled) &&
           (useAppStore.getState().webSearchEnabled ||
             webSearchEnabled ||
             isExplicitSearchOrResearch);
@@ -734,11 +754,21 @@ export function useChatPipeline({
         }
 
         const isPresentationReq = isPresentationPrompt(prompt);
+        const isCoderMode = executionMode === 'coder';
+        const isExplicitFileWrite =
+          /\b(?:save\s+to\s+file|write\s+to\s+file|create\s+(?:a\s+)?file\s+(?:at|named|called)|overwrite\s+file)\b/i.test(
+            prompt
+          );
+
         const activeTools = isPresentationReq
           ? TOOL_REGISTRY.filter((t) =>
               ['web_search', 'search_images', 'search_videos', 'generate_image'].includes(t.name)
             )
-          : TOOL_REGISTRY;
+          : isCoderMode || isExplicitFileWrite
+            ? TOOL_REGISTRY
+            : TOOL_REGISTRY.filter(
+                (t) => !['write_file', 'edit_file', 'run_terminal'].includes(t.name)
+              );
 
         const standardTools = activeTools.map((t) => ({
           type: 'function',
@@ -1138,12 +1168,9 @@ export function useChatPipeline({
 
               if (now - lastUpdateTime > THROTTLE_MS) {
                 lastUpdateTime = now;
-                const fullReasoning = activeStreamRef.current?.reasoning
-                  ? `${activeStreamRef.current.reasoning}\n${currentReasoning}`
-                  : currentReasoning;
                 const updatedMsg = {
                   ...activeStreamRef.current,
-                  reasoning: fullReasoning || undefined,
+                  reasoning: currentReasoning,
                   thinkingTimeMs: Date.now() - (activeStreamRef.current.timestamp || Date.now()),
                 };
                 activeStreamRef.current = updatedMsg;
@@ -1156,16 +1183,12 @@ export function useChatPipeline({
               }
               if (activeStreamRef.current) {
                 const extracted = extractThinkingAndContent(currentContent, currentReasoning);
-                const finalReasoningCombined = extracted.parsedReasoning
-                  ? activeStreamRef.current.reasoning
-                    ? `${activeStreamRef.current.reasoning}\n\n${extracted.parsedReasoning}`
-                    : extracted.parsedReasoning
-                  : activeStreamRef.current.reasoning || undefined;
+                const finalReasoning = extracted.parsedReasoning || currentReasoning || undefined;
 
                 const updatedMsg = {
                   ...activeStreamRef.current,
                   content: extracted.parsedContent,
-                  reasoning: finalReasoningCombined,
+                  reasoning: finalReasoning,
                 };
                 activeStreamRef.current = updatedMsg;
                 setActiveStreamMessage(updatedMsg);
@@ -1275,17 +1298,21 @@ export function useChatPipeline({
             }
           }
 
+          const modelCaps = getModelCapabilities(modelToUse);
+
           const effectiveContextWindow = isLocalModel
             ? modelSettings?.contextSize && modelSettings.contextSize > 0
               ? modelSettings.contextSize
               : 8192
             : maxContextTokens > 0
               ? maxContextTokens
-              : 128000;
+              : modelCaps.contextWindow || 128000;
 
           const isReasoningUserActive = useAppStore.getState().reasoningEnabled ?? true;
           const geminiThinkingLevel = useAppStore.getState().geminiThinkingLevel || 'max';
-          const shouldEnableReasoning = isReasoningUserActive;
+          // Both the user toggle AND the model must support reasoning
+          const shouldEnableReasoning =
+            isReasoningUserActive && modelCaps.supportsReasoning === true;
           const configuredMaxTokens = modelSettings?.maxTokens;
           const finalMaxTokens = isLocalModel
             ? configuredMaxTokens && configuredMaxTokens > 0
@@ -1294,108 +1321,21 @@ export function useChatPipeline({
             : configuredMaxTokens && configuredMaxTokens > 0
               ? configuredMaxTokens
               : isPresentationReq
-                ? 16384
-                : 8192;
-
-          const modelCaps = getModelCapabilities(modelToUse);
+                ? Math.max(modelCaps.maxOutputTokens || 16384, 16384)
+                : modelCaps.maxOutputTokens || 8192;
           const lowerModel = modelToUse.toLowerCase();
           const isGemma = lowerModel.includes('gemma');
           const isImageGen =
             lowerModel.includes('imagen') ||
             lowerModel.includes('flux') ||
             lowerModel.includes('diffusion');
-          const isReasoningOnly =
-            lowerModel.includes('deepseek-r1') ||
-            lowerModel.includes('deepseek/deepseek-r1') ||
-            lowerModel.includes('qwq');
-          const shouldPassTools =
-            modelCaps.supportsTools && !isImageGen && !isReasoningOnly && !isGreetingOrTrivial;
-
-          const isAntigravitySupervisorActive = modelSettings?.antigravity !== false;
+          // Pass tools whenever the model supports tools (both reasoning and non-reasoning models)
+          const shouldPassTools = modelCaps.supportsTools && !isImageGen && !isGreetingOrTrivial;
 
           let enrichedSystemInstruction = finalSystemInstruction;
 
-          // ── Pass 1: Antigravity Agent Controller & Orchestrator (Brain & Memory) ──
-          // The Universal Antigravity Agent SDK orchestrates the active model,
-          // reviews conversation memory, coordinates tools, and produces a live thinking plan in the ThinkingBlock.
-          if (isAntigravitySupervisorActive) {
-            const initialThought = `━━━ [Antigravity Controller] Supervising & Orchestrating ━━━\n🔍 Analyzing user specifications for ${modelToUse} (${resolvedProvider})...\n🧠 Reviewing conversation history & TurboVec semantic memory...`;
-            if (activeStreamRef.current) {
-              activeStreamRef.current.reasoning = initialThought;
-              activeStreamRef.current.thinkingTimeMs = 50;
-              setActiveStreamMessage({ ...activeStreamRef.current });
-            }
-
-            try {
-              const planPromise = antigravityAgent.orchestrateAndPlan({
-                prompt: finalPrompt,
-                history: backendMessages,
-                systemInstruction: finalSystemInstruction || undefined,
-                targetModel: modelToUse,
-                targetProvider: resolvedProvider,
-                onStep: (step) => {
-                  if (!activeStreamRef.current) return;
-
-                  if (step.thought) {
-                    const prev = activeStreamRef.current.reasoning || '';
-                    activeStreamRef.current.reasoning = `${prev}\n${step.thought}`;
-                    activeStreamRef.current.thinkingTimeMs =
-                      Date.now() - (activeStreamRef.current.timestamp || Date.now());
-                  }
-
-                  if (step.tool_name) {
-                    const callId = `ag_${Date.now()}_${step.tool_name}`;
-                    const callStatus: 'running' | 'success' | 'error' = step.is_finished
-                      ? 'success'
-                      : step.is_error
-                        ? 'error'
-                        : 'running';
-                    const newCall = {
-                      id: callId,
-                      type: 'function' as const,
-                      function: {
-                        name: step.tool_name,
-                        arguments: JSON.stringify(step.tool_args || {}),
-                      },
-                      status: callStatus,
-                      result: step.tool_result,
-                    };
-                    activeStreamRef.current.toolCalls = [
-                      ...(activeStreamRef.current.toolCalls || []),
-                      newCall,
-                    ];
-                  }
-
-                  setActiveStreamMessage({ ...activeStreamRef.current });
-                },
-                customFunctionHandler: async (name, args) => {
-                  const res = await toolExecutor.executeSingle({
-                    id: `ag_call_${Date.now()}`,
-                    name,
-                    arguments: args,
-                    rawArguments: JSON.stringify(args),
-                  });
-                  return res.content;
-                },
-              });
-
-              // Fast timeout: Do not block generation for more than 4 seconds
-              const timeoutPromise = new Promise<{
-                contextEnrichment?: string;
-                toolOutputs: any[];
-              }>((resolve) =>
-                setTimeout(() => resolve({ contextEnrichment: '', toolOutputs: [] }), 4000)
-              );
-
-              const planResult = await Promise.race([planPromise, timeoutPromise]);
-
-              if (planResult.contextEnrichment) {
-                enrichedSystemInstruction = `${enrichedSystemInstruction}\n\n${planResult.contextEnrichment}`;
-              }
-            } catch (planErr) {
-              console.warn('[useChatPipeline] Antigravity orchestrator planning skipped:', planErr);
-            }
-          }
+          // ── Stream Directly from Selected Model ──
+          // The selected model streams real thinking/reasoning tokens and output directly into chat without synthetic placeholder injection.
 
           // ── Pass 2: Selected Model Generates Response & Code Artifacts ──
           // The model selected in the model selector (Gemini 3.7 Flash, Claude 3.5 Sonnet, GPT-4o, LLaMA 3.3 70B, etc.)
@@ -1411,6 +1351,7 @@ export function useChatPipeline({
               provider: resolvedProvider,
               model_id: modelToUse,
               api_key: getEffectiveApiKey(resolvedProvider, apiKeys) || '',
+              endpoint_override: gatewayUrl || undefined,
               messages: backendMessages,
               temperature: modelSettings?.temperature ?? 0.7,
               top_p: modelSettings?.topP ?? 0.95,
@@ -1421,7 +1362,10 @@ export function useChatPipeline({
               max_tokens: finalMaxTokens,
               execution_mode: executionMode,
               reasoning_enabled: shouldEnableReasoning,
-              thinking_level: resolvedProvider === 'gemini' ? geminiThinkingLevel : undefined,
+              thinking_level:
+                resolvedProvider === 'gemini' || resolvedProvider === 'nyx-native'
+                  ? geminiThinkingLevel
+                  : undefined,
               context_window: effectiveContextWindow,
               tools: shouldPassTools ? standardTools : undefined,
               web_search_enabled: liveWebSearchEnabled && !isGemma,

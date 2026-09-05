@@ -36,6 +36,11 @@ const WEBSEARCH_PATTERNS = [
 const CODE_PATTERNS = [
   /\b(?:write\s+code|implement|refactor|debug|fix\s+bug|stack\s*trace|typeerror|syntaxerror|referenceerror|typescript|rust|javascript|python|golang|rustc|sql|regex|component|endpoint|graphql|dockerfile|test\s+suite|function|class\s+\w+|async\s+fn|unit\s+test|api\s+route|react\s+hook)\b/i,
   /(?:fix|write|create|modify|review|optimize)\s+(?:this|the)?\s*(?:code|function|script|hook|service|algo|algorithm|query|handler|middleware)\b/i,
+  /\b(?:(?:want|need|give\s+me|generate|make|build)\s+(?:a\s+|some\s+)?code|code\s+(?:for|an?|to)|(?:build|create|make|code)\s+(?:an?\s+)?(?:application|app|game|dashboard|website|page|tool|widget))\b/i,
+  /(?:fix|modify|update|edit|change|patch|improve|enhance|add\s+to|redo)\s+(?:the|this|my|previous|existing|\s+)*(?:code|app|application|game|calculator|script|component|function|feature|button|styling|ui|bug|logic)/i,
+  /(?:fix|update|edit|modify)\s+(?:the\s+)?previous\s+(?:response|code|version)/i,
+  /\b(?:in|to)\s+(?:the|this|my|previous|\s+)*code\b/i,
+  /\b(?:add|change|fix|update|integrate)\s+[\w\s]+\s+(?:in|to)\s+(?:the|this|my|previous|\s+)*code\b/i,
 ];
 
 // -----------------------------------------------------------------------------
@@ -79,10 +84,24 @@ export function isWebSearchPrompt(
   return WEBSEARCH_PATTERNS.some((pat) => pat.test(p));
 }
 
-export function isCodePrompt(prompt?: string): boolean {
+export function isCodePrompt(prompt?: string, hasPreviousCode?: boolean): boolean {
   if (!prompt) return false;
   const p = prompt.toLowerCase().trim();
-  if (p.includes('```') || p.includes('`')) return true;
+  // A proper code fence block (```) in the prompt signals code intent
+  if (p.includes('```')) return true;
+  // Direct fix / repair commands
+  if (/^(?:fix|debug|patch|update|solve|repair)\s+(?:it|this|that|code|bug|error)$/i.test(p))
+    return true;
+  // If the previous response contained code and the user asks to modify/fix/add something
+  if (
+    hasPreviousCode &&
+    (/^(?:fix|change|update|edit|modify|add|remove|make|style|color|center)\b/i.test(p) ||
+      /\b(?:error|bug|issue|broken|doesn't work|crash|failed)\b/i.test(p))
+  ) {
+    return true;
+  }
+  const wordCount = p.split(/\s+/).length;
+  if (wordCount < 2) return false;
   return CODE_PATTERNS.some((pat) => pat.test(p));
 }
 
@@ -93,7 +112,8 @@ export function isCodePrompt(prompt?: string): boolean {
 export function detectPromptCategory(
   rawPrompt: string,
   context?: ChatContext,
-  webSearchResults?: string
+  webSearchResults?: string,
+  history?: Array<{ role: string; content?: any }>
 ): PromptCategory {
   // Explicit context category override
   if (context?.promptCategory) {
@@ -102,6 +122,14 @@ export function detectPromptCategory(
 
   const p = (rawPrompt || '').trim();
   if (!p) return 'general';
+
+  // Check if conversation history has an assistant message containing a code block
+  const hasPreviousCode = !!history?.some(
+    (m) =>
+      m.role === 'assistant' &&
+      typeof m.content === 'string' &&
+      /(?:^|\n)```[a-zA-Z0-9_-]*\r?\n[\s\S]*?(?:\n```|$)/.test(m.content)
+  );
 
   // 1. Presentation / Slidev takes priority when slide formatting is explicitly requested
   if (isPresentationPrompt(p)) {
@@ -124,7 +152,7 @@ export function detectPromptCategory(
   }
 
   // 5. Code Engineering / Refactoring / Debugging
-  if (isCodePrompt(p)) {
+  if (isCodePrompt(p, hasPreviousCode)) {
     return 'code';
   }
 

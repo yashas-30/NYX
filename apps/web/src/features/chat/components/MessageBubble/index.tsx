@@ -60,6 +60,7 @@ export interface MessageBubbleProps {
   rejectTool?: (index: number, approvalId: string) => void;
   onPinToggle?: (index: number) => void;
   onOpenLightbox?: (url?: string, prompt?: string, engine?: string) => void;
+  hasSupersededArtifact?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +205,7 @@ export const MessageBubble = memo<MessageBubbleProps>(
     approveTool,
     rejectTool,
     onPinToggle,
+    hasSupersededArtifact,
   }) => {
     const isUser = msg.role === 'user';
     const isSetupMessage =
@@ -423,6 +425,9 @@ export const MessageBubble = memo<MessageBubbleProps>(
                           });
                         }}
                         onArtifactClick={onArtifactClick as any}
+                        messageId={msg.id || (msg.timestamp ? String(msg.timestamp) : undefined)}
+                        userPrompt={userPromptText}
+                        hasSupersededArtifact={hasSupersededArtifact}
                       />
                     )}
 

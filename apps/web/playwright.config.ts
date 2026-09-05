@@ -30,7 +30,7 @@ export default defineConfig({
   ],
   // Start the Vite dev server automatically when running locally
   webServer: {
-    command: 'pnpm dev',
+    command: 'pnpm --filter @nyx/web dev',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

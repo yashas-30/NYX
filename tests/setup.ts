@@ -73,4 +73,11 @@ if (typeof window !== 'undefined') {
     }
   }
   global.IntersectionObserver = IntersectionObserverMock as any;
+
+  if (typeof document !== 'undefined') {
+    Object.defineProperty(document, 'compatMode', {
+      value: 'CSS1Compat',
+      configurable: true,
+    });
+  }
 }

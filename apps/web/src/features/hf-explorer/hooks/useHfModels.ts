@@ -36,6 +36,24 @@ export function useHfModels(
   });
 }
 
+export function useHfModelDetail(modelId: string | null) {
+  return useQuery<HfModelResult | null, Error>({
+    queryKey: ['hf-model-detail', modelId],
+    queryFn: async () => {
+      if (!modelId) return null;
+      try {
+        const detail = await invoke<HfModelResult>('hf_get_model_details', { modelId });
+        return detail;
+      } catch (err) {
+        console.warn(`[useHfModelDetail] Fallback for ${modelId}:`, err);
+        return null;
+      }
+    },
+    enabled: !!modelId,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useHfModelFiles(modelId: string | null) {
   return useQuery<HfModelFile[], Error>({
     queryKey: ['hf-model-files', modelId],

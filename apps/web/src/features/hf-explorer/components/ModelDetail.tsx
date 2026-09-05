@@ -24,6 +24,8 @@ import {
   formatCount,
   formatDate,
   formatSize,
+  formatSpeed,
+  formatEta,
   parseQuantDetails,
   analyzeHardwareMatch,
   pickBestFile,
@@ -580,6 +582,8 @@ function DownloadButton({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: 12, color: '#f1f5f9', fontWeight: 600 }}>
             {isPaused ? 'Paused' : 'Downloading'} {dl.progress.toFixed(0)}%
+            {dl.speed ? ` · ${formatSpeed(dl.speed)}` : ''}
+            {dl.eta && dl.eta > 0 ? ` · ETA ${formatEta(dl.eta)}` : ''}
           </span>
           <button
             onClick={() => onCancel(primaryKey)}
@@ -673,16 +677,59 @@ export function ModelDetail({
   const isGated = Boolean(modelInfo?.gated) && modelInfo?.gated !== 'false';
 
   /* ── 1. Strictly Filter & Group GGUF Model Files ─────────────────────── */
-  const { ggufOptions, mmprojFile } = useMemo(() => {
+  const { ggufOptions, companions, mmprojFile } = useMemo(() => {
     const ggufFiles: HfModelFile[] = [];
+    const companionList: {
+      file: HfModelFile;
+      type: 'vision' | 'audio' | 'draft';
+      label: string;
+    }[] = [];
     let mmproj: HfModelFile | undefined;
 
     for (const f of files) {
       const fn = f.filename.toLowerCase();
       if (!fn.endsWith('.gguf')) continue;
 
-      if (fn.includes('mmproj')) {
+      if (
+        fn.includes('mmproj') ||
+        fn.includes('vision_projector') ||
+        fn.includes('vision-projector') ||
+        fn.includes('vision_encoder') ||
+        fn.includes('clip-vision')
+      ) {
         if (!mmproj) mmproj = f;
+        companionList.push({
+          file: f,
+          type: 'vision',
+          label: `Vision Projector (${f.filename.split('/').pop() || f.filename})`,
+        });
+      } else if (
+        fn.includes('audio-projector') ||
+        fn.includes('audio_projector') ||
+        fn.includes('audio-encoder') ||
+        fn.includes('audio_encoder') ||
+        fn.includes('whisper') ||
+        fn.includes('speech_encoder')
+      ) {
+        companionList.push({
+          file: f,
+          type: 'audio',
+          label: `Audio Projector (${f.filename.split('/').pop() || f.filename})`,
+        });
+      } else if (
+        fn.startsWith('draft-') ||
+        fn.includes('-draft') ||
+        fn.includes('_draft') ||
+        fn.startsWith('mtp-') ||
+        fn.includes('-mtp') ||
+        fn.includes('_mtp')
+      ) {
+        const isMtp = fn.includes('mtp');
+        companionList.push({
+          file: f,
+          type: 'draft',
+          label: `${isMtp ? 'MTP Speculative Model' : 'Draft Model'} (${f.filename.split('/').pop() || f.filename})`,
+        });
       } else {
         ggufFiles.push(f);
       }
@@ -726,8 +773,27 @@ export function ModelDetail({
 
     options.sort((a, b) => a.totalSize - b.totalSize);
 
-    return { ggufOptions: options, mmprojFile: mmproj };
+    return { ggufOptions: options, companions: companionList, mmprojFile: mmproj };
   }, [files]);
+
+  // Pick unique best companion file per category (vision, audio, draft)
+  const selectedCompanions = useMemo(() => {
+    const list: typeof companions = [];
+    const vision = companions.filter((c) => c.type === 'vision');
+    if (vision.length > 0) {
+      const f16 = vision.find((c) => c.file.filename.toLowerCase().includes('f16'));
+      list.push(f16 || vision[0]);
+    }
+    const audio = companions.filter((c) => c.type === 'audio');
+    if (audio.length > 0) {
+      list.push(audio[0]);
+    }
+    const draft = companions.filter((c) => c.type === 'draft');
+    if (draft.length > 0) {
+      list.push(draft[0]);
+    }
+    return list;
+  }, [companions]);
 
   // Accurate recommendation based on real device RAM & GPU VRAM
   const bestKey = useMemo(() => {
@@ -758,30 +824,47 @@ export function ModelDetail({
       for (const fn of filenames) {
         handleDownload(modelId, fn);
       }
-      if (mmprojFile) {
-        handleDownload(modelId, mmprojFile.filename);
+      for (const comp of selectedCompanions) {
+        handleDownload(modelId, comp.file.filename);
       }
     },
-    [modelId, mmprojFile, handleDownload]
+    [modelId, selectedCompanions, handleDownload]
   );
 
-  // Dynamic parameters, architecture, and capabilities
+  // Dynamic parameters, architecture, and capabilities from live HF metadata
   const paramCount = useMemo(() => {
-    return extractParameterCount(modelId, modelInfo?.tags, modelInfo?.numParameters);
-  }, [modelId, modelInfo?.tags, modelInfo?.numParameters]);
+    return extractParameterCount(
+      modelId,
+      modelInfo?.tags,
+      modelInfo?.numParameters,
+      modelInfo?.gguf
+    );
+  }, [modelId, modelInfo?.tags, modelInfo?.numParameters, modelInfo?.gguf]);
 
   const archName = useMemo(() => {
-    return getArchitectureName(modelId, modelInfo?.tags);
-  }, [modelId, modelInfo?.tags]);
+    return getArchitectureName(modelId, modelInfo?.tags, modelInfo?.config, modelInfo?.gguf);
+  }, [modelId, modelInfo?.tags, modelInfo?.config, modelInfo?.gguf]);
 
   const capabilities = useMemo(() => {
     return getCapabilityTags(
       modelId,
       modelInfo?.tags,
       modelInfo?.pipeline_tag,
-      Boolean(mmprojFile)
+      Boolean(mmprojFile),
+      {
+        gguf: modelInfo?.gguf,
+        config: modelInfo?.config,
+        hasVisionProjector: Boolean(mmprojFile),
+      }
     );
-  }, [modelId, modelInfo?.tags, modelInfo?.pipeline_tag, mmprojFile]);
+  }, [
+    modelId,
+    modelInfo?.tags,
+    modelInfo?.pipeline_tag,
+    modelInfo?.gguf,
+    modelInfo?.config,
+    mmprojFile,
+  ]);
 
   return (
     <div
@@ -1059,26 +1142,45 @@ export function ModelDetail({
             {/* Hardware Status Banner */}
             <HardwareStatusBanner hw={hardware} match={activeMatch} />
 
-            {/* Vision model mmproj auto-download indicator */}
-            {mmprojFile && (
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 12px',
-                  borderRadius: 6,
-                  background: 'rgba(168, 85, 247, 0.12)',
-                  border: '1px solid rgba(168, 85, 247, 0.25)',
-                  color: '#c084fc',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  width: 'fit-content',
-                }}
-              >
-                <Sparkle size={13} weight="bold" />
-                Vision Projector ({mmprojFile.filename}) will automatically download alongside this
-                model
+            {/* Companion files (vision, audio, draft) auto-download indicators */}
+            {selectedCompanions.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {selectedCompanions.map((comp) => (
+                  <div
+                    key={comp.file.filename}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 12px',
+                      borderRadius: 6,
+                      background:
+                        comp.type === 'vision'
+                          ? 'rgba(168, 85, 247, 0.12)'
+                          : comp.type === 'audio'
+                            ? 'rgba(6, 182, 212, 0.12)'
+                            : 'rgba(234, 179, 8, 0.12)',
+                      border:
+                        comp.type === 'vision'
+                          ? '1px solid rgba(168, 85, 247, 0.25)'
+                          : comp.type === 'audio'
+                            ? '1px solid rgba(6, 182, 212, 0.25)'
+                            : '1px solid rgba(234, 179, 8, 0.25)',
+                      color:
+                        comp.type === 'vision'
+                          ? '#c084fc'
+                          : comp.type === 'audio'
+                            ? '#22d3ee'
+                            : '#facc15',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      width: 'fit-content',
+                    }}
+                  >
+                    <Sparkle size={13} weight="bold" />
+                    {comp.label} will automatically download alongside this model
+                  </div>
+                ))}
               </div>
             )}
 
@@ -1151,6 +1253,64 @@ export function ModelDetail({
               {archName}
             </span>
           </div>
+
+          {/* Context Length */}
+          {(() => {
+            const rawCtx =
+              modelInfo?.gguf?.context_length ||
+              modelInfo?.config?.max_position_embeddings ||
+              modelInfo?.config?.context_length;
+            if (!rawCtx || rawCtx <= 0) return null;
+            const k = rawCtx >= 1024 ? `${Math.round(rawCtx / 1024)}K` : `${rawCtx}`;
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, color: '#64748b' }}>Context</span>
+                <span
+                  style={{
+                    padding: '2px 10px',
+                    borderRadius: 999,
+                    background: '#1c1c1f',
+                    border: '1px solid #2e2e32',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#e2e8f0',
+                    fontFamily: 'monospace',
+                  }}
+                  title={`${rawCtx.toLocaleString()} tokens`}
+                >
+                  {k}
+                </span>
+              </div>
+            );
+          })()}
+
+          {/* License */}
+          {(() => {
+            const rawLic =
+              modelInfo?.cardData?.license ||
+              modelInfo?.tags?.find((t) => t.startsWith('license:'))?.replace('license:', '');
+            if (!rawLic) return null;
+            const displayLic = String(rawLic).toUpperCase();
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, color: '#64748b' }}>License</span>
+                <span
+                  style={{
+                    padding: '2px 10px',
+                    borderRadius: 999,
+                    background: '#1c1c1f',
+                    border: '1px solid #2e2e32',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#e2e8f0',
+                    fontFamily: 'monospace',
+                  }}
+                >
+                  {displayLic}
+                </span>
+              </div>
+            );
+          })()}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 12, color: '#64748b' }}>Format</span>

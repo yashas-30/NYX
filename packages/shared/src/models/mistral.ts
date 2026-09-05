@@ -25,6 +25,7 @@ export const MISTRAL_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -55,6 +56,7 @@ export const MISTRAL_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -88,6 +90,7 @@ export const MISTRAL_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: true,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -126,6 +129,7 @@ export const MISTRAL_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -164,6 +168,7 @@ export const MISTRAL_MODELS: ModelOption[] = [
     capabilities: {
       vision: false,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -198,6 +203,7 @@ export const MISTRAL_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [
@@ -229,6 +235,7 @@ export const MISTRAL_MODELS: ModelOption[] = [
     capabilities: {
       vision: true,
       reasoning: false,
+      toolCalling: true,
     },
     supportsThinking: false,
     features: [

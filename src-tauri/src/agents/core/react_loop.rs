@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NYX — ReAct Autonomous Tool Execution Loop (Cline-Standard Safe Engine)
+// NYX — ReAct Autonomous Tool Execution Loop (Safe Execution Engine)
 // ─────────────────────────────────────────────────────────────────────────────
 
-use crate::agents::tools::ClineFsTools;
+use crate::agents::tools::WorkspaceFsTools;
 use crate::guardrails::{args_fingerprint, check_loop_detection, sanitize_output, validate_agent_input, validate_generated_output, validate_tool_args};
 use crate::llm::gateway::{DynamicModelRegistry, LiveQuotaLedger, ModelRole};
 use crate::llm::{execute_any_stream, UnifiedMessage, UnifiedRequest};
@@ -32,7 +32,7 @@ pub struct AgentExecutionStep {
 }
 
 pub struct ReActLoopEngine {
-    pub cline_fs: Arc<ClineFsTools>,
+    pub fs_tools: Arc<WorkspaceFsTools>,
     pub registry: Arc<DynamicModelRegistry>,
     pub quota_ledger: Arc<LiveQuotaLedger>,
     pub cancel_flag: Arc<AtomicBool>,
@@ -40,13 +40,13 @@ pub struct ReActLoopEngine {
 
 impl ReActLoopEngine {
     pub fn new(
-        cline_fs: Arc<ClineFsTools>,
+        fs_tools: Arc<WorkspaceFsTools>,
         registry: Arc<DynamicModelRegistry>,
         quota_ledger: Arc<LiveQuotaLedger>,
         cancel_flag: Arc<AtomicBool>,
     ) -> Self {
         Self {
-            cline_fs,
+            fs_tools,
             registry,
             quota_ledger,
             cancel_flag,
@@ -301,7 +301,7 @@ RULES:
         match name {
             "read_file" => {
                 let path = args["path"].as_str().unwrap_or("");
-                match self.cline_fs.read_file(path).await {
+                match self.fs_tools.read_file(path).await {
                     Ok(res) => (res.content, false),
                     Err(e) => (e, true),
                 }
@@ -309,7 +309,7 @@ RULES:
             "write_to_file" => {
                 let path = args["path"].as_str().unwrap_or("");
                 let content = args["content"].as_str().unwrap_or("");
-                match self.cline_fs.write_to_file(path, content).await {
+                match self.fs_tools.write_to_file(path, content).await {
                     Ok(msg) => (msg, false),
                     Err(e) => (e, true),
                 }
@@ -318,14 +318,14 @@ RULES:
                 let path = args["path"].as_str().unwrap_or("");
                 let search = args["search"].as_str().unwrap_or("");
                 let replace = args["replace"].as_str().unwrap_or("");
-                match self.cline_fs.replace_in_file(path, search, replace).await {
+                match self.fs_tools.replace_in_file(path, search, replace).await {
                     Ok(msg) => (msg, false),
                     Err(e) => (e, true),
                 }
             }
             "delete_file" => {
                 let path = args["path"].as_str().unwrap_or("");
-                match self.cline_fs.delete_file(path).await {
+                match self.fs_tools.delete_file(path).await {
                     Ok(msg) => (msg, false),
                     Err(e) => (e, true),
                 }
@@ -333,7 +333,7 @@ RULES:
             "list_directory" => {
                 let path = args["path"].as_str().unwrap_or(".");
                 let recursive = args["recursive"].as_bool().unwrap_or(false);
-                match self.cline_fs.list_directory(path, recursive).await {
+                match self.fs_tools.list_directory(path, recursive).await {
                     Ok(list) => (list.join("\n"), false),
                     Err(e) => (e, true),
                 }
@@ -341,7 +341,7 @@ RULES:
             "grep_search" => {
                 let query = args["query"].as_str().unwrap_or("");
                 let filter = args["path_filter"].as_str();
-                match self.cline_fs.grep_search(query, filter).await {
+                match self.fs_tools.grep_search(query, filter).await {
                     Ok(matches) => (matches.join("\n"), false),
                     Err(e) => (e, true),
                 }

@@ -100,11 +100,26 @@ pub struct HardwareSnapshot {
     pub vram_total_mb: u64,
     /// Available VRAM in MB (after OS / driver overhead).
     pub vram_available_mb: u64,
+    /// Dedicated GPU memory available for explicit device allocations.
+    #[serde(default)]
+    pub dedicated_vram_available_mb: u64,
+    /// System memory that the GPU may borrow when using shared/unified memory.
+    #[serde(default)]
+    pub shared_gpu_memory_mb: u64,
     /// True if any dedicated (discrete) GPU was detected.
     pub has_dedicated_gpu: bool,
     /// True if the GPU is integrated (iGPU / APU / shared memory).
     /// iGPUs require conservative layer caps (≤35%) and context limits (≤8192).
     pub is_igpu: bool,
+    /// Name of secondary GPU if present (e.g. integrated GPU when primary is dedicated).
+    #[serde(default)]
+    pub secondary_gpu_name: Option<String>,
+    /// True if an integrated GPU was detected on this system.
+    #[serde(default)]
+    pub has_integrated_gpu: bool,
+    /// Available offload devices (e.g. ["CUDA0", "Vulkan0", "Vulkan1"]).
+    #[serde(default)]
+    pub available_devices: Vec<String>,
 
     // ── CPU ──────────────────────────────────────────────────────────────────
     /// Physical core count (not hyperthreads).
@@ -130,36 +145,78 @@ struct GpuDetectionResult {
     name: String,
     backend: GpuBackend,
     vram_total_bytes: u64,
+    vram_free_bytes: Option<u64>,
     is_dedicated: bool,
+    secondary_gpu_name: Option<String>,
+    has_integrated: bool,
+    available_devices: Vec<String>,
 }
 
 #[cfg(target_os = "windows")]
 async fn detect_gpu(sys_ram_bytes: u64) -> GpuDetectionResult {
-    // ── Step 1: Try nvidia-smi for precise VRAM (NVIDIA GPUs) ─────────────
+    // ── Step 1: Try nvidia-smi for precise total and free VRAM (NVIDIA GPUs) ──
     // Win32_VideoController.AdapterRAM is a 32-bit DWORD and overflows/wraps
     // to 0 or 4 294 967 295 for cards with >=4 GB VRAM (GTX 1650, RTX 30xx…).
-    // nvidia-smi reports the correct 64-bit value directly.
+    // nvidia-smi reports the correct 64-bit values directly.
     let nvidia_smi_vram = async {
         let out = tokio::process::Command::new("nvidia-smi").hide_window()
-            .args(&["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"])
+            .args(&["--query-gpu=name,memory.total,memory.free", "--format=csv,noheader,nounits"])
             .output()
             .await
             .ok()?;
         let text = String::from_utf8(out.stdout).ok()?;
         let line = text.lines().next()?.trim();
-        let mut parts = line.splitn(2, ',');
+        let mut parts = line.splitn(3, ',');
         let name = parts.next()?.trim().to_string();
-        let vram_mib: u64 = parts.next()?.trim().parse().ok()?;
-        Some((name, vram_mib * 1024 * 1024)) // MiB → bytes
+        let total_mib: u64 = parts.next()?.trim().parse().ok()?;
+        let free_mib: Option<u64> = parts.next().and_then(|p| p.trim().parse().ok());
+        Some((name, total_mib * 1024 * 1024, free_mib.map(|f| f * 1024 * 1024)))
     }.await;
 
-    if let Some((name, vram_bytes)) = nvidia_smi_vram {
-        info!("[GPU] nvidia-smi: {} — {:.1} GB VRAM", name, vram_bytes as f64 / 1e9);
+    if let Some((name, vram_bytes, free_bytes)) = nvidia_smi_vram {
+        info!(
+            "[GPU] nvidia-smi: {} — {:.1} GB VRAM (free: {:.1} GB)",
+            name,
+            vram_bytes as f64 / 1e9,
+            free_bytes.unwrap_or(vram_bytes) as f64 / 1e9
+        );
+
+        // Check for secondary integrated GPU (e.g. Intel UHD / AMD Radeon) for multi-device capability
+        let secondary = async {
+            let out = tokio::process::Command::new("powershell").hide_window()
+                .args(&["-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select-Object Name | ConvertTo-Json"])
+                .output()
+                .await
+                .ok()?;
+            let text = String::from_utf8(out.stdout).ok()?;
+            let val = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+            let arr = if val.is_array() { val.as_array()?.clone() } else { vec![val] };
+            for item in arr {
+                if let Some(n) = item.get("Name").and_then(|v| v.as_str()) {
+                    let n_lower = n.to_lowercase();
+                    if !n_lower.contains("nvidia") && (n_lower.contains("intel") || n_lower.contains("amd") || n_lower.contains("uhd") || n_lower.contains("iris") || n_lower.contains("radeon")) {
+                        return Some(n.to_string());
+                    }
+                }
+            }
+            None
+        }.await;
+
+        let (secondary_gpu_name, has_integrated, available_devices) = (
+            secondary,
+            true,
+            vec!["CUDA0".to_string()],
+        );
+
         return GpuDetectionResult {
             name,
             backend: GpuBackend::Cuda,
             vram_total_bytes: vram_bytes,
+            vram_free_bytes: free_bytes,
             is_dedicated: true,
+            secondary_gpu_name,
+            has_integrated,
+            available_devices,
         };
     }
 
@@ -276,7 +333,11 @@ async fn detect_gpu(sys_ram_bytes: u64) -> GpuDetectionResult {
                         name: best_name,
                         backend,
                         vram_total_bytes,
+                        vram_free_bytes: None,
                         is_dedicated,
+                        secondary_gpu_name: None,
+                        has_integrated: !is_dedicated,
+                        available_devices: vec!["Vulkan0".to_string()],
                     };
                 }
             }
@@ -287,7 +348,11 @@ async fn detect_gpu(sys_ram_bytes: u64) -> GpuDetectionResult {
         name: "Unknown GPU".to_string(),
         backend: GpuBackend::Unknown,
         vram_total_bytes: 0,
+        vram_free_bytes: None,
         is_dedicated: false,
+        secondary_gpu_name: None,
+        has_integrated: false,
+        available_devices: Vec::new(),
     }
 }
 
@@ -323,7 +388,11 @@ async fn detect_gpu(sys_ram_bytes: u64) -> GpuDetectionResult {
         name: "Apple GPU (Unified Memory)".to_string(),
         backend,
         vram_total_bytes,
+        vram_free_bytes: None,
         is_dedicated: false, // Apple Silicon is Unified Memory
+        secondary_gpu_name: None,
+        has_integrated: false,
+        available_devices: vec!["Metal0".to_string()],
     }
 }
 
@@ -332,25 +401,30 @@ async fn detect_gpu(_sys_ram_bytes: u64) -> GpuDetectionResult {
     // ── Step 1: Try nvidia-smi (NVIDIA GPUs on Linux) ───────────────────────
     let nvidia_smi_vram = async {
         let out = tokio::process::Command::new("nvidia-smi")
-            .args(&["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"])
+            .args(&["--query-gpu=name,memory.total,memory.free", "--format=csv,noheader,nounits"])
             .output()
             .await
             .ok()?;
         let text = String::from_utf8(out.stdout).ok()?;
         let line = text.lines().next()?.trim();
-        let mut parts = line.splitn(2, ',');
+        let mut parts = line.splitn(3, ',');
         let name = parts.next()?.trim().to_string();
-        let vram_mib: u64 = parts.next()?.trim().parse().ok()?;
-        Some((name, vram_mib * 1024 * 1024))
+        let total_mib: u64 = parts.next()?.trim().parse().ok()?;
+        let free_mib: Option<u64> = parts.next().and_then(|p| p.trim().parse().ok());
+        Some((name, total_mib * 1024 * 1024, free_mib.map(|f| f * 1024 * 1024)))
     }.await;
 
-    if let Some((name, vram_bytes)) = nvidia_smi_vram {
-        info!("[GPU/Linux] nvidia-smi: {} — {:.1} GB VRAM", name, vram_bytes as f64 / 1e9);
+    if let Some((name, vram_bytes, free_bytes)) = nvidia_smi_vram {
+        info!("[GPU/Linux] nvidia-smi: {} — {:.1} GB VRAM (free: {:.1} GB)", name, vram_bytes as f64 / 1e9, free_bytes.unwrap_or(vram_bytes) as f64 / 1e9);
         return GpuDetectionResult {
             name,
             backend: GpuBackend::Cuda,
             vram_total_bytes: vram_bytes,
+            vram_free_bytes: free_bytes,
             is_dedicated: true,
+            secondary_gpu_name: None,
+            has_integrated: false,
+            available_devices: vec!["CUDA0".to_string()],
         };
     }
 
@@ -392,7 +466,11 @@ async fn detect_gpu(_sys_ram_bytes: u64) -> GpuDetectionResult {
             name,
             backend: GpuBackend::Vulkan, // ROCm or Vulkan; Vulkan is safe universal choice
             vram_total_bytes: vram_bytes,
+            vram_free_bytes: None,
             is_dedicated: vram_bytes >= 2_000_000_000,
+            secondary_gpu_name: None,
+            has_integrated: false,
+            available_devices: vec!["Vulkan0".to_string()],
         };
     }
 
@@ -402,7 +480,11 @@ async fn detect_gpu(_sys_ram_bytes: u64) -> GpuDetectionResult {
         name: "No GPU detected".to_string(),
         backend: GpuBackend::Unknown,
         vram_total_bytes: 0,
+        vram_free_bytes: None,
         is_dedicated: false,
+        secondary_gpu_name: None,
+        has_integrated: false,
+        available_devices: Vec::new(),
     }
 }
 
@@ -479,15 +561,53 @@ impl HardwareSnapshot {
         // 2026 Hardware Standardization: Snap to standard profiles
         let profile = HardwareProfile::snap_from(snapshot.vram_total_mb, snapshot.ram_total_mb);
         snapshot.profile = profile;
+
+        #[cfg(target_os = "windows")]
+        let live_free_bytes = if snapshot.gpu_backend == GpuBackend::Cuda {
+            let out = tokio::process::Command::new("nvidia-smi").hide_window()
+                .args(&["--query-gpu=memory.free", "--format=csv,noheader,nounits"])
+                .output()
+                .await
+                .ok();
+            out.and_then(|o| String::from_utf8(o.stdout).ok())
+                .and_then(|t| t.lines().next().map(|l| l.trim().to_string()))
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(|mib| mib * 1024 * 1024)
+        } else {
+            None
+        };
+        #[cfg(not(target_os = "windows"))]
+        let live_free_bytes: Option<u64> = None;
+
+        let effective_free_bytes = live_free_bytes.or(gpu_result.vram_free_bytes);
         
         if snapshot.has_dedicated_gpu {
-            snapshot.vram_available_mb = snapshot.vram_total_mb.saturating_sub(256);
+            // Live free memory if detected via driver query, otherwise total minus 256MB OS baseline
+            snapshot.vram_available_mb = if let Some(free_b) = effective_free_bytes {
+                (free_b / (1024 * 1024)).saturating_sub(64)
+            } else {
+                snapshot.vram_total_mb.saturating_sub(256)
+            };
+            snapshot.dedicated_vram_available_mb = snapshot.vram_available_mb;
+            // Windows WDDM allocates up to 50% of System RAM as Shared GPU Memory.
+            // Keep a 1GB reserve for general host OS needs.
+            let wddm_shared_cap_mb = snapshot.ram_total_mb / 2;
+            let usable_ram_mb = snapshot.ram_available_mb.saturating_sub(1024);
+            snapshot.shared_gpu_memory_mb = wddm_shared_cap_mb.min(usable_ram_mb);
         } else {
             snapshot.vram_available_mb = snapshot.vram_total_mb.saturating_sub(100);
+            snapshot.dedicated_vram_available_mb = 0;
+            let wddm_shared_cap_mb = snapshot.ram_total_mb / 2;
+            let usable_ram_mb = snapshot.ram_available_mb.saturating_sub(1024);
+            snapshot.shared_gpu_memory_mb = wddm_shared_cap_mb.min(usable_ram_mb);
         }
         
-        info!("[HardwareAnalyser] Snapped to 2026 Profile: {:?} ({}MB VRAM, {}MB RAM)", 
-            profile, snapshot.vram_total_mb, snapshot.ram_total_mb);
+        snapshot.secondary_gpu_name = gpu_result.secondary_gpu_name.clone();
+        snapshot.has_integrated_gpu = gpu_result.has_integrated;
+        snapshot.available_devices = gpu_result.available_devices.clone();
+
+        info!("[HardwareAnalyser] Snapped to 2026 Profile: {:?} ({}MB VRAM, {}MB RAM, integrated: {})", 
+            profile, snapshot.vram_total_mb, snapshot.ram_total_mb, snapshot.has_integrated_gpu);
 
         snapshot
     }
@@ -501,8 +621,13 @@ impl Default for HardwareSnapshot {
             gpu_device_id: String::new(),
             vram_total_mb: 0,
             vram_available_mb: 0,
+            dedicated_vram_available_mb: 0,
+            shared_gpu_memory_mb: 0,
             has_dedicated_gpu: false,
             is_igpu: false,
+            secondary_gpu_name: None,
+            has_integrated_gpu: false,
+            available_devices: Vec::new(),
             cpu_physical_cores: 4,
             cpu_logical_threads: 8,
             cpu_name: "Unknown CPU".to_string(),

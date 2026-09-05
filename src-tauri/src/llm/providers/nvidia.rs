@@ -21,18 +21,42 @@ static NVIDIA_CLIENT: LazyLock<Client> = LazyLock::new(|| build_fast_http_client
 /// Normalizes model ID aliases for NVIDIA NIM
 pub fn normalize_nvidia_model(raw: &str) -> &str {
     match raw {
-        "nemotron-3-super" => "nvidia/nemotron-3-super-120b-a12b",
-        "nemotron-3-nano" => "nvidia/nemotron-3-nano-30b-a3b",
-        "nemotron-ultra-253b" | "llama-3.1-nemotron-ultra" => "nvidia/llama-3.1-nemotron-ultra-253b-v1",
-        "llama-3.3-70b" => "meta/llama-3.3-70b-instruct",
-        "mistral-nemotron" => "mistralai/mistral-nemotron",
-        "gemma-4-31b" => "google/gemma-4-31b-it",
-        "mistral-large-2" => "mistralai/mistral-large-2-instruct",
-        "minimax-m3" => "minimaxai/minimax-m3",
-        "nemotron-3-ultra" => "nvidia/nemotron-3-ultra-550b-a55b",
-        "gpt-oss-120b" => "openai/gpt-oss-120b",
-        "gpt-oss-20b" => "openai/gpt-oss-20b",
-        "deepseek-v4-pro" | "deepseek-v4-pro-0813" | "deepseek-ai/deepseek-v4-pro" => "deepseek-ai/deepseek-v4-pro-0813",
+        // Official NVIDIA NIM Models
+        "deepseek-r1" | "deepseek-ai/deepseek-r1" => "deepseek-ai/deepseek-r1",
+        "deepseek-v3" | "deepseek-ai/deepseek-v3" => "deepseek-ai/deepseek-v3",
+        "llama-3.3-70b" | "meta/llama-3.3-70b" | "meta/llama-3.3-70b-instruct" => "meta/llama-3.3-70b-instruct",
+        "llama-3.1-405b" | "meta/llama-3.1-405b" | "meta/llama-3.1-405b-instruct" => "meta/llama-3.1-405b-instruct",
+        "llama-3.1-70b" | "meta/llama-3.1-70b" | "meta/llama-3.1-70b-instruct" => "meta/llama-3.1-70b-instruct",
+        "llama-3.1-8b" | "meta/llama-3.1-8b" | "meta/llama-3.1-8b-instruct" => "meta/llama-3.1-8b-instruct",
+        "llama-3.2-1b" | "meta/llama-3.2-1b" | "meta/llama-3.2-1b-instruct" => "meta/llama-3.2-1b-instruct",
+        "llama-3.2-3b" | "meta/llama-3.2-3b" | "meta/llama-3.2-3b-instruct" => "meta/llama-3.2-3b-instruct",
+        "llama-3.2-11b-vision" | "meta/llama-3.2-11b-vision-instruct" => "meta/llama-3.2-11b-vision-instruct",
+        "llama-3.2-90b-vision" | "meta/llama-3.2-90b-vision-instruct" => "meta/llama-3.2-90b-vision-instruct",
+        "nemotron-70b" | "llama-3.1-nemotron-70b" | "nvidia/llama-3.1-nemotron-70b-instruct" => "nvidia/llama-3.1-nemotron-70b-instruct",
+        "nemotron-51b" | "llama-3.1-nemotron-51b" | "nvidia/llama-3.1-nemotron-51b-instruct" => "nvidia/llama-3.1-nemotron-51b-instruct",
+        "nemotron-4-340b" | "nvidia/nemotron-4-340b-instruct" => "nvidia/nemotron-4-340b-instruct",
+        "mistral-large-2" | "mistralai/mistral-large-2-instruct" => "mistralai/mistral-large-2-instruct",
+        "mixtral-8x22b" | "mistralai/mixtral-8x22b-instruct-v0.1" => "mistralai/mixtral-8x22b-instruct-v0.1",
+        "mixtral-8x7b" | "mistralai/mixtral-8x7b-instruct-v0.1" => "mistralai/mixtral-8x7b-instruct-v0.1",
+        "mistral-7b" | "mistralai/mistral-7b-instruct-v0.3" => "mistralai/mistral-7b-instruct-v0.3",
+        "phi-4" | "microsoft/phi-4" => "microsoft/phi-4",
+        "phi-3.5-mini" | "microsoft/phi-3.5-mini-instruct" => "microsoft/phi-3.5-mini-instruct",
+        "qwen-2.5-72b" | "qwen/qwen2.5-72b-instruct" => "qwen/qwen2.5-72b-instruct",
+        "qwen-2.5-coder-32b" | "qwen/qwen2.5-coder-32b-instruct" => "qwen/qwen2.5-coder-32b-instruct",
+        "qwen-2.5-7b" | "qwen/qwen2.5-7b-instruct" => "qwen/qwen2.5-7b-instruct",
+        "gemma-2-27b" | "google/gemma-2-27b-it" => "google/gemma-2-27b-it",
+        "gemma-2-9b" | "google/gemma-2-9b-it" => "google/gemma-2-9b-it",
+        "gemma-2-2b" | "google/gemma-2-2b-it" => "google/gemma-2-2b-it",
+
+        // Backward compatibility fallbacks for deprecated or hallucinated aliases
+        "nemotron-3-super" | "nvidia/nemotron-3-super-120b-a12b" => "nvidia/llama-3.1-nemotron-70b-instruct",
+        "nemotron-3-nano" | "nvidia/nemotron-3-nano-30b-a3b" => "nvidia/llama-3.1-nemotron-51b-instruct",
+        "nemotron-3-ultra" | "nvidia/nemotron-3-ultra-550b-a55b" => "nvidia/llama-3.1-nemotron-70b-instruct",
+        "nemotron-ultra-253b" | "llama-3.1-nemotron-ultra" | "nvidia/llama-3.1-nemotron-ultra-253b-v1" => "nvidia/llama-3.1-nemotron-70b-instruct",
+        "deepseek-v4-pro" | "deepseek-v4-pro-0813" | "deepseek-ai/deepseek-v4-pro" | "deepseek-ai/deepseek-v4-pro-0813" => "deepseek-ai/deepseek-r1",
+        "gpt-oss-120b" | "openai/gpt-oss-120b" => "meta/llama-3.3-70b-instruct",
+        "gpt-oss-20b" | "openai/gpt-oss-20b" => "meta/llama-3.1-8b-instruct",
+        "gemma-4-31b" | "google/gemma-4-31b-it" => "google/gemma-2-27b-it",
         other => other,
     }
 }
@@ -92,8 +116,17 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
         }
     }
 
-    let endpoint = req.endpoint_override.clone()
-        .unwrap_or_else(|| "https://integrate.api.nvidia.com/v1/chat/completions".to_string());
+    let raw_endpoint = req.endpoint_override.as_deref().unwrap_or("https://integrate.api.nvidia.com/v1/chat/completions");
+    let endpoint = if raw_endpoint.ends_with("/chat/completions") {
+        raw_endpoint.to_string()
+    } else {
+        let trimmed = raw_endpoint.trim_end_matches('/');
+        if trimmed.ends_with("/v1") {
+            format!("{}/chat/completions", trimmed)
+        } else {
+            format!("{}/v1/chat/completions", trimmed)
+        }
+    };
 
     Ok((endpoint, body, headers))
 }

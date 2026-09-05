@@ -14,8 +14,8 @@ import { ModelDefinition, ChatMessage, ToolCall } from '@src/infrastructure/type
 import { toast } from '@src/shared/components/ui/sonner';
 
 import { ChatHeader } from './ChatHeader';
-import { ChatMessageList } from './ChatMessageList';
-import { ChatPromptInput } from './ChatPromptInput';
+import { ChatMessageList, extractArtifactTitle } from './ChatMessageList';
+import { ChatPromptInput, AttachedFileItem } from './ChatPromptInput';
 import { ChatSidebar } from './ChatSidebar';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { useChatLogic } from '../hooks/useChatLogic';
@@ -145,6 +145,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const [prompt, setPrompt] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pendingImages, setPendingImages] = useState<ChatImage[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<AttachedFileItem[]>([]);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [branchManagerOpen, setBranchManagerOpen] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -194,7 +195,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
   const currentModel = useMemo(() => {
     if (!currentModelId) return null;
-    return mergedModels.find((m) => m.id === currentModelId) || null;
+    return (
+      mergedModels.find((m) => m.id === currentModelId || (m as any).realId === currentModelId) ||
+      null
+    );
   }, [currentModelId, mergedModels]);
 
   const storeModelConfigs = useNyxStore((s) => s.modelConfigs);
@@ -249,76 +253,99 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     prevStreamMsgRef.current = activeStreamMessage;
   }, [activeStreamMessage]);
 
-  // Helper to extract artifact or code fence from streaming / finished message
-  const extractArtifactFromMessage = useCallback((msg: ChatMessage | null | undefined) => {
-    if (!msg) return null;
-    if (msg.artifacts && msg.artifacts.length > 0) {
-      const art = msg.artifacts[msg.artifacts.length - 1];
-      return {
-        id: art.id || `artifact-${msg.timestamp || Date.now()}`,
-        type: art.type || 'code',
-        title: art.title || 'Code Artifact',
-        content: art.content,
-        language: art.language || 'html',
-      };
-    }
-    const text = typeof msg.content === 'string' ? msg.content : '';
-    const match = /```(\w+)?\s*\n?([\s\S]*?)(?:```|$)/i.exec(text);
-    if (!match) return null;
-    const lang = (match[1] || 'html').toLowerCase();
-    if (['markdown', 'md', 'text', 'txt'].includes(lang)) return null;
-    const rawCode = match[2].trim();
-    if (!rawCode) return null;
-
-    let title = 'Code Artifact';
-    if (['html', 'htm', 'xhtml'].includes(lang)) title = 'Web Application';
-    else if (['jsx', 'tsx', 'react'].includes(lang)) title = 'React Component';
-    else if (['python', 'py'].includes(lang)) title = 'Python Script';
-    else if (['javascript', 'js', 'typescript', 'ts'].includes(lang)) title = 'JavaScript Program';
-    else if (lang === 'mermaid') title = 'Architecture Diagram';
-    else if (lang === 'slidev' || lang === 'presentation') title = 'Presentation Deck';
-    else if (lang === 'svg') title = 'Vector Graphic';
-
-    return {
-      id: `artifact-msg-${msg.timestamp || 'stream'}`,
-      type: ['html', 'htm', 'jsx', 'tsx', 'react'].includes(lang)
-        ? 'app'
-        : lang === 'slidev'
-          ? 'presentation'
-          : lang === 'mermaid'
-            ? 'diagram'
-            : 'code',
-      title,
-      content: rawCode,
-      language: lang,
-    };
-  }, []);
-
-  // Auto-open and sync streaming artifacts directly in the right-side studio panel
-  useEffect(() => {
-    if (userDismissedRef.current) return;
-
-    if (activeStreamMessage && activeStreamMessage.role === 'assistant') {
-      const detected = extractArtifactFromMessage(activeStreamMessage);
-      if (detected && detected.content) {
-        hasAutoOpenedRef.current[detected.id] = true;
-        setActiveArtifact(detected);
-      }
-      return;
-    }
-
-    // When not streaming, auto-open on initial arrival only if no artifact is currently active
-    if (!activeArtifact && history.length > 0) {
-      const lastMsg = history[history.length - 1];
-      if (lastMsg && lastMsg.role === 'assistant') {
-        const detected = extractArtifactFromMessage(lastMsg);
-        if (detected && detected.content && !hasAutoOpenedRef.current[detected.id]) {
-          hasAutoOpenedRef.current[detected.id] = true;
-          setActiveArtifact(detected);
+  // Extract last user prompt from history to intelligently name artifacts
+  const lastUserPrompt = useMemo(() => {
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].role === 'user') {
+        const c = history[i].content;
+        if (typeof c === 'string') return c;
+        if (Array.isArray(c)) {
+          return (c as any[]).map((p) => (typeof p === 'string' ? p : p?.text || '')).join(' ');
         }
       }
     }
-  }, [activeStreamMessage, history, activeArtifact, extractArtifactFromMessage]);
+    return '';
+  }, [history]);
+
+  // Helper to extract artifact or code fence from streaming / finished message
+  const extractArtifactFromMessage = useCallback(
+    (msg: ChatMessage | null | undefined) => {
+      if (!msg) return null;
+      if (msg.artifacts && msg.artifacts.length > 0) {
+        const art = msg.artifacts[msg.artifacts.length - 1];
+        return {
+          id: art.id || `artifact-${msg.id || msg.timestamp || 'stream'}`,
+          type: art.type || 'code',
+          title:
+            art.title || extractArtifactTitle(art.content, art.language || 'html', lastUserPrompt),
+          content: art.content,
+          language: art.language || 'html',
+        };
+      }
+      const text = typeof msg.content === 'string' ? msg.content : '';
+      const match = /```(\w+)?\s*\n?([\s\S]*?)(?:```|$)/i.exec(text);
+      if (!match) return null;
+      const lang = (match[1] || 'html').toLowerCase();
+      if (['markdown', 'md', 'text', 'txt'].includes(lang)) return null;
+      const rawCode = match[2].trim();
+      if (!rawCode) return null;
+
+      const title = extractArtifactTitle(rawCode, lang, lastUserPrompt);
+      const msgId = msg.id || (msg.timestamp ? String(msg.timestamp) : 'stream');
+
+      return {
+        id: `artifact-${msgId}`,
+        type: ['html', 'htm', 'jsx', 'tsx', 'react'].includes(lang)
+          ? 'app'
+          : lang === 'slidev' || lang === 'presentation'
+            ? 'presentation'
+            : lang === 'mermaid'
+              ? 'diagram'
+              : 'code',
+        title,
+        content: rawCode,
+        language: lang,
+      };
+    },
+    [lastUserPrompt]
+  );
+
+  // Sync streaming updates if the user has opened this artifact in Studio/Code Block.
+  // Continuously streams live updates into Monaco Editor and live preview iframe.
+  useEffect(() => {
+    if (!activeArtifact) return;
+
+    if (activeStreamMessage && activeStreamMessage.role === 'assistant') {
+      const detected = extractArtifactFromMessage(activeStreamMessage);
+      if (detected && detected.content && detected.content !== activeArtifact.content) {
+        const isCurrentStream =
+          detected.id === activeArtifact.id ||
+          activeArtifact.id === 'artifact-stream' ||
+          activeArtifact.id?.includes('stream') ||
+          (activeArtifact as any).isStreaming ||
+          (activeStreamMessage.timestamp &&
+            activeArtifact.id?.includes(String(activeStreamMessage.timestamp)));
+
+        if (isCurrentStream) {
+          setActiveArtifact((prev) => {
+            if (!prev) return null;
+            return {
+              ...detected,
+              title:
+                prev.title &&
+                prev.title !== 'Code Artifact' &&
+                prev.title !== 'HTML Application' &&
+                prev.title !== 'Web Application'
+                  ? prev.title
+                  : detected.title,
+              id: prev.id,
+              isStreaming: true,
+            };
+          });
+        }
+      }
+    }
+  }, [activeStreamMessage, activeArtifact, extractArtifactFromMessage]);
 
   // Auto-close sidebar when activeArtifact is mounted or opened
   useEffect(() => {
@@ -354,7 +381,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   // --- Submit handler ---
   const handleSubmit = useCallback(
     async (finalPrompt: string, images?: ChatImage[]): Promise<boolean> => {
-      if ((!finalPrompt.trim() && (!images || images.length === 0)) || isLoading) return false;
+      const hasFiles = pendingFiles.length > 0;
+      if ((!finalPrompt.trim() && (!images || images.length === 0) && !hasFiles) || isLoading)
+        return false;
 
       const { cloudModelId, localModelId } = useNyxStore.getState();
       if (!currentModelId && !cloudModelId && !localModelId) {
@@ -381,21 +410,48 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       // Optimistically clear the input so it doesn't stay in the text box while generating
       const previousPrompt = prompt;
       const previousImages = pendingImages;
+      const previousFiles = pendingFiles;
       setPrompt('');
       setPendingImages([]);
+      setPendingFiles([]);
 
-      const success = await parentRunChat(finalPrompt, images || pendingImages, {
-        userDisplayPrompt: finalPrompt,
+      // Format attached files (documents, code, audio) into prompt context
+      let promptWithAttachments = finalPrompt;
+      if (previousFiles.length > 0) {
+        const fileSections = previousFiles
+          .map((file) => {
+            if (file.type === 'audio') {
+              return `[Attached Audio File: "${file.name}" (${(file.size / 1024).toFixed(1)} KB)]`;
+            }
+            const ext = file.name.split('.').pop()?.toLowerCase() || '';
+            return `[Attached File: "${file.name}" (${(file.size / 1024).toFixed(1)} KB)]\n\`\`\`${ext}\n${file.content || ''}\n\`\`\``;
+          })
+          .join('\n\n');
+
+        promptWithAttachments = finalPrompt.trim()
+          ? `${fileSections}\n\n${finalPrompt}`
+          : `${fileSections}\n\nPlease analyze the attached file(s) and provide a comprehensive response.`;
+      }
+
+      const displayPrompt =
+        finalPrompt.trim() ||
+        (previousFiles.length > 0
+          ? `Attached ${previousFiles.map((f) => f.name).join(', ')}`
+          : finalPrompt);
+
+      const success = await parentRunChat(promptWithAttachments, images || previousImages, {
+        userDisplayPrompt: displayPrompt,
         contextInjection,
       });
       if (!success) {
         // Restore if failed to start
         setPrompt(previousPrompt);
         setPendingImages(previousImages);
+        setPendingFiles(previousFiles);
       }
       return success;
     },
-    [isLoading, currentModelId, parentRunChat, pendingImages, prompt, activeArtifact]
+    [isLoading, currentModelId, parentRunChat, pendingImages, pendingFiles, prompt, activeArtifact]
   );
 
   // --- Copy handler ---
@@ -480,35 +536,97 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   }
 
   const handleAttachFiles = useCallback(
-    (files: File[]) => {
+    async (files: File[]) => {
       const images: File[] = [];
-      const documents: File[] = [];
+      const nonImages: File[] = [];
 
       files.forEach((file) => {
         if (file.type.startsWith('image/')) {
           images.push(file);
         } else {
-          documents.push(file);
+          nonImages.push(file);
         }
       });
 
-      // Handle Documents (RAG Ingestion into TurboVec)
-      documents.forEach(async (file) => {
-        if (file.size > 10 * 1024 * 1024) {
-          toast.error(`Document ${file.name} is too large (max 10MB)`);
-          return;
+      // Handle Non-image files (documents, code, audio)
+      for (const file of nonImages) {
+        if (file.size > 25 * 1024 * 1024) {
+          toast.error(`File ${file.name} is too large (max 25MB)`);
+          continue;
         }
+
+        const isAudio =
+          file.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|webm)$/i.test(file.name);
+        const isCode =
+          /\.(ts|tsx|js|jsx|py|rs|go|java|c|cpp|h|hpp|cs|php|rb|swift|kt|sql|html|css|scss|yaml|yml|toml|sh|bash|json|env)$/i.test(
+            file.name
+          );
+
+        if (isAudio) {
+          const modelCaps = getModelCapabilities(currentModelId || '');
+          const supportsAudio =
+            (currentModel as any)?.capabilities?.audio !== undefined
+              ? !!(currentModel as any).capabilities.audio
+              : modelCaps.supportsAudio;
+
+          if (!supportsAudio) {
+            toast.error(
+              `The selected model (${currentModel?.name || currentModelId || 'current model'}) does not support audio attachments.`
+            );
+            continue;
+          }
+
+          try {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const base64 = ((reader.result as string) || '').split(',')[1] || '';
+              setPendingFiles((prev) => [
+                ...prev,
+                {
+                  id: `audio-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                  name: file.name,
+                  size: file.size,
+                  type: 'audio',
+                  mimeType: file.type || 'audio/wav',
+                  base64,
+                },
+              ]);
+              toast.success(`Attached audio "${file.name}"`);
+            };
+            reader.readAsDataURL(file);
+          } catch (err: any) {
+            toast.error(`Failed reading audio file ${file.name}`);
+          }
+          continue;
+        }
+
+        // Text document or code file
         try {
           const text = await file.text();
-          await invoke('turbovec_add_memory', {
-            text: `Document [${file.name}]:\n${text}`,
-            metadata: JSON.stringify({ filename: file.name, size: file.size, type: file.type }),
-          });
-          toast.success(`Document "${file.name}" ingested into RAG memory!`);
+          setPendingFiles((prev) => [
+            ...prev,
+            {
+              id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              name: file.name,
+              size: file.size,
+              type: isCode ? 'code' : 'document',
+              mimeType: file.type || 'text/plain',
+              content: text,
+            },
+          ]);
+          toast.success(`Attached ${isCode ? 'code file' : 'document'} "${file.name}"`);
+
+          // Background ingest into TurboVec if available
+          if (text.length > 50) {
+            invoke('turbovec_add_memory', {
+              text: `Document [${file.name}]:\n${text}`,
+              metadata: JSON.stringify({ filename: file.name, size: file.size, type: file.type }),
+            }).catch(() => {});
+          }
         } catch (err: any) {
-          toast.error(`Failed to ingest ${file.name}: ${err.message || String(err)}`);
+          toast.error(`Failed to read ${file.name}: ${err.message || String(err)}`);
         }
-      });
+      }
 
       // Handle Images with ultra-fast canvas compression & max-dimension downscaling
       if (images.length > 0) {
@@ -537,6 +655,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
   const handleRemoveImage = useCallback((index: number) => {
     setPendingImages((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleRemoveFile = useCallback((id: string) => {
+    setPendingFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
   // --- Export chat ---
@@ -898,6 +1020,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           pendingImages={pendingImages}
           onRemoveImage={handleRemoveImage}
           onImagesChange={setPendingImages}
+          pendingFiles={pendingFiles}
+          onRemoveFile={handleRemoveFile}
           onAttachFiles={handleAttachFiles}
         />
       </div>

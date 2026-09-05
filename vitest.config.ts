@@ -16,14 +16,15 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@nyx/shared': path.resolve(__dirname, './packages/shared/src/index.ts'),
-      '@': path.resolve(__dirname, './apps/web'),
-      '@src': path.resolve(__dirname, './apps/web/src'),
-      '@shared': path.resolve(__dirname, './apps/web/src/shared'),
-      '@features': path.resolve(__dirname, './apps/web/src/features'),
-      '@core': path.resolve(__dirname, './apps/web/src/core'),
-      '@assets': path.resolve(__dirname, './apps/web/src/assets'),
-      '@server': path.resolve(__dirname, './apps/server/server'),
+      '@nyx/shared': path.resolve(import.meta.dirname, './packages/shared/src/index.ts'),
+      '@': path.resolve(import.meta.dirname, './apps/web'),
+      '@src': path.resolve(import.meta.dirname, './apps/web/src'),
+      '@shared': path.resolve(import.meta.dirname, './apps/web/src/shared'),
+      '@features': path.resolve(import.meta.dirname, './apps/web/src/features'),
+      '@core': path.resolve(import.meta.dirname, './apps/web/src/core'),
+      '@stores': path.resolve(import.meta.dirname, './apps/web/src/stores'),
+      '@assets': path.resolve(import.meta.dirname, './apps/web/src/assets'),
+      '@server': path.resolve(import.meta.dirname, './apps/server/server'),
     },
   },
 });

@@ -30,15 +30,17 @@ impl CommandExtWindows for TokioCommand {
 // § 1 — CONSTANTS & VERSION MANAGEMENT
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Pinned llama.cpp release.  Update this string to bump the version; the UI
+/// Pinned llama.cpp release. Update this string to bump the version; the UI
 /// surfaces it so users know what they have and can request an update.
-pub const LLAMACPP_PINNED_VERSION: &str = "b5710";
+pub const LLAMACPP_PINNED_VERSION: &str = "b10798";
 pub const LLAMACPP_CUDA_ZIP: &str =
-    "llama-b5710-bin-win-cuda-cu12.2.0-x64.zip";
+    "llama-b10798-bin-win-cuda-12.4-x64.zip";
 pub const LLAMACPP_VULKAN_ZIP: &str =
-    "llama-b5710-bin-win-vulkan-x64.zip";
+    "llama-b10798-bin-win-vulkan-x64.zip";
+pub const LLAMACPP_CUDART_ZIP: &str =
+    "cudart-llama-bin-win-cuda-12.4-x64.zip";
 pub const LLAMACPP_RELEASE_BASE: &str =
-    "https://github.com/ggerganov/llama.cpp/releases/download";
+    "https://github.com/ggml-org/llama.cpp/releases/download";
 
 /// Minimum size of a valid llama-server stub binary (bytes).
 pub const MIN_SERVER_BINARY_BYTES: u64 = 5_120;
@@ -118,7 +120,6 @@ impl LlamaServerConfig {
             "-c".into(),            self.context_size.to_string(),
             "--batch-size".into(),  self.batch_size.to_string(),
             "--ubatch-size".into(), actual_ubatch.to_string(),
-            "-np".into(), "1".into(),
             "--port".into(),   self.port.to_string(),
             "--host".into(),   SERVER_HOST.to_string(),
             "-ngl".into(), self.ngl.to_string(),
@@ -215,6 +216,10 @@ impl LlamaServerConfig {
 
         // Metrics endpoint: expose /metrics so performance can be monitored.
         args.push("--metrics".into());
+
+        // Always pass -fit off so llama-server allocates all specified layers and
+        // uses Windows WDDM Shared GPU Memory instead of aborting via fitting heuristics.
+        args.extend(["-fit".into(), "off".into()]);
 
         // Filter out any invalid extra_args
         for extra in &self.extra_args {

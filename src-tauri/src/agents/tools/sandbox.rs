@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NYX — Workspace Sandbox Boundary Enforcer (Cline-Standard Security)
+// NYX — Workspace Sandbox Boundary Enforcer (Sandboxed Security)
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::path::{Path, PathBuf};

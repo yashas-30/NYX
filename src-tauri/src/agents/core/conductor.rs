@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 use super::react_loop::{AgentExecutionStep, ReActLoopEngine};
-use crate::agents::tools::ClineFsTools;
+use crate::agents::tools::WorkspaceFsTools;
 use crate::llm::gateway::{DynamicModelRegistry, LiveQuotaLedger};
 use crate::llm::router::{PrimaryIntent, RouteDecision};
 use serde::{Deserialize, Serialize};
@@ -37,7 +37,7 @@ pub struct ConductorProgressEvent {
 }
 
 pub struct ConductorSupervisor {
-    pub cline_fs: Arc<ClineFsTools>,
+    pub fs_tools: Arc<WorkspaceFsTools>,
     pub registry: Arc<DynamicModelRegistry>,
     pub quota_ledger: Arc<LiveQuotaLedger>,
     pub react_engine: Arc<ReActLoopEngine>,
@@ -46,20 +46,20 @@ pub struct ConductorSupervisor {
 
 impl ConductorSupervisor {
     pub fn new(
-        cline_fs: Arc<ClineFsTools>,
+        fs_tools: Arc<WorkspaceFsTools>,
         registry: Arc<DynamicModelRegistry>,
         quota_ledger: Arc<LiveQuotaLedger>,
         cancel_flag: Arc<AtomicBool>,
     ) -> Self {
         let react_engine = Arc::new(ReActLoopEngine::new(
-            cline_fs.clone(),
+            fs_tools.clone(),
             registry.clone(),
             quota_ledger.clone(),
             cancel_flag.clone(),
         ));
 
         Self {
-            cline_fs,
+            fs_tools,
             registry,
             quota_ledger,
             react_engine,
@@ -93,7 +93,7 @@ impl ConductorSupervisor {
             final_output: None,
         });
 
-        // Direct single-engine ReAct execution (Cline standard: direct streaming & surgical tool application)
+        // Direct single-engine ReAct execution (Direct streaming & surgical tool application)
         let planned_prompt = format!(
             "Execution intent: {:?}\nWeb search required: {}\nSearch depth: {}\nOutput format: {}\n\nOriginal task: {}",
             route.intent,
