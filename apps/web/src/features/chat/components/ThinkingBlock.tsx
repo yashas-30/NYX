@@ -735,7 +735,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
         });
       }
     }
-  }, [smoothContent, segments, isExpanded, content]);
+  }, [segments, isExpanded, content]);
 
   const hasActualReasoning = useMemo(() => {
     if (!content) return false;
