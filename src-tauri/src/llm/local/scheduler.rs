@@ -10,12 +10,6 @@ use super::hardware::HardwareSnapshot;
 // § 3 — SMART NGL SCHEDULER
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Overhead constants (MB).
-/// CUDA/Vulkan driver runtime context: ~80 MB measured on real hardware (RTX, GTX, RX).
-const CUDA_DRIVER_OVERHEAD_MB: u64 = 80;
-/// FlashAttention-2 compute scratch buffers (base). Scales with model_size_gb in vram_for_ngl.
-const COMPUTE_BUFFER_BASE_MB: u64 = 100;
-
 #[derive(Debug, Default, Clone)]
 pub struct GgufMetadata {
     pub block_count: Option<u32>,
@@ -216,30 +210,24 @@ pub fn parse_gguf_metadata(path: &std::path::Path) -> std::io::Result<GgufMetada
     Ok(meta)
 }
 
-/// How many layers a GGUF model typically has for a given file size.
+/// How many layers a GGUF model has, derived from metadata or dynamically calculated.
 pub fn estimate_total_layers(meta: Option<&GgufMetadata>, model_size_gb: f32) -> u32 {
     if let Some(m) = meta {
         if let Some(exact_layers) = m.block_count {
             return exact_layers;
         }
     }
-    if model_size_gb < 1.0 { return 24; }
-    if model_size_gb < 4.5 { return 32; }
-    if model_size_gb < 6.0 { return 42; }   // e.g. Gemma-2 9B
-    if model_size_gb < 9.0 { return 48; }   // e.g. Qwen 14B
-    if model_size_gb < 15.0 { return 60; }
-    if model_size_gb < 30.0 { return 80; }
-    96
+    // Dynamic layer estimation from model size without hardcoded step ladders
+    (model_size_gb * 5.5 + 18.0).round().clamp(16.0, 128.0) as u32
 }
 
-/// Estimate VRAM required to offload `ngl` layers of a model with 2026 non-linear weight distribution.
+/// Estimate VRAM required to offload `ngl` layers of a model with dynamic non-linear weight distribution.
 pub fn vram_for_ngl(model_size_gb: f32, meta: Option<&GgufMetadata>, total_layers: u32, ngl: u32, ctx_size: u32) -> u64 {
     if ngl == 0 { return 0; }
 
     let model_mb = (model_size_gb * 1024.0) as u64;
 
     // Non-layer overhead (embedding table + lm_head projection + norm layers)
-    // is ~18% of model size for modern architectures (Llama-3, Qwen-2.5, DeepSeek).
     let non_layer_overhead_mb = (model_mb as f64 * 0.18) as u64;
     let transformer_layers_mb = model_mb.saturating_sub(non_layer_overhead_mb);
 
@@ -253,8 +241,6 @@ pub fn vram_for_ngl(model_size_gb: f32, meta: Option<&GgufMetadata>, total_layer
     };
 
     // Precise KV Cache calculation: default 4-bit/8-bit KV (--ctk q4_0/q8_0) with FlashAttention.
-    // Modern LLMs utilize Grouped-Query Attention (GQA) with 4-8 KV heads instead of MHA (which has head_count heads).
-    // Using 1.0 byte per element (0.5 byte K + 0.5 byte V for q4_0) accurately models modern KV footprint.
     let gpu_kv_layers = if ngl >= total_layers { total_layers } else { ngl };
     let kv_mb_per_1k = if let Some(m) = meta {
         let head_count = m.head_count.unwrap_or(32).max(1) as u64;
@@ -262,7 +248,6 @@ pub fn vram_for_ngl(model_size_gb: f32, meta: Option<&GgufMetadata>, total_layer
             .unwrap_or_else(|| (head_count / 4).max(1).min(8) as u32) as u64;
         let embd = m.embedding_length.unwrap_or(4096) as u64;
         let head_dim = embd / head_count;
-        // K + V: 1.0 byte per element for q4_0 across GPU-offloaded layers only
         (1.0 * 1024.0 * (head_kv as f32) * (head_dim as f32) * (gpu_kv_layers as f32)) / (1024.0 * 1024.0)
     } else {
         let base = 6.0 + (model_size_gb * 1.5).min(20.0);
@@ -272,11 +257,11 @@ pub fn vram_for_ngl(model_size_gb: f32, meta: Option<&GgufMetadata>, total_layer
     let total_kv_mb = (ctx_size as f32 / 1024.0) * kv_mb_per_1k;
     let offloaded_kv_mb = total_kv_mb as u64;
 
-    // FlashAttention-2 compute buffer overhead: scales with context length
-    let compute_mb = COMPUTE_BUFFER_BASE_MB
-        .saturating_add((ctx_size as u64 / 1024) * 10);
+    // Dynamically scale runtime driver context and FlashAttention compute scratch buffers
+    let driver_overhead_mb = (model_mb / 64).clamp(32, 128);
+    let compute_mb = ((ctx_size as u64 * 16) / 1024).clamp(32, 256);
 
-    CUDA_DRIVER_OVERHEAD_MB + compute_mb + weights_in_vram_mb + offloaded_kv_mb
+    driver_overhead_mb + compute_mb + weights_in_vram_mb + offloaded_kv_mb
 }
 
 
@@ -525,20 +510,17 @@ pub fn find_draft_model(main_model_path: &Path) -> Option<PathBuf> {
 ///
 pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, model_size_gb: f32, ctx_size: u32) -> Result<NglDecision, String> {
     let total_layers = estimate_total_layers(meta, model_size_gb);
-    let dedicated_avail = if hw.has_dedicated_gpu {
-        hw.dedicated_vram_available_mb
-    } else {
-        hw.vram_available_mb
-    };
+    let dedicated_avail = hw.dedicated_vram_available_mb;
+    let shared_avail = hw.shared_gpu_memory_mb;
     let ram_avail = hw.ram_available_mb;
 
-    // Use live real-time available dedicated VRAM directly from OS/driver query without artificial fixed deductions
-    let gpu_budget = if hw.has_dedicated_gpu && dedicated_avail > 0 {
-        dedicated_avail
+    // Full GPU memory accessible to the GPU (dedicated VRAM + shared system memory)
+    let gpu_budget = if hw.has_dedicated_gpu {
+        dedicated_avail.saturating_add(shared_avail)
     } else if hw.vram_available_mb > 0 {
-        hw.vram_available_mb
+        hw.vram_available_mb.saturating_add(shared_avail)
     } else {
-        hw.shared_gpu_memory_mb
+        shared_avail
     };
 
     let total_memory_mb = gpu_budget.saturating_add(ram_avail);
@@ -551,132 +533,88 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
 
     let model_max_ctx = meta.and_then(|m| m.context_length);
 
-    // If user specified an explicit context length (ctx_size > 0), strictly respect it.
-    // When layers exceed dedicated VRAM, overflow layers seamlessly stay in system RAM on CPU.
-    let (selected_ctx, selected_ngl, uses_shared_memory) = if ctx_size > 0 {
-        let requested_ctx = if let Some(m_ctx) = model_max_ctx {
+    // Context determination:
+    let selected_ctx = if ctx_size > 0 {
+        if let Some(m_ctx) = model_max_ctx {
             ctx_size.min(m_ctx).max(512)
         } else {
             ctx_size.max(512)
-        };
-
-        // 1. Check if model + requested_ctx fits 100% in dedicated VRAM
-        let needed_dedicated = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, requested_ctx);
-        if dedicated_avail > 0 && needed_dedicated <= gpu_budget {
-            (requested_ctx, total_layers, false)
-        } else if gpu_budget > 0 {
-            // 2. Models larger than VRAM: dynamically offload as many layers as fit in live available VRAM
-            let candidate_ngl = (0..=total_layers)
-                .rev()
-                .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, requested_ctx) <= gpu_budget)
-                .unwrap_or(0);
-
-            if candidate_ngl > 0 {
-                (requested_ctx, candidate_ngl, false)
-            } else {
-                // If even 1 layer cannot fit at requested_ctx, check stepped-down candidate contexts
-                let mut fit = None;
-                for &candidate in &[requested_ctx, 65536, 32768, 16384, 8192, 4096, 2048, 1024] {
-                    if candidate > requested_ctx { continue; }
-                    let ngl = (0..=total_layers)
-                        .rev()
-                        .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, candidate) <= gpu_budget)
-                        .unwrap_or(0);
-                    if ngl > 0 {
-                        fit = Some((candidate, ngl, false));
-                        break;
-                    }
-                }
-                fit.unwrap_or((requested_ctx, 0, false))
-            }
-        } else {
-            // 3. VRAM exhausted or CPU execution: run cleanly in system memory on CPU
-            (requested_ctx, 0, false)
         }
     } else {
         // Auto (ctx_size == 0):
-        // Automatically determine largest viable context size up to model max
-        let max_ctx = model_max_ctx.unwrap_or(131072);
-        let mut base_candidates = vec![max_ctx];
-        for &c in &[131072, 65536, 32768, 16384, 8192, 4096, 2048, 1024] {
-            if c < max_ctx && !base_candidates.contains(&c) {
-                base_candidates.push(c);
-            }
+        // Dynamically find the highest viable context size
+        let max_ctx = model_max_ctx.unwrap_or(32768);
+        let mut candidates = Vec::new();
+        let mut cur = max_ctx;
+        while cur >= 512 {
+            candidates.push(cur);
+            cur /= 2;
         }
 
-        // First attempt: fit 100% of layers in dedicated VRAM
-        let mut dedicated_fit = None;
-        if gpu_budget > 0 {
-            for &c in &base_candidates {
-                let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, c);
-                if req <= gpu_budget {
-                    dedicated_fit = Some(c);
-                    break;
-                }
+        let mut best_ctx = 512;
+        for &c in &candidates {
+            let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, c);
+            if req <= gpu_budget || !hw.has_dedicated_gpu {
+                best_ctx = c;
+                break;
             }
         }
-
-        if let Some(c) = dedicated_fit {
-            (c, total_layers, false)
-        } else if gpu_budget > 0 {
-            // Cannot fit all layers in dedicated VRAM:
-            // Perform clean partial layer offload across viable contexts
-            let mut partial_fit = None;
-            for &c in &base_candidates {
-                if c > max_ctx { continue; }
-                let ngl = (1..=total_layers)
-                    .rev()
-                    .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, c) <= gpu_budget);
-                if let Some(n) = ngl {
-                    partial_fit = Some((c, n, false));
-                    break;
-                }
-            }
-            partial_fit.unwrap_or_else(|| {
-                let ngl = (0..=total_layers)
-                    .rev()
-                    .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, 1024) <= gpu_budget)
-                    .unwrap_or(0);
-                (1024, ngl, false)
-            })
-        } else {
-            // Run entirely in system RAM on CPU
-            (4096.min(max_ctx).max(1024), 0, false)
-        }
+        best_ctx
     };
 
-    let fully_gpu = selected_ngl >= total_layers && selected_ngl > 0;
-    let hybrid = !fully_gpu;
-    let needed = vram_for_ngl(model_size_gb, meta, total_layers, selected_ngl, selected_ctx);
+    let needed = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, selected_ctx);
 
-    let message = if fully_gpu && !uses_shared_memory {
-        format!("GPU (Dedicated VRAM) — all {}/{} layers offloaded to {}. Context: {}.", total_layers, total_layers, hw.gpu_name, selected_ctx)
+    // Dedicated GPU Execution:
+    // If a dedicated GPU is available, run the COMPLETE model and all support files using the
+    // dedicated GPU only, NOT the CPU.
+    // When the model exceeds dedicated physical VRAM, Windows WDDM Shared GPU Memory automatically
+    // provides host memory while all tensor computation remains 100% on the dedicated GPU.
+    let (selected_ngl, fully_gpu, hybrid, uses_shared_memory, strategy) = if hw.has_dedicated_gpu {
+        let uses_shared = needed > dedicated_avail;
+        (total_layers, true, false, uses_shared, "FullDedicatedGpu".to_string())
+    } else if hw.vram_available_mb > 0 {
+        // Integrated GPU or unified memory
+        let uses_shared = needed > hw.vram_available_mb;
+        let ngl = if needed <= gpu_budget {
+            total_layers
+        } else {
+            (0..=total_layers)
+                .rev()
+                .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, selected_ctx) <= gpu_budget)
+                .unwrap_or(0)
+        };
+        let is_full = ngl >= total_layers;
+        (ngl, is_full, !is_full, uses_shared, if is_full { "IntegratedGpu".to_string() } else { "Hybrid".to_string() })
+    } else {
+        // No GPU available: run completely on CPU in system RAM
+        (0, false, true, false, "CpuOnly".to_string())
+    };
+
+    let message = if hw.has_dedicated_gpu {
+        if uses_shared_memory {
+            format!("GPU (Dedicated + Shared VRAM) — all {}/{} layers offloaded to {}. Context: {}.", total_layers, total_layers, hw.gpu_name, selected_ctx)
+        } else {
+            format!("GPU (Dedicated VRAM) — all {}/{} layers offloaded to {}. Context: {}.", total_layers, total_layers, hw.gpu_name, selected_ctx)
+        }
     } else if selected_ngl == 0 {
         format!("CPU (System RAM) — all {}/{} layers running in system memory on CPU. Context: {}.", total_layers, total_layers, selected_ctx)
     } else {
-        format!("Hybrid — {}/{} layers on GPU ({}MB VRAM) and {} layers in system RAM. Context: {}.", selected_ngl, total_layers, needed.min(gpu_budget), total_layers.saturating_sub(selected_ngl), selected_ctx)
+        format!("Hybrid — {}/{} layers on GPU and {} layers in system RAM. Context: {}.", selected_ngl, total_layers, total_layers.saturating_sub(selected_ngl), selected_ctx)
     };
 
-    let strategy = if selected_ngl == 0 {
-        "CpuOnly".to_string()
-    } else if fully_gpu {
-        if hw.has_dedicated_gpu { "FullDedicatedGpu".to_string() } else { "IntegratedGpu".to_string() }
-    } else {
-        "Hybrid".to_string()
-    };
-
+    let actual_estimated_vram_mb = vram_for_ngl(model_size_gb, meta, total_layers, selected_ngl, selected_ctx);
     let cpu_threads = hw.cpu_physical_cores.max(1);
 
     info!(
-        "[NglScheduler] model={:.1}GB ctx={} ngl={}/{} needed={}MB (dedicated={}MB, ram_avail={}MB, strategy={})",
-        model_size_gb, selected_ctx, selected_ngl, total_layers, needed, dedicated_avail, ram_avail, strategy
+        "[NglScheduler] model={:.1}GB ctx={} ngl={}/{} needed={}MB (dedicated={}MB, shared={}MB, strategy={})",
+        model_size_gb, selected_ctx, selected_ngl, total_layers, actual_estimated_vram_mb, dedicated_avail, shared_avail, strategy
     );
 
     Ok(NglDecision {
         ngl: selected_ngl,
         fully_gpu,
         hybrid,
-        estimated_vram_mb: needed,
+        estimated_vram_mb: actual_estimated_vram_mb,
         message,
         recommended_cpu_threads: cpu_threads,
         effective_context_size: selected_ctx,
@@ -763,13 +701,8 @@ pub fn compute_gpu_inference_config(
 
     let kv_cache_type = derive_matching_kv_cache_type(model_name_or_id.unwrap_or(""), meta);
 
-    let (batch_size, ubatch_size) = if ngl_decision.uses_shared_memory {
-        (1024u32, 256u32)
-    } else if ngl_decision.effective_context_size <= 4096 {
-        (1024u32, 512u32)
-    } else {
-        (2048u32, 512u32)
-    };
+    let batch_size = (ngl_decision.effective_context_size / 2).clamp(512, 4096);
+    let ubatch_size = (batch_size / 4).clamp(128, 1024);
 
     // Generation threads match physical CPU cores for maximum decode throughput without contention
     let threads_gen = hw.cpu_physical_cores.max(1);
@@ -950,14 +883,13 @@ mod tests {
     }
 
     #[test]
-    fn dedicated_gpu_uses_partial_offload_for_large_model() {
+    fn dedicated_gpu_runs_full_model_using_shared_memory_when_needed() {
         let decision = compute_ngl_decision(&hardware(4096, 6144), None, 8.0, 8192).unwrap();
-        assert!(decision.hybrid);
-        assert!(!decision.fully_gpu);
-        assert!(!decision.uses_shared_memory);
-        assert!(decision.ngl > 0);
-        assert!(decision.ngl < estimate_total_layers(None, 8.0));
-        assert!(decision.estimated_vram_mb <= 4096);
+        assert!(decision.fully_gpu);
+        assert!(!decision.hybrid);
+        assert!(decision.uses_shared_memory);
+        assert_eq!(decision.ngl, estimate_total_layers(None, 8.0));
+        assert_eq!(decision.strategy, "FullDedicatedGpu");
     }
 
     #[test]
@@ -1048,38 +980,39 @@ mod tests {
     }
 
     #[test]
-    fn test_explicit_context_size_hybrid_on_dedicated_gpu() {
+    fn test_explicit_context_size_on_dedicated_gpu_runs_full_gpu() {
         // Dedicated GPU with 4096MB VRAM and 8192MB Shared GPU Memory
         let hw = hardware(4096, 8192);
         // User explicitly sets context size to 16384 for a 5.0GB model
         let decision = compute_ngl_decision(&hw, None, 5.0, 16384).unwrap();
         assert_eq!(decision.effective_context_size, 16384);
-        assert!(decision.hybrid);
-        assert!(!decision.uses_shared_memory);
-        assert!(decision.ngl < estimate_total_layers(None, 5.0));
-        assert_eq!(decision.strategy, "Hybrid");
+        assert!(decision.fully_gpu);
+        assert!(!decision.hybrid);
+        assert_eq!(decision.ngl, estimate_total_layers(None, 5.0));
+        assert_eq!(decision.strategy, "FullDedicatedGpu");
     }
 
     #[test]
-    fn test_dedicated_gpu_low_vram_seamlessly_runs_on_cpu() {
+    fn test_dedicated_gpu_low_vram_still_runs_full_gpu_with_shared_memory() {
         // Dedicated GPU with only 400MB available
         let hw = hardware(400, 4096);
         let decision = compute_ngl_decision(&hw, None, 4.0, 2048).unwrap();
-        // 4GB model cannot fit in 400MB VRAM, so 0 layers on GPU, runs seamlessly in system RAM
-        assert_eq!(decision.ngl, 0);
-        assert!(decision.hybrid);
+        // Complete model runs on dedicated GPU using shared GPU memory
+        assert!(decision.fully_gpu);
+        assert!(decision.uses_shared_memory);
+        assert_eq!(decision.ngl, estimate_total_layers(None, 4.0));
+        assert_eq!(decision.strategy, "FullDedicatedGpu");
     }
 
     #[test]
-    fn test_large_model_partial_offload_in_auto_mode() {
+    fn test_large_model_on_dedicated_gpu_runs_full_gpu_in_auto_mode() {
         // 12GB model on 4GB dedicated VRAM
         let hw = hardware(4096, 16384);
         let decision = compute_ngl_decision(&hw, None, 12.0, 0).unwrap();
-        assert!(decision.ngl > 0);
-        assert!(decision.ngl < estimate_total_layers(None, 12.0));
-        assert!(decision.hybrid);
-        assert!(decision.estimated_vram_mb <= 4096);
-        assert_eq!(decision.strategy, "Hybrid");
+        assert!(decision.fully_gpu);
+        assert!(decision.uses_shared_memory);
+        assert_eq!(decision.ngl, estimate_total_layers(None, 12.0));
+        assert_eq!(decision.strategy, "FullDedicatedGpu");
     }
 
     #[test]

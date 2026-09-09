@@ -1326,14 +1326,14 @@ pub async fn start_local_server(
     let total_layers = estimate_total_layers(gguf_meta.as_ref(), model_size_gb);
 
 
-    // Pass the exact scheduler-computed NGL to llama-server.
-    // Using the precise layer count (not a 999 sentinel) is always safe:
-    // llama.cpp clamps -ngl to actual model layers internally, but passing
-    // 999 on some driver/VRAM combinations causes OOM because the server
-    // attempts to allocate all layers regardless of VRAM headroom.
-    let final_ngl = match gpu_layers {
-        Some(layers) => layers.min(total_layers),
-        None => hybrid_cfg.ngl.min(total_layers),
+    // When a dedicated GPU is available, offload 100% of the layers to the GPU.
+    let final_ngl = if hw.has_dedicated_gpu {
+        total_layers
+    } else {
+        match gpu_layers {
+            Some(layers) => layers.min(total_layers),
+            None => hybrid_cfg.ngl.min(total_layers),
+        }
     };
     let fully_gpu = final_ngl >= total_layers;
 
@@ -1473,22 +1473,22 @@ pub async fn start_local_server(
     let can_gpu_offload = hw.has_dedicated_gpu || hw.gpu_backend == GpuBackend::Metal || hw.vram_available_mb > 0;
 
     // Companion files (mmproj, MTP heads, draft models):
-    // Load in VRAM if dedicated VRAM has room after accounting for the model and KV cache;
-    // if VRAM is exhausted or insufficient, load companion files in system memory (CPU/RAM)
-    // so bigger models run reliably without OOM crashes.
-    let mmproj_offload = if can_gpu_offload && mmproj_path.is_some() && remaining_vram >= mmproj_size_mb {
+    // When a dedicated GPU is available, the complete model and ALL support files run on the dedicated GPU.
+    let mmproj_offload = if hw.has_dedicated_gpu {
+        mmproj_path.is_some()
+    } else if can_gpu_offload && mmproj_path.is_some() && remaining_vram >= mmproj_size_mb {
         remaining_vram = remaining_vram.saturating_sub(mmproj_size_mb);
         true
     } else {
         false
     };
 
-    let ngl_draft = if can_gpu_offload && draft_model_path.is_some() && remaining_vram >= draft_size_mb {
-        // Offload all companion draft/MTP layers to VRAM using the actual layer count.
-        // llama.cpp clamps -ngld internally so passing total_layers is always safe.
+    let ngl_draft = if hw.has_dedicated_gpu && draft_model_path.is_some() {
+        Some(total_layers)
+    } else if can_gpu_offload && draft_model_path.is_some() && remaining_vram >= draft_size_mb {
         Some(total_layers)
     } else if draft_model_path.is_some() {
-        Some(0) // Seamlessly load companion in system memory on CPU
+        Some(0)
     } else {
         None
     };
