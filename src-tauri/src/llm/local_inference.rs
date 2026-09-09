@@ -863,6 +863,7 @@ pub async fn execute_local_stream(
             }
         };
         
+        let (has_image, has_audio) = request_has_attachments(req);
         let resolved = crate::llm::local_orchestrator::resolve_model_path(app, &target_model).await;
         if resolved.is_some() {
             let active_port = SERVER_PORT.load(std::sync::atomic::Ordering::Relaxed);
@@ -886,8 +887,8 @@ pub async fn execute_local_stream(
                         None,
                         req.reasoning_enabled,
                         None,
-                        None, // load_vision_projector (default false)
-                        None, // load_audio_projector (default false)
+                        Some(has_image), // load_vision_projector
+                        Some(has_audio), // load_audio_projector
                         Some(true), // load_draft_model (enable speculative decoding if draft model is present)
                     ).await {
                         error!("[Inference] Failed to start local server for {}: {}", target_model, e);
@@ -909,7 +910,7 @@ pub async fn execute_local_stream(
             }
         }
 
-        let (has_image, has_audio) = request_has_attachments(req);
+        // Hot-load multimodal support into active server if attachments are present
         if has_image || has_audio {
             if let Some(manager) = app.try_state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>() {
                 info!("[Inference] Request contains attachment (image={}, audio={}) - ensuring multimodal support loaded", has_image, has_audio);
@@ -1346,7 +1347,6 @@ pub async fn llm_local_stream_request(
     app.unlisten(cancel_id);
     app.unlisten(cancel_global_id);
     info!("[Inference] Session complete | items={}", item_count);
-    crate::llm::local::server::trim_current_process_working_set();
 
     Ok(())
 }

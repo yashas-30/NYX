@@ -195,6 +195,15 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
   }
   const currentCtxIndex = foundIndex;
 
+  const totalLayers = hardwareEst?.total_layers || 48;
+  const isAutoLayers =
+    localSettings.gpuLayers === undefined ||
+    localSettings.gpuLayers === null ||
+    localSettings.gpuLayers === -1;
+  const currentLayers = isAutoLayers
+    ? (hardwareEst?.layers_on_gpu ?? totalLayers)
+    : Math.min(localSettings.gpuLayers, totalLayers);
+
   // Derive detected model quantization for display
   const detectedModelQuant = useMemo(() => {
     const raw = (
@@ -223,14 +232,14 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
         const res: any = await invoke('estimate_hardware_usage', {
           modelId: currentModelId,
           contextSize: localSettings.contextSize || 0,
-          gpuLayers: localSettings.gpuLayers ?? null,
+          gpuLayers: isAutoLayers ? null : localSettings.gpuLayers,
         });
         setHardwareEst(res);
       } catch (e) {
         console.warn('estimate_hardware_usage failed', e);
       }
     }, 16); // Reduced to 16ms (60 FPS) for lightning fast live data now that backend is fully cached
-  }, [currentModelId, localSettings.contextSize, localSettings.gpuLayers]);
+  }, [currentModelId, localSettings.contextSize, localSettings.gpuLayers, isAutoLayers]);
 
   // Trigger estimate whenever panel opens or relevant settings change
   useEffect(() => {
@@ -484,7 +493,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
       const startPromise = invoke('start_local_server', {
         modelId: currentModelId,
         contextSize: localSettings.contextSize ?? 0,
-        gpuLayers: localSettings.gpuLayers === -1 ? null : localSettings.gpuLayers,
+        gpuLayers: isAutoLayers ? null : localSettings.gpuLayers,
         cpuThreads: localSettings.threads || 0,
         flashAttention: localSettings.flashAttention ?? false,
         kvCacheType: localSettings.kvCacheType || 'auto',
@@ -909,6 +918,77 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                                   ✅ FULL VRAM
                                 </span>
                               )}
+                            </div>
+                          </div>
+
+                          {/* GPU Layers Offload */}
+                          <div className="mt-4 pt-4 border-t border-border/50">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                                <Zap size={10} className="text-amber-400" />
+                                GPU Layers Offload
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (isAutoLayers) {
+                                    updateLocal(
+                                      'gpuLayers',
+                                      hardwareEst?.layers_on_gpu ?? totalLayers
+                                    );
+                                  } else {
+                                    updateLocal('gpuLayers', -1);
+                                  }
+                                }}
+                                className={`text-[9px] font-mono px-2 py-0.5 rounded border transition-colors ${
+                                  isAutoLayers
+                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                                    : 'bg-zinc-900 text-muted-foreground border-border/60 hover:text-foreground'
+                                }`}
+                              >
+                                {isAutoLayers ? 'Auto (VRAM-Fit)' : 'Manual Override'}
+                              </button>
+                            </div>
+                            <ParamSlider
+                              label=""
+                              hint={
+                                isAutoLayers
+                                  ? `Auto: Dynamically budgeting ${hardwareEst?.layers_on_gpu ?? totalLayers}/${totalLayers} layers within physical dedicated VRAM.`
+                                  : `Manual: Offloading ${currentLayers}/${totalLayers} layers to GPU. Remaining ${Math.max(0, totalLayers - currentLayers)} layers execute on CPU.`
+                              }
+                              value={currentLayers}
+                              min={0}
+                              max={totalLayers}
+                              step={1}
+                              display={(v) =>
+                                isAutoLayers
+                                  ? `Auto (${v}/${totalLayers})`
+                                  : `${v} / ${totalLayers}`
+                              }
+                              accent={isAutoLayers ? 'accent-amber' : 'accent-foreground'}
+                              onChange={(v) => {
+                                updateLocal('gpuLayers', v);
+                              }}
+                            />
+                            <div className="mt-2 flex items-center justify-between text-[9px] font-mono">
+                              <span className="text-muted-foreground">
+                                Offload: {currentLayers} / {totalLayers} layers
+                              </span>
+                              <span
+                                className={
+                                  currentLayers >= totalLayers
+                                    ? 'text-emerald-400 font-bold'
+                                    : currentLayers === 0
+                                      ? 'text-muted-foreground'
+                                      : 'text-amber-400 font-bold'
+                                }
+                              >
+                                {currentLayers >= totalLayers
+                                  ? '100% Full GPU'
+                                  : currentLayers === 0
+                                    ? 'CPU Only'
+                                    : `${Math.round((currentLayers / totalLayers) * 100)}% Hybrid (CPU+GPU)`}
+                              </span>
                             </div>
                           </div>
 

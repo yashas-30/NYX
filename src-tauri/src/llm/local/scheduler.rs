@@ -531,9 +531,23 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
         hw.vram_available_mb
     };
     let shared_avail = hw.shared_gpu_memory_mb;
-    let total_gpu_budget = dedicated_avail.saturating_add(shared_avail);
 
-    if total_gpu_budget == 0 {
+    // Windows DWM desktop compositor headroom (512 MB).
+    // Primary layer offload budget is strictly physical dedicated VRAM minus compositor headroom.
+    // Shared GPU memory is excluded from primary layer offload budget to prevent
+    // 15x PCIe WDDM bus thrashing from paging transformer weights every token.
+    const DWM_COMPOSITOR_HEADROOM_MB: u64 = 512;
+    let gpu_budget = if hw.has_dedicated_gpu {
+        dedicated_avail.saturating_sub(DWM_COMPOSITOR_HEADROOM_MB)
+    } else {
+        if dedicated_avail > 0 {
+            dedicated_avail
+        } else {
+            shared_avail
+        }
+    };
+
+    if gpu_budget == 0 && dedicated_avail == 0 {
         return Err(format!(
             "No GPU or iGPU detected on this system.\n\n\
             NYX local inference requires a dedicated GPU, integrated GPU (iGPU), or NPU.\n\
@@ -548,8 +562,8 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
     let model_max_ctx = meta.and_then(|m| m.context_length);
 
     // If user specified an explicit context length (ctx_size > 0), strictly respect it.
-    // We do NOT clamp by an artificial VRAM cap. Windows WDDM Shared GPU Memory
-    // provides host RAM directly to the dedicated GPU when physical VRAM is exceeded.
+    // When layers exceed dedicated VRAM, overflow layers stay in system RAM on CPU
+    // rather than thrashing over PCIe via WDDM shared GPU memory.
     let (selected_ctx, selected_ngl, uses_shared_memory) = if ctx_size > 0 {
         let requested_ctx = if let Some(m_ctx) = model_max_ctx {
             ctx_size.min(m_ctx).max(512)
@@ -559,50 +573,39 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
 
         // 1. Check if model + requested_ctx fits 100% in dedicated VRAM
         let needed_dedicated = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, requested_ctx);
-        if dedicated_avail > 0 && needed_dedicated <= dedicated_avail {
+        if dedicated_avail > 0 && needed_dedicated <= gpu_budget {
             (requested_ctx, total_layers, false)
-        } else if hw.has_dedicated_gpu {
-            // 2. Dedicated GPU with Shared GPU Memory:
-            // If it fits within total GPU budget (dedicated + shared), preserve the exact requested context!
-            if needed_dedicated <= total_gpu_budget {
-                (requested_ctx, total_layers, true)
+        } else {
+            // 2. Does not fit 100% in dedicated VRAM:
+            // Perform clean partial layer offload so overflow layers stay in system RAM on CPU.
+            let candidate_ngl = (0..=total_layers)
+                .rev()
+                .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, requested_ctx) <= gpu_budget)
+                .unwrap_or(0);
+
+            if candidate_ngl > 0 {
+                (requested_ctx, candidate_ngl, false)
             } else {
-                // If requested_ctx exceeds even total_gpu_budget, step down to find the largest candidate that fits
-                let mut best_ctx = 1024;
+                // If even 1 layer cannot fit at requested_ctx, step down candidate contexts
+                let mut fit = None;
                 for &candidate in &[requested_ctx, 65536, 32768, 16384, 8192, 4096, 2048, 1024] {
                     if candidate > requested_ctx { continue; }
-                    let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, candidate);
-                    if req <= total_gpu_budget {
-                        best_ctx = candidate;
-                        break;
-                    }
-                }
-                (best_ctx, total_layers, true)
-            }
-        } else {
-            // Non-dedicated systems (iGPU fallback)
-            if needed_dedicated <= total_gpu_budget {
-                (requested_ctx, total_layers, true)
-            } else {
-                let mut fit = None;
-                for &candidate in &[requested_ctx, 32768, 16384, 8192, 4096, 2048, 1024] {
-                    if candidate > requested_ctx { continue; }
-                    let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, candidate);
-                    if req <= total_gpu_budget {
-                        fit = Some(candidate);
-                        break;
-                    }
-                }
-                if let Some(c) = fit {
-                    (c, total_layers, true)
-                } else {
-                    let candidate_ngl = (0..=total_layers)
+                    let ngl = (0..=total_layers)
                         .rev()
-                        .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, 1024) <= total_gpu_budget)
+                        .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, candidate) <= gpu_budget)
                         .unwrap_or(0);
-                    let uses_shmem = vram_for_ngl(model_size_gb, meta, total_layers, candidate_ngl, 1024) > dedicated_avail;
-                    (1024, candidate_ngl, uses_shmem)
+                    if ngl > 0 {
+                        fit = Some((candidate, ngl, false));
+                        break;
+                    }
                 }
+                fit.unwrap_or_else(|| {
+                    let ngl = (0..=total_layers)
+                        .rev()
+                        .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, 1024) <= gpu_budget)
+                        .unwrap_or(0);
+                    (1024, ngl, false)
+                })
             }
         }
     } else {
@@ -611,54 +614,40 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
         let base_candidates = [32768, 16384, 8192, 4096, 2048, 1024];
         let max_ctx = model_max_ctx.unwrap_or(32768);
 
-        // First attempt: fit in dedicated VRAM
+        // First attempt: fit 100% of layers in dedicated VRAM
         let mut dedicated_fit = None;
-        if dedicated_avail > 0 {
-            for &c in &base_candidates {
-                if c > max_ctx { continue; }
-                let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, c);
-                if req <= dedicated_avail {
-                    dedicated_fit = Some(c);
-                    break;
-                }
+        for &c in &base_candidates {
+            if c > max_ctx { continue; }
+            let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, c);
+            if req <= gpu_budget {
+                dedicated_fit = Some(c);
+                break;
             }
         }
 
         if let Some(c) = dedicated_fit {
             (c, total_layers, false)
-        } else if hw.has_dedicated_gpu {
-            // Dedicated GPU with Shared Memory
-            let mut shared_fit = None;
-            for &c in &base_candidates {
-                if c > max_ctx { continue; }
-                let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, c);
-                if req <= total_gpu_budget {
-                    shared_fit = Some(c);
-                    break;
-                }
-            }
-            (shared_fit.unwrap_or(1024), total_layers, true)
         } else {
-            // iGPU fallback
-            let mut shared_fit = None;
-            for &c in &base_candidates {
+            // Cannot fit all layers in dedicated VRAM:
+            // Perform clean partial layer offload across viable contexts
+            let mut partial_fit = None;
+            for &c in &[8192, 4096, 2048, 1024] {
                 if c > max_ctx { continue; }
-                let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, c);
-                if req <= total_gpu_budget {
-                    shared_fit = Some(c);
+                let ngl = (1..=total_layers)
+                    .rev()
+                    .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, c) <= gpu_budget);
+                if let Some(n) = ngl {
+                    partial_fit = Some((c, n, false));
                     break;
                 }
             }
-            if let Some(c) = shared_fit {
-                (c, total_layers, true)
-            } else {
-                let candidate_ngl = (0..=total_layers)
+            partial_fit.unwrap_or_else(|| {
+                let ngl = (0..=total_layers)
                     .rev()
-                    .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, 1024) <= total_gpu_budget)
+                    .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, 1024) <= gpu_budget)
                     .unwrap_or(0);
-                let uses_shmem = vram_for_ngl(model_size_gb, meta, total_layers, candidate_ngl, 1024) > dedicated_avail;
-                (1024, candidate_ngl, uses_shmem)
-            }
+                (1024, ngl, false)
+            })
         }
     };
 
@@ -671,17 +660,23 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
     } else if fully_gpu && uses_shared_memory {
         format!("Dedicated GPU (Shared GPU Memory: {}MB VRAM + shared system memory) — all {}/{} layers offloaded solely to {}. Context: {}.", dedicated_avail, total_layers, total_layers, hw.gpu_name, selected_ctx)
     } else {
-        format!("Hybrid — {}/{} layers on GPU ({}MB VRAM/shared) and {} layers in system RAM. Context: {}.", selected_ngl, total_layers, needed.min(total_gpu_budget), total_layers.saturating_sub(selected_ngl), selected_ctx)
+        format!("Hybrid — {}/{} layers on GPU ({}MB VRAM) and {} layers in system RAM. Context: {}.", selected_ngl, total_layers, needed.min(gpu_budget), total_layers.saturating_sub(selected_ngl), selected_ctx)
     };
 
     let strategy = if hw.has_dedicated_gpu {
         if uses_shared_memory {
             "SharedGpuMemory".to_string()
-        } else {
+        } else if fully_gpu {
             "FullDedicatedGpu".to_string()
+        } else {
+            "Hybrid".to_string()
         }
     } else if hw.is_igpu {
-        "IntegratedGpu".to_string()
+        if fully_gpu {
+            "IntegratedGpu".to_string()
+        } else {
+            "Hybrid".to_string()
+        }
     } else if fully_gpu {
         "FullDedicatedGpu".to_string()
     } else {
@@ -980,12 +975,14 @@ mod tests {
     }
 
     #[test]
-    fn dedicated_gpu_uses_shared_memory_for_large_model() {
+    fn dedicated_gpu_uses_partial_offload_for_large_model() {
         let decision = compute_ngl_decision(&hardware(4096, 6144), None, 8.0, 8192).unwrap();
-        assert!(decision.fully_gpu);
-        assert!(!decision.hybrid);
-        assert!(decision.uses_shared_memory);
-        assert_eq!(decision.ngl, estimate_total_layers(None, 8.0));
+        assert!(decision.hybrid);
+        assert!(!decision.fully_gpu);
+        assert!(!decision.uses_shared_memory);
+        assert!(decision.ngl > 0);
+        assert!(decision.ngl < estimate_total_layers(None, 8.0));
+        assert!(decision.estimated_vram_mb <= 4096);
     }
 
     #[test]
@@ -1076,15 +1073,26 @@ mod tests {
     }
 
     #[test]
-    fn test_explicit_context_size_uses_shared_memory_on_dedicated_gpu() {
+    fn test_explicit_context_size_hybrid_on_dedicated_gpu() {
         // Dedicated GPU with 4096MB VRAM and 8192MB Shared GPU Memory
         let hw = hardware(4096, 8192);
         // User explicitly sets context size to 16384 for a 5.0GB model
         let decision = compute_ngl_decision(&hw, None, 5.0, 16384).unwrap();
         assert_eq!(decision.effective_context_size, 16384);
-        assert!(decision.fully_gpu);
-        assert!(decision.uses_shared_memory);
-        assert_eq!(decision.strategy, "SharedGpuMemory");
+        assert!(decision.hybrid);
+        assert!(!decision.uses_shared_memory);
+        assert!(decision.ngl < estimate_total_layers(None, 5.0));
+        assert_eq!(decision.strategy, "Hybrid");
+    }
+
+    #[test]
+    fn test_dedicated_gpu_low_vram_reserves_dwm_headroom() {
+        // Dedicated GPU with only 400MB available (< 512MB DWM headroom)
+        let hw = hardware(400, 4096);
+        let decision = compute_ngl_decision(&hw, None, 4.0, 2048).unwrap();
+        // Budget saturates to 0, ensuring DWM compositor memory is preserved
+        assert_eq!(decision.ngl, 0);
+        assert!(decision.hybrid);
     }
 }
 

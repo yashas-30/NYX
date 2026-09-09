@@ -500,6 +500,7 @@ pub async fn analyze_hardware(
     app: AppHandle,
     model_id: String,
     context_size: Option<u32>,
+    gpu_layers: Option<u32>,
 ) -> Result<HardwareAnalysisResult, String> {
     let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let model_path = resolve_model_path(&app, &model_id).await
@@ -542,7 +543,37 @@ pub async fn analyze_hardware(
 
     let decision = compute_ngl_decision(&hw_snapshot, gguf_meta.as_ref(), model_size_gb, ctx);
     let (ngl, fully_gpu, hybrid, uses_shared_memory, estimated_vram_mb, schedule_message, recommended_cpu_threads, strategy) = match decision {
-        Ok(d) => (d.ngl, d.fully_gpu, d.hybrid, d.uses_shared_memory, d.estimated_vram_mb, d.message, d.recommended_cpu_threads, d.strategy),
+        Ok(d) => {
+            if let Some(raw_l) = gpu_layers {
+                let custom_ngl = raw_l.min(total_layers);
+                let vram = vram_for_ngl(model_size_gb, gguf_meta.as_ref(), total_layers, custom_ngl, ctx);
+                let full = custom_ngl >= total_layers;
+                let hyb = !full && custom_ngl > 0;
+                let strat = if custom_ngl == 0 {
+                    "CpuOnly".to_string()
+                } else if full {
+                    if hw_snapshot.is_igpu { "IntegratedGpu".to_string() } else { "FullDedicatedGpu".to_string() }
+                } else {
+                    "Hybrid".to_string()
+                };
+                let msg = if custom_ngl == 0 {
+                    format!("CPU Only — 0/{} layers on GPU, all {} layers in system RAM.", total_layers, total_layers)
+                } else if full {
+                    format!("GPU (Dedicated VRAM) — all {}/{} layers offloaded to {}.", total_layers, total_layers, hw_snapshot.gpu_name)
+                } else {
+                    format!("Custom Offload — {}/{} layers on GPU, {} layers on CPU.", custom_ngl, total_layers, total_layers.saturating_sub(custom_ngl))
+                };
+                let uses_shmem = hw_snapshot.has_dedicated_gpu && vram > hw_snapshot.dedicated_vram_available_mb.saturating_sub(512);
+                let threads = if full {
+                    hw_snapshot.cpu_physical_cores.min(4).max(1)
+                } else {
+                    hw_snapshot.cpu_physical_cores.max(1)
+                };
+                (custom_ngl, full, !full, uses_shmem, vram, msg, threads, strat)
+            } else {
+                (d.ngl, d.fully_gpu, d.hybrid, d.uses_shared_memory, d.estimated_vram_mb, d.message, d.recommended_cpu_threads, d.strategy)
+            }
+        },
         Err(err_msg) => (0, false, false, false, 0, err_msg, 0, "Unknown".to_string()),
     };
     let layers_on_gpu = ngl.min(total_layers);
@@ -595,9 +626,9 @@ pub async fn estimate_hardware_usage(
     app: AppHandle,
     model_id: String,
     context_size: Option<u32>,
-    _gpu_layers: Option<u32>,
+    gpu_layers: Option<u32>,
 ) -> Result<HardwareAnalysisResult, String> {
-    analyze_hardware(app, model_id, context_size).await
+    analyze_hardware(app, model_id, context_size, gpu_layers).await
 }
 
 #[tauri::command]
@@ -1302,21 +1333,19 @@ pub async fn start_local_server(
     let total_layers = estimate_total_layers(gguf_meta.as_ref(), model_size_gb);
 
 
-    // Always pass 999 to llama-server when a dedicated GPU is present (or in full GPU mode)
-    // to guarantee 100% of all layers, embeddings, and output tensors are offloaded to
-    // the dedicated GPU. When physical VRAM is exceeded, Windows WDDM Shared GPU Memory
-    // enables the dedicated GPU to seamlessly access host RAM while executing all compute
-    // solely on the dedicated GPU.
-    let final_ngl = match gpu_layers.filter(|&l| l > 0) {
+    // Respect user-specified or scheduler-budgeted GPU layer offload count.
+    // Never force -ngl 999 when partial offload is used so remaining layers execute
+    // on CPU without 15x PCIe WDDM bus thrashing.
+    let final_ngl = match gpu_layers {
         Some(layers) => {
-            if hw.has_dedicated_gpu && (hybrid_cfg.uses_shared_memory || hybrid_cfg.ngl >= total_layers) {
+            if layers >= total_layers {
                 999
             } else {
-                layers.min(total_layers).min(hybrid_cfg.ngl)
+                layers
             }
         }
         None => {
-            if hybrid_cfg.ngl >= total_layers || hybrid_cfg.uses_shared_memory || hw.has_dedicated_gpu {
+            if hybrid_cfg.ngl >= total_layers {
                 999
             } else {
                 hybrid_cfg.ngl
@@ -1325,7 +1354,13 @@ pub async fn start_local_server(
     };
 
     // Generation threads: physical cores for sequential decode.
-    let final_threads = cpu_threads.filter(|&t| t > 0).unwrap_or(hybrid_cfg.threads_gen);
+    let final_threads = cpu_threads.filter(|&t| t > 0).unwrap_or_else(|| {
+        if final_ngl < total_layers {
+            hw.cpu_physical_cores.max(1)
+        } else {
+            hybrid_cfg.threads_gen
+        }
+    });
     // Batch / ubatch: user override or scheduler recommendation.
     let final_batch = batch_size.filter(|&b| b > 0).unwrap_or(hybrid_cfg.batch_size);
     let final_ubatch = hybrid_cfg.ubatch_size;
@@ -1436,6 +1471,28 @@ pub async fn start_local_server(
         }
     });
 
+    let mmproj_size_mb = if let Some(ref p) = mmproj_path {
+        std::fs::metadata(p).map(|m| m.len() / (1024 * 1024)).unwrap_or(1000)
+    } else {
+        0
+    };
+    // Dedicated VRAM free for auxiliary components (reserving 512MB for Windows DWM compositor headroom)
+    let dedicated_free_for_aux = hw.dedicated_vram_available_mb.saturating_sub(512);
+
+    // If dedicated VRAM has room (dedicated_vram_free > model_vram + mmproj_size + kv_cache + 300MB), pass --mmproj-offload.
+    // If space is tight, pass --mmproj WITHOUT --mmproj-offload so the vision projector runs in system RAM via CPU to prevent CUDA OOM.
+    let mmproj_offload = hw.has_dedicated_gpu
+        && mmproj_path.is_some()
+        && (dedicated_free_for_aux > estimated_vram_mb.saturating_add(mmproj_size_mb).saturating_add(300));
+
+    // Budget MTP companion heads into VRAM (-ngld 999) when dedicated VRAM headroom exists,
+    // otherwise pass Some(0) so MTP stays in system RAM on CPU, preventing CUDA OOM.
+    let ngl_draft = if hw.has_dedicated_gpu && dedicated_free_for_aux > estimated_vram_mb.saturating_add(200) {
+        Some(999)
+    } else {
+        Some(0)
+    };
+
     let cfg = LlamaServerConfig {
         server_path: server_path.clone(),
         model_path,
@@ -1454,10 +1511,11 @@ pub async fn start_local_server(
         spec_type,
         spec_draft_min: None,
         spec_draft_max: None,
-        ngl_draft: None,
+        ngl_draft,
         disable_kv_offload: final_no_kv,
         prompt_cache_path,
         mmproj_path: mmproj_path.clone(),
+        mmproj_offload,
         port: active_port,
         split_mode: final_split_mode,
         tensor_split: final_tensor_split,
@@ -1596,7 +1654,7 @@ pub async fn load_multimodal_support(
         cfg.kv_cache_type,
         None,
         cfg.batch_size,
-        None,
+        cfg.draft_model_file.clone(),
         None,
         cfg.split_mode,
         cfg.tensor_split,
@@ -1604,7 +1662,7 @@ pub async fn load_multimodal_support(
         cfg.reasoning_budget,
         Some(!audio),
         Some(audio),
-        Some(false),
+        Some(cfg.draft_model_file.is_some() || cfg.has_mtp_loaded),
     ).await?;
 
     Ok(true)
@@ -1641,7 +1699,7 @@ pub async fn unload_multimodal_support(
         cfg.kv_cache_type,
         None,
         cfg.batch_size,
-        None,
+        cfg.draft_model_file.clone(),
         None,
         cfg.split_mode,
         cfg.tensor_split,
@@ -1649,7 +1707,7 @@ pub async fn unload_multimodal_support(
         cfg.reasoning_budget,
         Some(false),
         Some(false),
-        Some(false),
+        Some(cfg.draft_model_file.is_some() || cfg.has_mtp_loaded),
     ).await?;
 
     Ok(true)

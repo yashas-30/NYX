@@ -367,8 +367,8 @@ async fn try_sd_cpp_server_inference(
     let client = reqwest::Client::new();
     let url = format!("http://127.0.0.1:{}/v1/images/generations", port);
 
-    let final_w = w.min(512);
-    let final_h = h.min(512);
+    let final_w = if w > 0 { w } else { 1024 };
+    let final_h = if h > 0 { h } else { 1024 };
 
     let body = serde_json::json!({
         "prompt": prompt,
@@ -427,16 +427,19 @@ async fn try_sd_cpp_local_inference(
     let is_low_vram = hw.profile == crate::llm::local_orchestrator::HardwareProfile::Vram4GbSys16Gb 
         || hw.vram_total_mb <= 4608;
 
+    let target_w = if w > 0 { w } else { 1024 };
+    let target_h = if h > 0 { h } else { 1024 };
+
     let final_w = if is_low_vram {
-        w.min(512)
+        target_w.min(512)
     } else {
-        w
+        target_w
     };
 
     let final_h = if is_low_vram {
-        h.min(512)
+        target_h.min(512)
     } else {
-        h
+        target_h
     };
 
     let model_path_lower = model_path.to_lowercase();
@@ -469,7 +472,52 @@ async fn try_sd_cpp_local_inference(
     );
 
     let mut cmd = tokio::process::Command::new(&binary_path);
-    cmd.arg("-m").arg(model_path);
+
+    let model_path_buf = std::path::PathBuf::from(model_path);
+    let models_dir = model_path_buf.parent().unwrap_or_else(|| std::path::Path::new("."));
+
+    let find_companion = |prefixes: &[&str], extensions: &[&str]| -> Option<std::path::PathBuf> {
+        if let Ok(entries) = std::fs::read_dir(models_dir) {
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        let name_lower = name.to_lowercase();
+                        if path == model_path_buf { continue; }
+                        let matches_prefix = prefixes.iter().any(|&p| name_lower.contains(p));
+                        let matches_ext = extensions.iter().any(|&ext| name_lower.ends_with(ext));
+                        if matches_prefix && matches_ext && !name_lower.ends_with(".part") {
+                            return Some(path);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    };
+
+    let vae_path = find_companion(&["vae", "ae."], &["safetensors", "gguf", "bin", "ckpt"]);
+    let clip_path = find_companion(&["clip_l", "clip-l", "vi-l"], &["safetensors", "gguf", "bin", "ckpt"]);
+    let t5_path = find_companion(&["t5xxl", "t5-xxl"], &["safetensors", "gguf", "bin", "ckpt"]);
+    let has_companion = vae_path.is_some() || clip_path.is_some() || t5_path.is_some();
+
+    if is_flux || has_companion {
+        cmd.arg("--diffusion-model").arg(model_path);
+        if let Some(ref path) = vae_path {
+            cmd.arg("--vae").arg(path);
+            info!("[Diffusers] Found companion VAE: {:?}", path);
+        }
+        if let Some(ref path) = clip_path {
+            cmd.arg("--clip_l").arg(path);
+            info!("[Diffusers] Found companion CLIP-L: {:?}", path);
+        }
+        if let Some(ref path) = t5_path {
+            cmd.arg("--t5xxl").arg(path);
+            info!("[Diffusers] Found companion T5: {:?}", path);
+        }
+    } else {
+        cmd.arg("-m").arg(model_path);
+    }
     cmd.arg("-p").arg(prompt);
     cmd.arg("-o").arg(output_path);
     cmd.arg("-w").arg(final_w.to_string());

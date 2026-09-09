@@ -111,6 +111,7 @@ pub struct LlamaServerConfig {
     pub disable_kv_offload: bool,
     pub prompt_cache_path: Option<PathBuf>,
     pub mmproj_path: Option<PathBuf>,
+    pub mmproj_offload: bool,
     pub port: u16,
     pub split_mode: Option<String>,
     pub tensor_split: Option<String>,
@@ -145,10 +146,12 @@ impl LlamaServerConfig {
 
         if let Some(mmproj) = &self.mmproj_path {
             args.extend(["--mmproj".into(), mmproj.to_string_lossy().into_owned()]);
-            args.push("--mmproj-offload".into());
-            if let Some(ref dev) = self.device_id {
-                if !dev.is_empty() {
-                    args.extend(["--mmproj-device".into(), dev.clone()]);
+            if self.mmproj_offload {
+                args.push("--mmproj-offload".into());
+                if let Some(ref dev) = self.device_id {
+                    if !dev.is_empty() {
+                        args.extend(["--mmproj-device".into(), dev.clone()]);
+                    }
                 }
             }
         }
@@ -199,12 +202,14 @@ impl LlamaServerConfig {
                 draft.to_string_lossy().into_owned(),
             ]);
 
-            // Multi-Token Prediction (MTP) heads share the transformer layers and KV cache of the target model.
-            // When ngld > 0 is combined with --spec-draft-device on models using shared GPU memory / VRAM,
-            // llama.cpp tries to create a separate device allocator pool which crashes with "invalid vector subscript".
-            // Setting ngld to 0 (unless explicitly specified in ngl_draft) and omitting --spec-draft-device allows MTP to attach
-            // directly to the target model's layers without vector allocation collision.
-            let ngld_val = self.ngl_draft.unwrap_or(if is_mtp { 0 } else { self.ngl });
+            // Multi-Token Prediction (MTP) companion heads:
+            // When dedicated VRAM headroom exists, ngl_draft is Some(999); when headroom is tight or unspecified,
+            // default to 0 so MTP runs on CPU in system RAM to prevent CUDA OOM.
+            let ngld_val = self.ngl_draft.unwrap_or(if is_mtp {
+                0
+            } else {
+                self.ngl
+            });
 
             if is_mtp {
                 // Multi-token prediction (MTP) heads: draft up to 5 consecutive tokens for accelerated generation.
@@ -262,9 +267,16 @@ impl LlamaServerConfig {
         // Single slot execution for desktop client (prevents allocating 4 concurrent slots in memory)
         args.extend(["-np".into(), "1".into()]);
 
-        // Enable host RAM prompt cache ceiling (4096 MiB) so prompt prefixes, system prompts,
-        // and conversation history are retained and instantly reused across conversation turns.
-        args.extend(["--cache-ram".into(), "4096".into()]);
+        // Dynamically scale host RAM prompt cache ceiling to (system_ram_mb / 8).clamp(512, 4096)
+        let cache_ram_mb = {
+            let mut sys = sysinfo::System::new_with_specifics(
+                sysinfo::RefreshKind::new().with_memory(sysinfo::MemoryRefreshKind::new().with_ram())
+            );
+            sys.refresh_memory();
+            let system_ram_mb = sys.total_memory() / (1024 * 1024);
+            (system_ram_mb / 8).clamp(512, 4096)
+        };
+        args.extend(["--cache-ram".into(), cache_ram_mb.to_string()]);
 
         // Enable chunk cache reuse via KV shifting (minimum 256 tokens)
         args.extend(["--cache-reuse".into(), "256".into()]);
@@ -292,6 +304,11 @@ impl LlamaServerConfig {
         // Enable KV prompt caching unconditionally for instant first-token generation
         args.push("--cache-prompt".into());
 
+        // Wire prompt-cache file path if provided
+        if let Some(ref pc) = self.prompt_cache_path {
+            args.extend(["--prompt-cache".into(), pc.to_string_lossy().into_owned()]);
+        }
+
         // 2026 Dynamic Context Management: Enable context shifting so context auto-expands & shifts on demand
         args.push("--context-shift".into());
 
@@ -302,10 +319,6 @@ impl LlamaServerConfig {
 
         // Metrics endpoint: expose /metrics so performance can be monitored.
         args.push("--metrics".into());
-
-        // Always pass -fit off so llama-server allocates all specified layers and
-        // uses Windows WDDM Shared GPU Memory instead of aborting via fitting heuristics.
-        args.extend(["-fit".into(), "off".into()]);
 
         // Disable empty warmup run on startup to eliminate unnecessary model initialization latency
         args.push("--no-warmup".into());
@@ -325,80 +338,15 @@ impl LlamaServerConfig {
 // § 5 — LLAMA MANAGER
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[cfg(target_os = "windows")]
-pub fn trim_process_working_set(pid: u32) {
-    type HANDLE = *mut std::ffi::c_void;
-    type BOOL = i32;
-    type DWORD = u32;
-
-    const PROCESS_QUERY_INFORMATION: DWORD = 0x0400;
-    const PROCESS_SET_QUOTA: DWORD = 0x0100;
-
-    extern "system" {
-        fn OpenProcess(dwDesiredAccess: DWORD, bInheritHandle: BOOL, dwProcessId: DWORD) -> HANDLE;
-        fn CloseHandle(hObject: HANDLE) -> BOOL;
-        fn K32EmptyWorkingSet(hProcess: HANDLE) -> BOOL;
-    }
-
-    unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA, 0, pid);
-        if !handle.is_null() {
-            let _ = K32EmptyWorkingSet(handle);
-            let _ = CloseHandle(handle);
-            tracing::info!("[LlamaManager] Trimmed host RAM working set for llama-server PID {}", pid);
-        }
-    }
+pub fn trim_process_working_set(_pid: u32) {
+    // Intentionally no-op: K32EmptyWorkingSet unpages active mmap weight tensors and pinned CUDA buffers,
+    // causing hard page faults, PCIe bus thrashing, and severe UI stutter.
 }
 
-#[cfg(not(target_os = "windows"))]
-pub fn trim_process_working_set(_pid: u32) {}
-
-#[cfg(target_os = "windows")]
 pub fn trim_current_process_working_set() {
-    type HANDLE = *mut std::ffi::c_void;
-    type BOOL = i32;
-    type DWORD = u32;
-
-    const PROCESS_QUERY_INFORMATION: DWORD = 0x0400;
-    const PROCESS_SET_QUOTA: DWORD = 0x0100;
-
-    extern "system" {
-        fn GetCurrentProcess() -> HANDLE;
-        fn OpenProcess(dwDesiredAccess: DWORD, bInheritHandle: BOOL, dwProcessId: DWORD) -> HANDLE;
-        fn CloseHandle(hObject: HANDLE) -> BOOL;
-        fn K32EmptyWorkingSet(hProcess: HANDLE) -> BOOL;
-    }
-
-    unsafe {
-        let handle = GetCurrentProcess();
-        if !handle.is_null() {
-            let _ = K32EmptyWorkingSet(handle);
-            tracing::info!("[LlamaManager] Trimmed host process (nyx.exe) working set");
-        }
-    }
-
-    // Also trim child WebView2 processes to free unneeded browser renderer page cache
-    let my_pid = std::process::id();
-    let s = sysinfo::System::new_with_specifics(
-        sysinfo::RefreshKind::new().with_processes(sysinfo::ProcessRefreshKind::everything())
-    );
-    for (pid, proc) in s.processes() {
-        let name = proc.name().to_lowercase();
-        let is_child = proc.parent().map(|p| p.as_u32() == my_pid).unwrap_or(false);
-        if is_child || name.contains("msedgewebview2") {
-            unsafe {
-                let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA, 0, pid.as_u32());
-                if !handle.is_null() {
-                    let _ = K32EmptyWorkingSet(handle);
-                    let _ = CloseHandle(handle);
-                }
-            }
-        }
-    }
+    // Intentionally no-op: K32EmptyWorkingSet unpages active mmap weight tensors and pinned CUDA buffers,
+    // causing hard page faults, PCIe bus thrashing, and severe UI stutter.
 }
-
-#[cfg(not(target_os = "windows"))]
-pub fn trim_current_process_working_set() {}
 
 pub struct LlamaManager {
     process: Arc<Mutex<Option<Child>>>,
@@ -522,13 +470,6 @@ impl LlamaManager {
 
         let active_pid = child.id();
         *guard = Some(child);
-
-        // Trim host RAM working set immediately after loading (wait 300ms for final CUDA allocations to settle)
-        if let Some(pid) = active_pid {
-            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-            trim_process_working_set(pid);
-        }
-        trim_current_process_working_set();
 
         // Spawn orphan watchdog: kill any stray external processes every 30s
         // NOTE: NEVER invoke trim_process_working_set in a periodic loop!
@@ -799,13 +740,6 @@ impl LlamaManager {
 
         let active_pid = child.id();
         *guard = Some(child);
-
-        // Trim host RAM working set immediately after loading
-        if let Some(pid) = active_pid {
-            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-            trim_process_working_set(pid);
-        }
-        trim_current_process_working_set();
 
         // Spawn watchdog
         let weak_process = Arc::downgrade(&self.process);
