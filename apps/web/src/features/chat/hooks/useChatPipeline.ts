@@ -982,7 +982,50 @@ export function useChatPipeline({
         let thinkingEndTime = -1;
         let lastUpdateTime = 0;
         let THROTTLE_MS = 24;
+        let trailingUpdateTimer: ReturnType<typeof setTimeout> | null = null;
         const streamFilter = new StreamFluffFilter();
+
+        const applyStreamUpdate = (
+          displayContent: string,
+          extractedReasoning: string,
+          isReasoningActive: boolean
+        ) => {
+          if (!activeStreamRef.current) return;
+          let currentThinkingTimeMs: number | undefined = activeStreamRef.current.thinkingTimeMs;
+          if (extractedReasoning && isReasoningActive) {
+            if (thinkEndIdx !== -1) {
+              currentThinkingTimeMs =
+                thinkingEndTime - (activeStreamRef.current.timestamp || Date.now());
+            } else {
+              currentThinkingTimeMs =
+                Date.now() - (activeStreamRef.current.timestamp || Date.now());
+            }
+          }
+
+          const effectiveReasoning = isReasoningActive
+            ? extractedReasoning ||
+              currentReasoning ||
+              activeStreamRef.current?.reasoning ||
+              undefined
+            : undefined;
+
+          const fullDisplay = accumulatedTurnContent
+            ? displayContent
+              ? `${accumulatedTurnContent}\n\n${displayContent}`
+              : accumulatedTurnContent
+            : displayContent;
+
+          const updatedMsg = {
+            ...activeStreamRef.current,
+            content: fullDisplay,
+            reasoning: effectiveReasoning,
+            thinkingTimeMs: isReasoningActive
+              ? currentThinkingTimeMs || activeStreamRef.current?.thinkingTimeMs
+              : undefined,
+          };
+          activeStreamRef.current = updatedMsg;
+          setActiveStreamMessage(updatedMsg);
+        };
 
         setIsSupervising(true);
 
@@ -1033,7 +1076,7 @@ export function useChatPipeline({
                 const innerText =
                   thinkEndIdx !== -1
                     ? currentContent.substring(thinkStartIdx + thinkTagLen, thinkEndIdx).trim()
-                    : currentContent.substring(thinkStartIdx + thinkTagLen).trim();
+                    : currentContent.substring(thinkStartIdx + thinkTagLen).trimStart();
 
                 const outsideText =
                   thinkEndIdx !== -1
@@ -1041,7 +1084,7 @@ export function useChatPipeline({
                         currentContent.substring(0, thinkStartIdx) +
                         currentContent.substring(thinkEndIdx + thinkEndTagLen)
                       ).trim()
-                    : currentContent.substring(0, thinkStartIdx).trim();
+                    : currentContent.substring(0, thinkStartIdx);
 
                 extractedReasoning = innerText;
                 displayContent = outsideText;
@@ -1072,43 +1115,20 @@ export function useChatPipeline({
                   .replace(/\[\/?(?:THINKING|REASONING)\]/gi, '');
               }
 
+              if (trailingUpdateTimer !== null) {
+                clearTimeout(trailingUpdateTimer);
+                trailingUpdateTimer = null;
+              }
+
               if (now - lastUpdateTime > THROTTLE_MS) {
                 lastUpdateTime = now;
-                let currentThinkingTimeMs: number | undefined =
-                  activeStreamRef.current.thinkingTimeMs;
-                if (extractedReasoning && isReasoningActive) {
-                  if (thinkEndIdx !== -1) {
-                    currentThinkingTimeMs =
-                      thinkingEndTime - (activeStreamRef.current.timestamp || Date.now());
-                  } else {
-                    currentThinkingTimeMs =
-                      Date.now() - (activeStreamRef.current.timestamp || Date.now());
-                  }
-                }
-
-                const effectiveReasoning = isReasoningActive
-                  ? extractedReasoning ||
-                    currentReasoning ||
-                    activeStreamRef.current?.reasoning ||
-                    undefined
-                  : undefined;
-
-                const fullDisplay = accumulatedTurnContent
-                  ? displayContent
-                    ? `${accumulatedTurnContent}\n\n${displayContent}`
-                    : accumulatedTurnContent
-                  : displayContent;
-
-                const updatedMsg = {
-                  ...activeStreamRef.current,
-                  content: fullDisplay,
-                  reasoning: effectiveReasoning,
-                  thinkingTimeMs: isReasoningActive
-                    ? currentThinkingTimeMs || activeStreamRef.current?.thinkingTimeMs
-                    : undefined,
-                };
-                activeStreamRef.current = updatedMsg;
-                setActiveStreamMessage(updatedMsg);
+                applyStreamUpdate(displayContent, extractedReasoning, isReasoningActive);
+              } else {
+                trailingUpdateTimer = setTimeout(() => {
+                  trailingUpdateTimer = null;
+                  lastUpdateTime = Date.now();
+                  applyStreamUpdate(displayContent, extractedReasoning, isReasoningActive);
+                }, THROTTLE_MS);
               }
             } else if (eventType === 'tool_start') {
               pendingToolName = message.name as string | undefined;
@@ -1203,6 +1223,11 @@ export function useChatPipeline({
             } else if (eventType === 'thinking') {
               currentReasoning += message.content || '';
 
+              if (trailingUpdateTimer !== null) {
+                clearTimeout(trailingUpdateTimer);
+                trailingUpdateTimer = null;
+              }
+
               if (now - lastUpdateTime > THROTTLE_MS) {
                 lastUpdateTime = now;
                 const updatedMsg = {
@@ -1212,8 +1237,27 @@ export function useChatPipeline({
                 };
                 activeStreamRef.current = updatedMsg;
                 setActiveStreamMessage(updatedMsg);
+              } else {
+                trailingUpdateTimer = setTimeout(() => {
+                  trailingUpdateTimer = null;
+                  lastUpdateTime = Date.now();
+                  if (activeStreamRef.current) {
+                    const updatedMsg = {
+                      ...activeStreamRef.current,
+                      reasoning: currentReasoning,
+                      thinkingTimeMs:
+                        Date.now() - (activeStreamRef.current.timestamp || Date.now()),
+                    };
+                    activeStreamRef.current = updatedMsg;
+                    setActiveStreamMessage(updatedMsg);
+                  }
+                }, THROTTLE_MS);
               }
             } else if (eventType === 'done') {
+              if (trailingUpdateTimer !== null) {
+                clearTimeout(trailingUpdateTimer);
+                trailingUpdateTimer = null;
+              }
               const remaining = streamFilter.flush();
               if (remaining && activeStreamRef.current) {
                 currentContent += remaining;
@@ -1247,12 +1291,20 @@ export function useChatPipeline({
                 setActiveStreamMessage(updatedMsg);
               }
             } else if (eventType === 'error') {
+              if (trailingUpdateTimer !== null) {
+                clearTimeout(trailingUpdateTimer);
+                trailingUpdateTimer = null;
+              }
               toast.error(message.error || message.content || 'Generation error');
             }
           }
         };
 
         let onAbort = () => {
+          if (trailingUpdateTimer !== null) {
+            clearTimeout(trailingUpdateTimer);
+            trailingUpdateTimer = null;
+          }
           emit('cancel_chat_stream').catch(() => {});
           emit(`cancel_${eventName}`).catch(() => {});
           if (activeEventNameRef.current) {

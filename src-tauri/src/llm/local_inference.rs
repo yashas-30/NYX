@@ -1055,7 +1055,7 @@ pub async fn execute_local_stream(
         });
         
         let stream_reader = StreamReader::new(byte_stream);
-        let mut lines = BufReader::with_capacity(4 * 1024 * 1024, stream_reader).lines();
+        let mut lines = BufReader::with_capacity(64 * 1024, stream_reader).lines();
         let mut buffer = String::with_capacity(4096);
         let mut active_tool_call_id: Option<String> = None;
         let mut total_text_chars = 0usize;
@@ -1145,8 +1145,8 @@ pub async fn execute_local_stream(
             };
 
             // Safety: prevent infinite growth
-            if buffer.len() > 8_388_608 { // 8MB
-                warn!("[SSE] Buffer exceeded 8MB, dropping.");
+            if buffer.len() > 1_048_576 { // 1MB
+                warn!("[SSE] Buffer exceeded 1MB, dropping.");
                 buffer.clear();
             }
 

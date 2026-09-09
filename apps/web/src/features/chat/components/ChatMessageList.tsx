@@ -990,10 +990,14 @@ export const MarkdownContent: React.FC<{
       }
 
       // Strip SEARCH/REPLACE blocks from conversational text so git-conflict markers don't clutter the chat
-      const cleanStrippedText = strippedText
-        .replace(/<<<<<<< SEARCH[\s\S]*?>>>>>>>/g, '')
-        .replace(/```(?:diff|patch)?\s*<<<<<<< SEARCH[\s\S]*?>>>>>>>\s*```/g, '')
-        .trim();
+      const cleanStrippedText = isStreaming
+        ? strippedText
+            .replace(/<<<<<<< SEARCH[\s\S]*?>>>>>>>/g, '')
+            .replace(/```(?:diff|patch)?\s*<<<<<<< SEARCH[\s\S]*?>>>>>>>\s*```/g, '')
+        : strippedText
+            .replace(/<<<<<<< SEARCH[\s\S]*?>>>>>>>/g, '')
+            .replace(/```(?:diff|patch)?\s*<<<<<<< SEARCH[\s\S]*?>>>>>>>\s*```/g, '')
+            .trim();
 
       return {
         textContent: cleanStrippedText,

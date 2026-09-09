@@ -268,16 +268,12 @@ impl LlamaServerConfig {
         // Single slot execution for desktop client (prevents allocating concurrent slots in memory)
         args.extend(["-np".into(), "1".into()]);
 
-        // Dynamically scale host RAM prompt cache based on system memory without arbitrary 4096MB cap
-        let cache_ram_mb = {
-            let mut sys = sysinfo::System::new_with_specifics(
-                sysinfo::RefreshKind::new().with_memory(sysinfo::MemoryRefreshKind::new().with_ram())
-            );
-            sys.refresh_memory();
-            let system_ram_mb = sys.total_memory() / (1024 * 1024);
-            (system_ram_mb / 4).max(512)
-        };
-        args.extend(["--cache-ram".into(), cache_ram_mb.to_string()]);
+        // Single-slot desktop client: disable host RAM prompt cache allocation (--cache-ram 0).
+        // Active slot prompt caching in VRAM is fully handled by --cache-prompt.
+        // Disabling the secondary host-RAM checkpoint cache eliminates multi-gigabyte host RAM bloat
+        // while preserving full KV prompt caching inside the active GPU context.
+        args.extend(["--cache-ram".into(), "0".into()]);
+        args.push("--no-cache-idle-slots".into());
 
         // Enable chunk cache reuse via KV shifting (minimum 256 tokens)
         args.extend(["--cache-reuse".into(), "256".into()]);

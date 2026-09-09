@@ -701,8 +701,15 @@ pub fn compute_gpu_inference_config(
 
     let kv_cache_type = derive_matching_kv_cache_type(model_name_or_id.unwrap_or(""), meta);
 
-    let batch_size = (ngl_decision.effective_context_size / 2).clamp(512, 4096);
-    let ubatch_size = (batch_size / 4).clamp(128, 1024);
+    // Optimal batch size for interactive desktop chat: 512 to 2048 tokens.
+    // Clamping batch_size prevents multi-gigabyte ggml compute graph buffer allocations in host memory.
+    let batch_size = (ngl_decision.effective_context_size / 2).clamp(512, 2048);
+    // Physical compute chunk (ubatch): 512 default; 256 when utilizing shared GPU memory to prevent PCIe bus saturation and RAM paging spikes.
+    let ubatch_size = if ngl_decision.uses_shared_memory {
+        (batch_size / 4).clamp(128, 256)
+    } else {
+        (batch_size / 4).clamp(128, 512)
+    };
 
     // Generation threads match physical CPU cores for maximum decode throughput without contention
     let threads_gen = hw.cpu_physical_cores.max(1);
