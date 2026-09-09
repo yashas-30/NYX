@@ -221,8 +221,8 @@ pub fn estimate_total_layers(meta: Option<&GgufMetadata>, model_size_gb: f32) ->
     (model_size_gb * 5.5 + 18.0).round().clamp(16.0, 128.0) as u32
 }
 
-/// Estimate VRAM required to offload `ngl` layers of a model with dynamic non-linear weight distribution.
-pub fn vram_for_ngl(model_size_gb: f32, meta: Option<&GgufMetadata>, total_layers: u32, ngl: u32, ctx_size: u32) -> u64 {
+/// Estimate VRAM required for model weights, runtime driver context, and compute buffers (excluding KV cache).
+pub fn vram_weights_only(model_size_gb: f32, _meta: Option<&GgufMetadata>, total_layers: u32, ngl: u32, ctx_size: u32) -> u64 {
     if ngl == 0 { return 0; }
 
     let model_mb = (model_size_gb * 1024.0) as u64;
@@ -240,7 +240,16 @@ pub fn vram_for_ngl(model_size_gb: f32, meta: Option<&GgufMetadata>, total_layer
         (((non_layer_overhead_mb as f64) * 0.95) as u64 / 2).saturating_add(offloaded_mb).min(model_mb)
     };
 
-    // Precise KV Cache calculation: default 4-bit/8-bit KV (--ctk q4_0/q8_0) with FlashAttention.
+    // Dynamically scale runtime driver context and FlashAttention compute scratch buffers
+    let driver_overhead_mb = (model_mb / 64).clamp(32, 128);
+    let compute_mb = ((ctx_size as u64 * 16) / 1024).clamp(32, 256);
+
+    driver_overhead_mb + compute_mb + weights_in_vram_mb
+}
+
+/// Precise KV Cache calculation: default 4-bit/8-bit KV (--ctk q4_0/q8_0) with FlashAttention.
+pub fn estimate_kv_cache_mb(model_size_gb: f32, meta: Option<&GgufMetadata>, total_layers: u32, ngl: u32, ctx_size: u32) -> u64 {
+    if ngl == 0 { return 0; }
     let gpu_kv_layers = if ngl >= total_layers { total_layers } else { ngl };
     let kv_mb_per_1k = if let Some(m) = meta {
         let head_count = m.head_count.unwrap_or(32).max(1) as u64;
@@ -255,13 +264,15 @@ pub fn vram_for_ngl(model_size_gb: f32, meta: Option<&GgufMetadata>, total_layer
     };
 
     let total_kv_mb = (ctx_size as f32 / 1024.0) * kv_mb_per_1k;
-    let offloaded_kv_mb = total_kv_mb as u64;
+    total_kv_mb as u64
+}
 
-    // Dynamically scale runtime driver context and FlashAttention compute scratch buffers
-    let driver_overhead_mb = (model_mb / 64).clamp(32, 128);
-    let compute_mb = ((ctx_size as u64 * 16) / 1024).clamp(32, 256);
-
-    driver_overhead_mb + compute_mb + weights_in_vram_mb + offloaded_kv_mb
+/// Estimate VRAM required to offload `ngl` layers of a model with dynamic non-linear weight distribution.
+pub fn vram_for_ngl(model_size_gb: f32, meta: Option<&GgufMetadata>, total_layers: u32, ngl: u32, ctx_size: u32) -> u64 {
+    if ngl == 0 { return 0; }
+    let weights_mb = vram_weights_only(model_size_gb, meta, total_layers, ngl, ctx_size);
+    let kv_mb = estimate_kv_cache_mb(model_size_gb, meta, total_layers, ngl, ctx_size);
+    weights_mb.saturating_add(kv_mb)
 }
 
 
@@ -285,6 +296,9 @@ pub struct NglDecision {
     /// True when the model exceeds dedicated VRAM and is utilizing Shared GPU Memory.
     #[serde(default)]
     pub uses_shared_memory: bool,
+    /// Force KV cache to system RAM (`--no-kv-offload`).
+    #[serde(default)]
+    pub disable_kv_offload: bool,
     /// Execution strategy for UI and telemetry ("FullDedicatedGpu", "SharedGpuMemory", "IntegratedGpu", "Hybrid")
     #[serde(default)]
     pub strategy: String,
@@ -562,20 +576,47 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
         best_ctx
     };
 
-    let needed = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, selected_ctx);
+    let total_needed = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, selected_ctx);
+    let weights_only = vram_weights_only(model_size_gb, meta, total_layers, total_layers, selected_ctx);
 
-    // Dedicated GPU Execution:
-    // If a dedicated GPU is available, run the COMPLETE model and all support files using the
-    // dedicated GPU only, NOT the CPU.
-    // When the model exceeds dedicated physical VRAM, Windows WDDM Shared GPU Memory automatically
-    // provides host memory while all tensor computation remains 100% on the dedicated GPU.
-    let (selected_ngl, fully_gpu, hybrid, uses_shared_memory, strategy) = if hw.has_dedicated_gpu {
-        let uses_shared = needed > dedicated_avail;
-        (total_layers, true, false, uses_shared, "FullDedicatedGpu".to_string())
+    // Dedicated GPU Tiered Low-VRAM Offload Policy:
+    // Tier 1: Fits in physical dedicated VRAM -> 100% dedicated VRAM offload (disable_kv_offload: false, uses_shared: false)
+    // Tier 2: Model weights fit in VRAM, but KV cache causes overflow ->
+    //         Pin 100% of weights to GPU VRAM, but store KV cache in system RAM via --no-kv-offload (disable_kv_offload: true).
+    //         This keeps weights operating at 100% GPU speed without WDDM PCIe weight thrashing.
+    // Tier 3A: Modest weight spill (<= 30% of weights or <= 1.5GB overflow) -> 100% GPU offload using Shared GPU Memory (fast DMA streaming).
+    // Tier 3B: Massive spill (> 30% or > 1.5GB, e.g. 8B/14B models on 4GB card) -> Safe partial layer offload to prevent bidirectional WDDM thrashing and driver freezes.
+    let (selected_ngl, fully_gpu, hybrid, uses_shared_memory, disable_kv_offload, strategy) = if hw.has_dedicated_gpu {
+        if total_needed <= dedicated_avail {
+            // Tier 1: Fits completely in dedicated physical VRAM
+            (total_layers, true, false, false, false, "FullDedicatedGpu".to_string())
+        } else if weights_only <= dedicated_avail {
+            // Tier 2: Model weights fit in VRAM, store KV cache in host RAM via --no-kv-offload
+            (total_layers, true, false, false, true, "FullDedicatedGpu".to_string())
+        } else {
+            // Tier 3: Model weights exceed physical dedicated VRAM
+            let weight_spill_mb = weights_only.saturating_sub(dedicated_avail);
+            let weight_spill_ratio = weight_spill_mb as f64 / weights_only.max(1) as f64;
+            let is_modest_spill = (weight_spill_ratio <= 0.30 && weight_spill_mb <= 1536)
+                && weights_only <= gpu_budget;
+
+            if is_modest_spill {
+                // Tier 3A: Modest weight spill -> 100% GPU offload using Shared GPU Memory
+                (total_layers, true, false, true, true, "SharedGpuMemory".to_string())
+            } else {
+                // Tier 3B: Massive spill -> Safe partial layer offload
+                let safe_ngl = (0..=total_layers)
+                    .rev()
+                    .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, selected_ctx) <= dedicated_avail)
+                    .unwrap_or(0);
+                let is_full = safe_ngl >= total_layers;
+                (safe_ngl, is_full, !is_full, false, false, if is_full { "FullDedicatedGpu".to_string() } else { "Hybrid".to_string() })
+            }
+        }
     } else if hw.vram_available_mb > 0 {
         // Integrated GPU or unified memory
-        let uses_shared = needed > hw.vram_available_mb;
-        let ngl = if needed <= gpu_budget {
+        let uses_shared = total_needed > hw.vram_available_mb;
+        let ngl = if total_needed <= gpu_budget {
             total_layers
         } else {
             (0..=total_layers)
@@ -584,14 +625,16 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
                 .unwrap_or(0)
         };
         let is_full = ngl >= total_layers;
-        (ngl, is_full, !is_full, uses_shared, if is_full { "IntegratedGpu".to_string() } else { "Hybrid".to_string() })
+        (ngl, is_full, !is_full, uses_shared, false, if is_full { "IntegratedGpu".to_string() } else { "Hybrid".to_string() })
     } else {
         // No GPU available: run completely on CPU in system RAM
-        (0, false, true, false, "CpuOnly".to_string())
+        (0, false, true, false, false, "CpuOnly".to_string())
     };
 
     let message = if hw.has_dedicated_gpu {
-        if uses_shared_memory {
+        if disable_kv_offload && !uses_shared_memory {
+            format!("GPU (Dedicated VRAM Weights + Host KV) — all {}/{} layers offloaded to {}. Context: {}.", total_layers, total_layers, hw.gpu_name, selected_ctx)
+        } else if uses_shared_memory {
             format!("GPU (Dedicated + Shared VRAM) — all {}/{} layers offloaded to {}. Context: {}.", total_layers, total_layers, hw.gpu_name, selected_ctx)
         } else {
             format!("GPU (Dedicated VRAM) — all {}/{} layers offloaded to {}. Context: {}.", total_layers, total_layers, hw.gpu_name, selected_ctx)
@@ -602,7 +645,11 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
         format!("Hybrid — {}/{} layers on GPU and {} layers in system RAM. Context: {}.", selected_ngl, total_layers, total_layers.saturating_sub(selected_ngl), selected_ctx)
     };
 
-    let actual_estimated_vram_mb = vram_for_ngl(model_size_gb, meta, total_layers, selected_ngl, selected_ctx);
+    let actual_estimated_vram_mb = if disable_kv_offload {
+        vram_weights_only(model_size_gb, meta, total_layers, selected_ngl, selected_ctx)
+    } else {
+        vram_for_ngl(model_size_gb, meta, total_layers, selected_ngl, selected_ctx)
+    };
     let cpu_threads = hw.cpu_physical_cores.max(1);
 
     info!(
@@ -619,6 +666,7 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
         recommended_cpu_threads: cpu_threads,
         effective_context_size: selected_ctx,
         uses_shared_memory,
+        disable_kv_offload,
         strategy,
     })
 }
@@ -631,60 +679,101 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
 /// selected model's own quantization type and metadata, ensuring zero hardcoding.
 ///
 /// Llama.cpp supported KV types: "f32", "f16", "bf16", "q8_0", "q5_0", "q5_1", "q4_0", "q4_1".
-pub fn derive_matching_kv_cache_type(model_identifier: &str, meta: Option<&GgufMetadata>) -> String {
-    // 1. Check GGUF internal header file_type (llama_ftype enum) first if parsed
-    if let Some(m) = meta {
-        if let Some(ft) = m.file_type {
-            match ft {
-                0 => return "f32".to_string(),
-                1 | 28 => return "f16".to_string(),
-                7 | 18 => return "q8_0".to_string(),
-                8 | 9 | 16 | 17 => return "q5_0".to_string(),
-                2 | 3 | 10..=15 | 19..=27 | 29..=33 => return "q4_0".to_string(),
-                _ => {}
+pub fn derive_matching_kv_cache_type(
+    model_identifier: &str,
+    meta: Option<&GgufMetadata>,
+    vram_mb: Option<u64>,
+) -> String {
+    let raw_type = {
+        let mut resolved: Option<String> = None;
+        // 1. Check GGUF internal header file_type (llama_ftype enum) first if parsed
+        if let Some(m) = meta {
+            if let Some(ft) = m.file_type {
+                resolved = match ft {
+                    0 => Some("f32".to_string()),
+                    1 | 28 => Some("f16".to_string()),
+                    7 | 18 => Some("q8_0".to_string()),
+                    8 | 9 | 16 | 17 => Some("q5_0".to_string()),
+                    2 | 3 | 10..=15 | 19..=27 | 29..=33 => Some("q4_0".to_string()),
+                    _ => None,
+                };
+            }
+
+            // 2. Check GGUF metadata tags if available
+            if resolved.is_none() {
+                for tag in &m.tags {
+                    let t = tag.to_lowercase();
+                    if t.contains("q4") || t.contains("iq4") || t.contains("q3") || t.contains("q2") {
+                        resolved = Some("q4_0".to_string());
+                        break;
+                    } else if t.contains("q8") {
+                        resolved = Some("q8_0".to_string());
+                        break;
+                    } else if t.contains("q5") || t.contains("iq5") {
+                        resolved = Some("q5_0".to_string());
+                        break;
+                    } else if t.contains("q6") {
+                        resolved = Some("q8_0".to_string());
+                        break;
+                    } else if t.contains("bf16") || t.contains("f16") {
+                        resolved = Some("f16".to_string());
+                        break;
+                    } else if t.contains("f32") {
+                        resolved = Some("f32".to_string());
+                        break;
+                    }
+                }
             }
         }
 
-        // 2. Check GGUF metadata tags if available
-        for tag in &m.tags {
-            let t = tag.to_lowercase();
-            if t.contains("q4") || t.contains("iq4") || t.contains("q3") || t.contains("q2") {
+        if let Some(r) = resolved {
+            r
+        } else {
+            // 3. Match quantization syntax in filename or model identifier
+            let lower = model_identifier.to_lowercase();
+            if lower.contains("q4_") || lower.contains("q4-") || lower.contains("q4.") || lower.contains("q4k") || lower.contains("q40") || lower.contains("q41") || lower.contains("iq4") || lower.contains("q3") || lower.contains("q2") || lower.contains("q4") {
+                "q4_0".to_string()
+            } else if lower.contains("q8_") || lower.contains("q8-") || lower.contains("q8.") || lower.contains("q80") || lower.contains("q81") || lower.contains("q8k") || lower.contains("q8") {
+                "q8_0".to_string()
+            } else if lower.contains("q5_") || lower.contains("q5-") || lower.contains("q5.") || lower.contains("q5k") || lower.contains("q50") || lower.contains("q51") || lower.contains("iq5") || lower.contains("q5") {
+                "q5_0".to_string()
+            } else if lower.contains("q6_") || lower.contains("q6-") || lower.contains("q6.") || lower.contains("q6k") || lower.contains("q6") {
+                "q8_0".to_string()
+            } else if lower.contains("bf16") || lower.contains("f16") || lower.contains("fp16") {
+                "f16".to_string()
+            } else if lower.contains("f32") || lower.contains("fp32") {
+                "f32".to_string()
+            } else {
+                // Fallback default: optimal 4-bit KV cache matching modern quantized models
+                "q4_0".to_string()
+            }
+        }
+    };
+
+    // Low-VRAM KV Cache Guardrail:
+    // If dedicated VRAM <= 6144 MB (e.g. 4GB GTX 1650 or 6GB RTX 2060):
+    // Never allow f16/f32/bf16 KV cache to run on low-VRAM GPUs (consuming ~4.3GB alone at 32k context).
+    if let Some(vram) = vram_mb {
+        if vram <= 4096 {
+            // Very low VRAM (<= 4GB): clamp everything above q4_0 to q4_0
+            if raw_type == "f16" || raw_type == "f32" || raw_type == "bf16" || raw_type == "q8_0" || raw_type == "q8_1" || raw_type == "q5_0" || raw_type == "q5_1" {
                 return "q4_0".to_string();
-            } else if t.contains("q8") {
-                return "q8_0".to_string();
-            } else if t.contains("q5") || t.contains("iq5") {
-                return "q5_0".to_string();
-            } else if t.contains("q6") {
-                return "q8_0".to_string();
-            } else if t.contains("bf16") || t.contains("f16") {
-                return "f16".to_string();
-            } else if t.contains("f32") {
-                return "f32".to_string();
+            }
+        } else if vram <= 6144 {
+            // Low VRAM (<= 6GB): clamp unquantized f16/f32 to q4_0
+            if raw_type == "f16" || raw_type == "f32" || raw_type == "bf16" {
+                return "q4_0".to_string();
             }
         }
     }
 
-    // 3. Match quantization syntax in filename or model identifier
-    let lower = model_identifier.to_lowercase();
-    if lower.contains("q4_") || lower.contains("q4-") || lower.contains("q4.") || lower.contains("q4k") || lower.contains("q40") || lower.contains("q41") || lower.contains("iq4") || lower.contains("q3") || lower.contains("q2") || lower.contains("q4") {
-        "q4_0".to_string()
-    } else if lower.contains("q8_") || lower.contains("q8-") || lower.contains("q8.") || lower.contains("q80") || lower.contains("q81") || lower.contains("q8k") || lower.contains("q8") {
-        "q8_0".to_string()
-    } else if lower.contains("q5_") || lower.contains("q5-") || lower.contains("q5.") || lower.contains("q5k") || lower.contains("q50") || lower.contains("q51") || lower.contains("iq5") || lower.contains("q5") {
-        "q5_0".to_string()
-    } else if lower.contains("q6_") || lower.contains("q6-") || lower.contains("q6.") || lower.contains("q6k") || lower.contains("q6") {
-        "q8_0".to_string()
-    } else if lower.contains("bf16") || lower.contains("f16") || lower.contains("fp16") {
-        "f16".to_string()
-    } else if lower.contains("f32") || lower.contains("fp32") {
-        "f32".to_string()
-    } else {
-        // Fallback default: optimal 4-bit KV cache matching modern quantized models
-        "q4_0".to_string()
-    }
+    raw_type
 }
 
 /// Compute the complete set of llama-server parameters for pure GPU inference.
+///
+/// `companion_size_mb` is the combined size of ALL companion files (mmproj + MTP/draft)
+/// in megabytes. These are accounted for in the VRAM budget when deciding tier and mmap.
 pub fn compute_gpu_inference_config(
     hw: &HardwareSnapshot,
     meta: Option<&GgufMetadata>,
@@ -693,13 +782,21 @@ pub fn compute_gpu_inference_config(
     draft_model_path: Option<PathBuf>,
     _is_auto_ctx: bool,
     model_name_or_id: Option<&str>,
+    companion_size_mb: u64,
 ) -> Result<HybridInferenceConfig, String> {
     let ngl_decision = compute_ngl_decision(hw, meta, model_size_gb, ctx_size)?;
     let total_layers = estimate_total_layers(meta, model_size_gb);
 
     let mode = if ngl_decision.hybrid { InferenceMode::Hybrid } else { InferenceMode::FullGpu };
 
-    let kv_cache_type = derive_matching_kv_cache_type(model_name_or_id.unwrap_or(""), meta);
+    let dedicated_vram = if hw.has_dedicated_gpu {
+        Some(hw.dedicated_vram_available_mb)
+    } else if hw.vram_available_mb > 0 {
+        Some(hw.vram_available_mb)
+    } else {
+        None
+    };
+    let kv_cache_type = derive_matching_kv_cache_type(model_name_or_id.unwrap_or(""), meta, dedicated_vram);
 
     // Optimal batch size for interactive desktop chat: 512 to 2048 tokens.
     // Clamping batch_size prevents multi-gigabyte ggml compute graph buffer allocations in host memory.
@@ -718,8 +815,27 @@ pub fn compute_gpu_inference_config(
     let threads_batch = hw.cpu_logical_threads.max(hw.cpu_physical_cores).max(1);
 
     let extra_args: Vec<String> = Vec::new();
-    let disable_kv_offload = false;
-    let use_mmap = true;
+    let disable_kv_offload = ngl_decision.disable_kv_offload;
+
+    // Use mmap unless on a low-VRAM / shared-memory GPU on Windows, where mmap causes
+    // double-allocation of model weights in the host process working set.
+    // Also disable mmap when companion files (mmproj + MTP/draft) are present and the
+    // total footprint (model + companions + KV cache) makes dedicated VRAM tight,
+    // because Windows fault-in of mmap'd pages causes both VRAM and host RAM to hold
+    // the same bytes simultaneously.
+    let total_vram_needed_with_companions = ngl_decision.estimated_vram_mb.saturating_add(companion_size_mb);
+    let companion_causes_pressure = companion_size_mb > 0
+        && hw.has_dedicated_gpu
+        && total_vram_needed_with_companions > hw.dedicated_vram_available_mb;
+    let use_mmap = if hw.has_dedicated_gpu
+        && (hw.dedicated_vram_available_mb <= 6144
+            || ngl_decision.uses_shared_memory
+            || companion_causes_pressure)
+    {
+        false
+    } else {
+        true
+    };
 
     let message = format!(
         "{} — {}/{} layers | KV: {} | ubatch {} | Shared GPU Mem: {} | Profile: {:?} | is_igpu: {}",
@@ -891,12 +1007,12 @@ mod tests {
 
     #[test]
     fn dedicated_gpu_runs_full_model_using_shared_memory_when_needed() {
-        let decision = compute_ngl_decision(&hardware(4096, 6144), None, 8.0, 8192).unwrap();
+        let decision = compute_ngl_decision(&hardware(4096, 6144), None, 4.8, 8192).unwrap();
         assert!(decision.fully_gpu);
         assert!(!decision.hybrid);
         assert!(decision.uses_shared_memory);
-        assert_eq!(decision.ngl, estimate_total_layers(None, 8.0));
-        assert_eq!(decision.strategy, "FullDedicatedGpu");
+        assert_eq!(decision.ngl, estimate_total_layers(None, 4.8));
+        assert_eq!(decision.strategy, "SharedGpuMemory");
     }
 
     #[test]
@@ -966,60 +1082,92 @@ mod tests {
 
     #[test]
     fn test_derive_matching_kv_cache_type() {
-        assert_eq!(derive_matching_kv_cache_type("Qwen3.5-9B-Q4_K_M.gguf", None), "q4_0");
-        assert_eq!(derive_matching_kv_cache_type("gemma-4-12B-it-qat-UD-Q4_K_XL.gguf", None), "q4_0");
-        assert_eq!(derive_matching_kv_cache_type("model-Q8_0.gguf", None), "q8_0");
-        assert_eq!(derive_matching_kv_cache_type("Ornith-1.5-9B.BF16.gguf", None), "f16");
-        assert_eq!(derive_matching_kv_cache_type("model-q5_k_m.gguf", None), "q5_0");
-        assert_eq!(derive_matching_kv_cache_type("model-f32.gguf", None), "f32");
+        assert_eq!(derive_matching_kv_cache_type("Qwen3.5-9B-Q4_K_M.gguf", None, None), "q4_0");
+        assert_eq!(derive_matching_kv_cache_type("gemma-4-12B-it-qat-UD-Q4_K_XL.gguf", None, None), "q4_0");
+        assert_eq!(derive_matching_kv_cache_type("model-Q8_0.gguf", None, None), "q8_0");
+        assert_eq!(derive_matching_kv_cache_type("Ornith-1.5-9B.BF16.gguf", None, None), "f16");
+        assert_eq!(derive_matching_kv_cache_type("model-q5_k_m.gguf", None, None), "q5_0");
+        assert_eq!(derive_matching_kv_cache_type("model-f32.gguf", None, None), "f32");
 
         // GGUF internal header file_type verification
         let mut meta_q4 = GgufMetadata::default();
         meta_q4.file_type = Some(15); // Q4_K_M
-        assert_eq!(derive_matching_kv_cache_type("unlabeled_model.gguf", Some(&meta_q4)), "q4_0");
+        assert_eq!(derive_matching_kv_cache_type("unlabeled_model.gguf", Some(&meta_q4), None), "q4_0");
 
         let mut meta_q8 = GgufMetadata::default();
         meta_q8.file_type = Some(7); // Q8_0
-        assert_eq!(derive_matching_kv_cache_type("unlabeled_model.gguf", Some(&meta_q8)), "q8_0");
+        assert_eq!(derive_matching_kv_cache_type("unlabeled_model.gguf", Some(&meta_q8), None), "q8_0");
 
         // Unlabeled model without metadata defaults to optimal q4_0
-        assert_eq!(derive_matching_kv_cache_type("unknown-model", None), "q4_0");
+        assert_eq!(derive_matching_kv_cache_type("unknown-model", None, None), "q4_0");
+
+        // Low-VRAM KV Cache Guardrail tests:
+        // Clamps FP16/FP32 to q4_0 on GPUs <= 6144MB VRAM
+        assert_eq!(derive_matching_kv_cache_type("Ornith-1.5-9B.BF16.gguf", None, Some(4096)), "q4_0");
+        assert_eq!(derive_matching_kv_cache_type("Ornith-1.5-9B.BF16.gguf", None, Some(6144)), "q4_0");
+        // Preserves f16 on high-VRAM GPUs (> 6144MB)
+        assert_eq!(derive_matching_kv_cache_type("Ornith-1.5-9B.BF16.gguf", None, Some(8192)), "f16");
+        // On very low VRAM (<= 4096MB), clamps q8_0 to q4_0 to maximize headroom
+        assert_eq!(derive_matching_kv_cache_type("model-Q8_0.gguf", None, Some(4096)), "q4_0");
     }
 
     #[test]
-    fn test_explicit_context_size_on_dedicated_gpu_runs_full_gpu() {
-        // Dedicated GPU with 4096MB VRAM and 8192MB Shared GPU Memory
-        let hw = hardware(4096, 8192);
-        // User explicitly sets context size to 16384 for a 5.0GB model
-        let decision = compute_ngl_decision(&hw, None, 5.0, 16384).unwrap();
-        assert_eq!(decision.effective_context_size, 16384);
+    fn test_tier1_fits_in_dedicated_vram() {
+        let hw = hardware(8192, 8192);
+        let decision = compute_ngl_decision(&hw, None, 3.0, 4096).unwrap();
         assert!(decision.fully_gpu);
         assert!(!decision.hybrid);
-        assert_eq!(decision.ngl, estimate_total_layers(None, 5.0));
+        assert!(!decision.uses_shared_memory);
+        assert!(!decision.disable_kv_offload);
         assert_eq!(decision.strategy, "FullDedicatedGpu");
     }
 
     #[test]
-    fn test_dedicated_gpu_low_vram_still_runs_full_gpu_with_shared_memory() {
-        // Dedicated GPU with only 400MB available
-        let hw = hardware(400, 4096);
-        let decision = compute_ngl_decision(&hw, None, 4.0, 2048).unwrap();
-        // Complete model runs on dedicated GPU using shared GPU memory
+    fn test_tier2_weights_fit_in_vram_kv_causes_overflow() {
+        // Model weights fit within 3800MB dedicated VRAM, but large context KV pushes it over 3800MB
+        let hw = hardware(3800, 8192);
+        let decision = compute_ngl_decision(&hw, None, 3.5, 32768).unwrap();
         assert!(decision.fully_gpu);
-        assert!(decision.uses_shared_memory);
-        assert_eq!(decision.ngl, estimate_total_layers(None, 4.0));
+        assert!(!decision.hybrid);
+        assert!(!decision.uses_shared_memory);
+        assert!(decision.disable_kv_offload);
         assert_eq!(decision.strategy, "FullDedicatedGpu");
     }
 
     #[test]
-    fn test_large_model_on_dedicated_gpu_runs_full_gpu_in_auto_mode() {
-        // 12GB model on 4GB dedicated VRAM
+    fn test_tier3a_modest_weight_spill_uses_shared_memory() {
+        // Dedicated VRAM 4000MB, model 4.5GB (spill ~200-400MB <= 1.5GB)
+        let hw = hardware(4000, 8192);
+        let decision = compute_ngl_decision(&hw, None, 4.5, 4096).unwrap();
+        assert!(decision.fully_gpu);
+        assert!(!decision.hybrid);
+        assert!(decision.uses_shared_memory);
+        assert!(decision.disable_kv_offload);
+        assert_eq!(decision.strategy, "SharedGpuMemory");
+    }
+
+    #[test]
+    fn test_tier3b_massive_spill_uses_safe_partial_offload() {
+        // 12GB model on 4GB dedicated card -> massive spill (> 1.5GB)
         let hw = hardware(4096, 16384);
-        let decision = compute_ngl_decision(&hw, None, 12.0, 0).unwrap();
-        assert!(decision.fully_gpu);
-        assert!(decision.uses_shared_memory);
-        assert_eq!(decision.ngl, estimate_total_layers(None, 12.0));
-        assert_eq!(decision.strategy, "FullDedicatedGpu");
+        let decision = compute_ngl_decision(&hw, None, 12.0, 4096).unwrap();
+        assert!(!decision.fully_gpu);
+        assert!(decision.hybrid);
+        assert!(!decision.uses_shared_memory);
+        assert_eq!(decision.strategy, "Hybrid");
+        assert!(decision.ngl < estimate_total_layers(None, 12.0));
+        assert!(decision.ngl > 0);
+    }
+
+    #[test]
+    fn test_tier3b_triggers_when_spill_exceeds_1536mb_even_if_ratio_is_small() {
+        // Dedicated VRAM 10000MB, model 13.0GB (weights ~12500MB, spill ~2500MB > 1536MB, ratio ~20% <= 30%)
+        // Because spill exceeds 1536MB, it MUST trigger Tier 3B rather than Tier 3A.
+        let hw = hardware(10000, 16384);
+        let decision = compute_ngl_decision(&hw, None, 13.0, 4096).unwrap();
+        assert!(!decision.fully_gpu);
+        assert!(decision.hybrid);
+        assert_eq!(decision.strategy, "Hybrid");
     }
 
     #[test]

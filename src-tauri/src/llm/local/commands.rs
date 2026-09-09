@@ -706,6 +706,18 @@ pub static ACTIVE_SERVER_CONFIG: std::sync::LazyLock<std::sync::Mutex<Option<Act
     std::sync::Mutex::new(None)
 });
 
+pub fn clear_active_local_server_state() {
+    if let Ok(mut g) = ACTIVE_LOCAL_LLM_MODEL.lock() {
+        *g = None;
+    }
+    if let Ok(mut g) = ACTIVE_LOCAL_LLM_PATH.lock() {
+        *g = None;
+    }
+    if let Ok(mut g) = ACTIVE_SERVER_CONFIG.lock() {
+        *g = None;
+    }
+}
+
 #[tauri::command]
 pub async fn start_local_server(
     app: AppHandle,
@@ -729,7 +741,6 @@ pub async fn start_local_server(
     load_draft_model: Option<bool>,
 ) -> Result<(), String> {
     let _ = use_mlock;
-    let _ = disable_kv_offload;
     let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let models_dir = app_dir.join("models");
     let model_path = match resolve_model_path(&app, &model_id).await {
@@ -1314,26 +1325,39 @@ pub async fn start_local_server(
         .unwrap_or(&model_id);
     let full_model_ref = format!("{} {}", model_id, model_filename);
 
-    let hybrid_cfg = match compute_gpu_inference_config(&hw, gguf_meta.as_ref(), model_size_gb, effective_ctx, draft_model_path.clone(), is_auto_ctx, Some(&full_model_ref)) {
+    // Companion file sizes — computed before calling the GPU scheduler so that
+    // tier selection and use_mmap are decided against the true total VRAM footprint
+    // (base model + KV cache + mmproj + MTP/draft), not just the base model alone.
+    let mmproj_size_mb = if let Some(ref p) = mmproj_path {
+        std::fs::metadata(p).map(|m| m.len() / (1024 * 1024)).unwrap_or(1000)
+    } else {
+        0
+    };
+    let draft_size_mb = if let Some(ref p) = draft_model_path {
+        tokio::fs::metadata(p).await.map(|m| m.len() / (1024 * 1024)).unwrap_or(0)
+    } else {
+        0
+    };
+    let companion_size_mb_total = mmproj_size_mb.saturating_add(draft_size_mb);
+
+    let hybrid_cfg = match compute_gpu_inference_config(
+        &hw, gguf_meta.as_ref(), model_size_gb, effective_ctx,
+        draft_model_path.clone(), is_auto_ctx, Some(&full_model_ref),
+        companion_size_mb_total,
+    ) {
         Ok(cfg) => cfg,
         Err(err_msg) => {
-            // Model cannot fit in GPU VRAM — surface a clear error to the frontend.
-            // CPU fallback is disabled by design.
             error!("[start_local_server] GPU scheduler error: {}", err_msg);
             return Err(err_msg);
         }
     };
     let total_layers = estimate_total_layers(gguf_meta.as_ref(), model_size_gb);
 
-
-    // When a dedicated GPU is available, offload 100% of the layers to the GPU.
-    let final_ngl = if hw.has_dedicated_gpu {
-        total_layers
-    } else {
-        match gpu_layers {
-            Some(layers) => layers.min(total_layers),
-            None => hybrid_cfg.ngl.min(total_layers),
-        }
+    // When a manual gpu_layers override is given, respect it.
+    // Otherwise, use the scheduler's calculated NGL (Tier 1, 2, 3A full GPU or Tier 3B safe partial offload).
+    let final_ngl = match gpu_layers {
+        Some(layers) => layers.min(total_layers),
+        None => hybrid_cfg.ngl.min(total_layers),
     };
     let fully_gpu = final_ngl >= total_layers;
 
@@ -1350,9 +1374,8 @@ pub async fn start_local_server(
     } else {
         kv_cache_type.clone()
     };
-    // Keep KV offload enabled so llama.cpp can place KV data with the GPU layers.
     let final_mlock   = false; // Never mlock in GPU-only mode — double-pinning risk
-    let final_no_kv   = false; // KV must stay in VRAM
+    let final_no_kv   = disable_kv_offload.unwrap_or(hybrid_cfg.disable_kv_offload);
     let final_flash   = flash_attention.unwrap_or(true);
 
     let effective_context_size = hybrid_cfg.effective_context_size;
@@ -1382,7 +1405,8 @@ pub async fn start_local_server(
         "ubatch_size": final_ubatch,
         "batch_size": final_batch,
         "kv_cache_type": final_kv_type,
-        "kv_in_vram": true,
+        "kv_in_vram": !final_no_kv,
+        "disable_kv_offload": final_no_kv,
         "mlock": final_mlock,
         "flash_attention": final_flash,
         "inference_mode": if fully_gpu { "full_gpu" } else { "hybrid" },
@@ -1451,46 +1475,53 @@ pub async fn start_local_server(
         }
     });
 
-    let mmproj_size_mb = if let Some(ref p) = mmproj_path {
-        std::fs::metadata(p).map(|m| m.len() / (1024 * 1024)).unwrap_or(1000)
-    } else {
-        0
-    };
+    // --- Companion file GPU offload decisions ---
+    // Compute actual dedicated VRAM headroom after accounting for base model + KV cache.
+    // Then determine whether mmproj and MTP/draft heads can fit in the remaining headroom.
     let gpu_vram_avail = if hw.has_dedicated_gpu {
         hw.dedicated_vram_available_mb
     } else {
         hw.vram_available_mb
     };
-    // Real-time available dedicated VRAM headroom after accounting for model and KV cache
+    // Headroom after base model + KV cache occupancy.
     let mut remaining_vram = gpu_vram_avail.saturating_sub(estimated_vram_mb);
-
-    let draft_size_mb = if let Some(ref p) = draft_model_path {
-        tokio::fs::metadata(p).await.map(|m| m.len() / (1024 * 1024)).unwrap_or(0)
-    } else {
-        0
-    };
 
     let can_gpu_offload = hw.has_dedicated_gpu || hw.gpu_backend == GpuBackend::Metal || hw.vram_available_mb > 0;
 
-    // Companion files (mmproj, MTP heads, draft models):
-    // When a dedicated GPU is available, the complete model and ALL support files run on the dedicated GPU.
-    let mmproj_offload = if hw.has_dedicated_gpu {
-        mmproj_path.is_some()
-    } else if can_gpu_offload && mmproj_path.is_some() && remaining_vram >= mmproj_size_mb {
+    // mmproj offload: offload to GPU only when there's actual remaining VRAM headroom.
+    // Previously: always offload when has_dedicated_gpu (ignoring headroom), causing VRAM overflow.
+    let mmproj_offload = if can_gpu_offload && mmproj_path.is_some() && remaining_vram >= mmproj_size_mb {
         remaining_vram = remaining_vram.saturating_sub(mmproj_size_mb);
         true
     } else {
         false
     };
 
-    let ngl_draft = if hw.has_dedicated_gpu && draft_model_path.is_some() {
-        Some(total_layers)
-    } else if can_gpu_offload && draft_model_path.is_some() && remaining_vram >= draft_size_mb {
-        Some(total_layers)
-    } else if draft_model_path.is_some() {
-        Some(0)
+    // MTP/draft layer offload: offload to GPU only when sufficient VRAM headroom remains after mmproj.
+    // Scale spec_draft_max down when headroom is tight to reduce KV pressure from speculative slots.
+    let (ngl_draft, spec_draft_max_val) = if draft_model_path.is_some() {
+        if can_gpu_offload && remaining_vram >= draft_size_mb {
+            // Enough headroom: offload all draft layers to GPU.
+            remaining_vram = remaining_vram.saturating_sub(draft_size_mb);
+            // Scale max draft tokens by remaining headroom to limit KV slot overhead.
+            // At 32k context, each extra speculative slot adds significant KV memory.
+            // Formula: start from 5 max, reduce by 1 for each 512 MB of KV pressure.
+            let kv_pressure_mb = (effective_context_size as u64 * draft_size_mb) / (32 * 1024).max(1);
+            let draft_max = if kv_pressure_mb > remaining_vram.saturating_add(512) {
+                1u32 // Very tight — allow only 1 speculative token
+            } else if kv_pressure_mb > remaining_vram / 2 {
+                2u32 // Moderate — allow 2 speculative tokens
+            } else {
+                5u32 // Comfortable headroom — allow 5 speculative tokens
+            };
+            (Some(total_layers), Some(draft_max))
+        } else {
+            // No VRAM headroom for draft layers — run MTP on CPU (ngl_draft=0).
+            // This is correct: CPU MTP still works, just without GPU acceleration.
+            (Some(0u32), Some(1u32))
+        }
     } else {
-        None
+        (None, None)
     };
 
     let mut cfg = LlamaServerConfig {
@@ -1510,7 +1541,7 @@ pub async fn start_local_server(
         draft_model_path,
         spec_type,
         spec_draft_min: None,
-        spec_draft_max: None,
+        spec_draft_max: spec_draft_max_val,
         ngl_draft,
         disable_kv_offload: final_no_kv,
         prompt_cache_path,
@@ -1523,6 +1554,9 @@ pub async fn start_local_server(
         reasoning_budget,
         extra_args: hybrid_cfg.extra_args,
     };
+
+    manager.set_app_handle(app.clone());
+    manager.touch();
 
     let app_handle = app.clone();
     let start_res = manager.start(&cfg, Some(move |pct: u32, msg: &str| {
@@ -1568,6 +1602,21 @@ pub async fn start_local_server(
             let mut fallback_cfg = cfg.clone();
             fallback_cfg.draft_model_path = None;
             fallback_cfg.spec_type = None;
+            fallback_cfg.mmproj_offload = false;
+            let app_handle_retry = app.clone();
+            if let Ok(()) = manager.start(&fallback_cfg, Some(move |pct: u32, msg: &str| {
+                let _ = app_handle_retry.emit("llm-server-loading-progress", serde_json::json!({ "progress": pct, "message": msg }));
+            })).await {
+                recovered = true;
+                cfg = fallback_cfg;
+            }
+        }
+
+        // Step 3.4: Try redirecting KV cache to system RAM (--no-kv-offload) while keeping weights on GPU
+        if !recovered && !cfg.disable_kv_offload {
+            let mut fallback_cfg = cfg.clone();
+            fallback_cfg.disable_kv_offload = true;
+            fallback_cfg.ngl_draft = Some(0);
             fallback_cfg.mmproj_offload = false;
             let app_handle_retry = app.clone();
             if let Ok(()) = manager.start(&fallback_cfg, Some(move |pct: u32, msg: &str| {
