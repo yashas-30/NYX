@@ -4,7 +4,15 @@
  */
 
 import { Provider, ModelDefinition } from '../types';
-import { AVAILABLE_MODELS } from '@shared/config/models';
+import {
+  GEMINI_MODELS,
+  NVIDIA_MODELS,
+  GROQ_MODELS,
+  MISTRAL_MODELS,
+  OPENROUTER_MODELS,
+  NATIVE_MODELS,
+  AVAILABLE_MODELS,
+} from '@shared/config/models';
 import { useAppStore } from '@src/stores/useAppStore';
 
 export const PROVIDER_LABELS: Record<string, string> = {
@@ -29,6 +37,18 @@ export const CLOUD_PROVIDERS: string[] = [
 export const LOCAL_PROVIDERS: string[] = ['nyx-native'];
 
 /**
+ * Registry of provider catalogs directly imported from their respective provider definitions.
+ * All models are resolved from their own provider section written code.
+ */
+const PROVIDER_SECTIONS: { provider: Provider; models: any[] }[] = [
+  { provider: 'gemini', models: GEMINI_MODELS },
+  { provider: 'nvidia-nim', models: NVIDIA_MODELS },
+  { provider: 'groq', models: GROQ_MODELS },
+  { provider: 'mistral', models: MISTRAL_MODELS },
+  { provider: 'openrouter', models: OPENROUTER_MODELS },
+  { provider: 'nyx-native', models: NATIVE_MODELS },
+];
+
 /**
  * Helper to safely extract string ID from model parameters (handles strings, objects, nulls)
  */
@@ -41,30 +61,29 @@ const resolveModelIdString = (modelId: any): string => {
 
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { useModelStore } from '@src/core/stores/useModelStore';
+import { findLocalModelDef } from '@src/shared/hooks/useLocalModels';
 
 /**
- * Structured provider detection that checks in priority order.
+ * Structured, catalog-driven provider detection.
+ * Resolves models strictly from their own provider section code without brittle hardcoded string lists.
  */
 export const detectProvider = (modelId: any, providerHint?: string): Provider => {
+  // 1. Direct object inspection if caller passes a ModelOption or descriptor
   if (typeof modelId === 'object' && modelId?.provider) {
     return modelId.provider as Provider;
   }
 
-  if (providerHint && CLOUD_PROVIDERS.includes(providerHint)) {
-    return providerHint as Provider;
-  }
-
-  const idStr = resolveModelIdString(modelId);
+  const idStr = resolveModelIdString(modelId).trim();
   if (!idStr) return 'gemini';
   const lowerId = idStr.toLowerCase();
 
-  // 1. Check current Zustand store state for explicit local selection
+  // 2. Check current Zustand store state for explicit local selection
   try {
     const nyxLocalId = useNyxStore.getState().localModelId;
     if (nyxLocalId && nyxLocalId === idStr) {
       return 'nyx-native' as Provider;
     }
-  } catch (e) {
+  } catch {
     // Ignore store access outside React/Zustand context if any
   }
 
@@ -75,11 +94,11 @@ export const detectProvider = (modelId: any, providerHint?: string): Provider =>
         return 'nyx-native' as Provider;
       }
     }
-  } catch (e) {
+  } catch {
     // Ignore
   }
 
-  // 2. Explicit Local Server Prefixes, Extensions & Path heuristics
+  // 3. Explicit Local Server Prefixes, Extensions & Path heuristics
   if (
     lowerId.startsWith('ollama/') ||
     lowerId.startsWith('vllm/') ||
@@ -102,17 +121,49 @@ export const detectProvider = (modelId: any, providerHint?: string): Provider =>
     return 'nyx-native' as Provider;
   }
 
-  // 3. Exact matching against static catalog models (highest priority cloud check)
+  // 4. Explicit provider namespace prefix in model ID
+  if (lowerId.startsWith('nvidia-nim/')) return 'nvidia-nim' as Provider;
+  if (lowerId.startsWith('gemini/')) return 'gemini' as Provider;
+  if (lowerId.startsWith('groq/')) return 'groq' as Provider;
+  if (lowerId.startsWith('mistral/')) return 'mistral' as Provider;
+  if (lowerId.startsWith('openrouter/')) return 'openrouter' as Provider;
+
+  // 5. Provider hint priority: if a specific provider context is hinted, check its own section first
   if (providerHint) {
-    const hintMatch = AVAILABLE_MODELS.find((m) => m.provider === providerHint && m.id === idStr);
-    if (hintMatch) return hintMatch.provider;
+    const hintSection = PROVIDER_SECTIONS.find((s) => s.provider === providerHint);
+    if (hintSection) {
+      const match = hintSection.models.some((m: any) => {
+        const mId = m.id.toLowerCase();
+        const mBase = m.id.split('/').pop()?.toLowerCase();
+        const mName = m.name?.toLowerCase();
+        return mId === lowerId || mBase === lowerId || mName === lowerId;
+      });
+      if (match) return providerHint as Provider;
+    }
   }
 
-  // Exact catalog lookup — matches models configured in OPENROUTER_MODELS, NVIDIA_MODELS, etc.
-  const availableModel = AVAILABLE_MODELS.find((m) => m.id === idStr);
-  if (availableModel) return availableModel.provider;
+  // 6. Exact catalog match across all provider sections (taking from each provider's own written code)
+  for (const section of PROVIDER_SECTIONS) {
+    if (section.models.some((m: any) => m.id === idStr || m.id.toLowerCase() === lowerId)) {
+      return section.provider;
+    }
+  }
 
-  // OpenRouter free models have explicit :free suffix or openrouter prefix
+  // 7. Un-namespaced alias / basename / display name match across provider sections
+  // (e.g. 'kimi-k3' matching 'moonshotai/kimi-k3', 'gpt-oss-20b' matching 'openai/gpt-oss-20b')
+  for (const section of PROVIDER_SECTIONS) {
+    if (
+      section.models.some((m: any) => {
+        const basename = m.id.split('/').pop()?.toLowerCase();
+        const nameLower = m.name?.toLowerCase();
+        return basename === lowerId || nameLower === lowerId;
+      })
+    ) {
+      return section.provider;
+    }
+  }
+
+  // 8. OpenRouter free models or explicit suffixes
   if (
     lowerId.endsWith(':free') ||
     lowerId.startsWith('openrouter/') ||
@@ -122,7 +173,7 @@ export const detectProvider = (modelId: any, providerHint?: string): Provider =>
     return 'openrouter' as Provider;
   }
 
-  // Mistral standalone models
+  // 9. Mistral standalone models
   if (
     lowerId.startsWith('mistral-') ||
     lowerId.startsWith('ministral-') ||
@@ -131,23 +182,25 @@ export const detectProvider = (modelId: any, providerHint?: string): Provider =>
     return 'mistral' as Provider;
   }
 
-  // Gemini models
+  // 10. Gemini models
   if (lowerId.startsWith('gemini-') || lowerId.startsWith('gemma-')) {
     return 'gemini' as Provider;
   }
 
-  // Groq models (explicit groq/ prefix)
+  // 11. Groq models
   if (lowerId.startsWith('groq/')) {
     return 'groq' as Provider;
   }
 
-  // 4. Explicit Cloud Provider Prefixes (for custom models)
-  if (lowerId.startsWith('huggingface/')) return 'huggingface' as Provider;
-  if (lowerId.startsWith('nvidia/') || lowerId.includes('deepseek-v4-pro'))
+  // 12. NVIDIA prefix
+  if (lowerId.startsWith('nvidia/')) {
     return 'nvidia-nim' as Provider;
-  if (lowerId.startsWith('openrouter/')) return 'openrouter' as Provider;
+  }
 
-  // 5. Default for unknown cloud models
+  // 13. Explicit Cloud Provider Prefixes (for custom models)
+  if (lowerId.startsWith('huggingface/')) return 'huggingface' as Provider;
+
+  // 14. Default for unknown cloud models
   return 'openrouter' as Provider;
 };
 
@@ -295,18 +348,110 @@ export interface ModelCapabilities {
   latencyClass?: 'ultra-fast' | 'fast' | 'medium' | 'slow';
 }
 
-export const getModelCapabilities = (modelId: any): ModelCapabilities => {
+export const parseTokenCount = (val?: string | number | null, fallback: number = 8192): number => {
+  if (typeof val === 'number') {
+    return isFinite(val) && val > 0 ? Math.round(val) : fallback;
+  }
+  if (!val || typeof val !== 'string') return fallback;
+
+  const trimmed = val.trim();
+  if (!trimmed) return fallback;
+
+  // 1. Explicit comma-formatted full integer (e.g. "1,048,576", "262,144", "65,536")
+  const commaMatch = trimmed.match(/(\d{1,3}(?:,\d{3})+)/);
+  if (commaMatch) {
+    const num = parseInt(commaMatch[1].replace(/,/g, ''), 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+
+  // 2. Large standalone integer >= 1000 (e.g. "1048576", "131072", "65536", "32768", "8192")
+  const intMatch = trimmed.match(/\b(\d{4,})\b/);
+  if (intMatch) {
+    const num = parseInt(intMatch[1], 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+
+  // 3. 'M' or 'm' notation (e.g. "1M", "2M", "1.5M", "1048576 (1M)")
+  const mMatch = trimmed.match(/(\d+(?:\.\d+)?)\s*[mM]\b/);
+  if (mMatch) {
+    const floatVal = parseFloat(mMatch[1]);
+    if (!isNaN(floatVal) && floatVal > 0) {
+      return Math.round(floatVal * 1024 * 1024);
+    }
+  }
+
+  // 4. 'K' or 'k' notation (e.g. "128K", "256k", "32k", "64k", "262K")
+  const kMatch = trimmed.match(/(\d+(?:\.\d+)?)\s*[kK]\b/);
+  if (kMatch) {
+    const floatVal = parseFloat(kMatch[1]);
+    if (!isNaN(floatVal) && floatVal > 0) {
+      return Math.round(floatVal * 1024);
+    }
+  }
+
+  // 5. Fallback plain integer (e.g. "512", "2048")
+  const anyIntMatch = trimmed.replace(/,/g, '').match(/\b(\d+)\b/);
+  if (anyIntMatch) {
+    const num = parseInt(anyIntMatch[1], 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+
+  return fallback;
+};
+
+export const getModelCapabilities = (modelId: any, providerHint?: string): ModelCapabilities => {
   const idStr = resolveModelIdString(modelId);
   const lowerId = idStr.toLowerCase();
 
-  // Catalog is the single source of truth. Fuzzy-match to handle version aliases
-  // (e.g. "gemini-2.5-flash-latest" not yet in the catalog).
-  const availableModel =
-    AVAILABLE_MODELS.find((m) => m.id === idStr) ||
-    AVAILABLE_MODELS.find((m) => m.id.toLowerCase() === lowerId) ||
-    AVAILABLE_MODELS.find(
-      (m) => lowerId.startsWith(m.id.toLowerCase()) || m.id.toLowerCase().startsWith(lowerId)
-    );
+  // 0. Check local library models first for native local models
+  try {
+    const localLib = useModelStore.getState().localLibraryModels;
+    if (localLib && Array.isArray(localLib)) {
+      const localFound = findLocalModelDef(idStr, localLib);
+      if (localFound) {
+        const caps = localFound.capabilities || {};
+        return {
+          supportsVision:
+            caps.vision ?? localFound.supports_vision ?? localFound.has_mmproj ?? false,
+          supportsStreaming: true,
+          supportsTools: caps.toolCalling ?? caps.tools ?? localFound.supports_tools ?? false,
+          supportsSystemPrompt: true,
+          supportsReasoning: caps.reasoning ?? localFound.supports_reasoning ?? false,
+          contextWindow: localFound.context_length || 131072,
+          maxOutputTokens: 8192,
+          supportsAudio: caps.audio ?? localFound.supports_audio ?? false,
+        };
+      }
+    }
+  } catch {
+    // Ignore outside Zustand
+  }
+
+  // Catalog is the single source of truth. Check providerHint first if specified.
+  let availableModel: any;
+  if (providerHint) {
+    const hintSection = PROVIDER_SECTIONS.find((s) => s.provider === providerHint);
+    if (hintSection) {
+      availableModel =
+        hintSection.models.find((m: any) => m.id === idStr || m.id.toLowerCase() === lowerId) ||
+        hintSection.models.find((m: any) => {
+          const base = m.id.split('/').pop()?.toLowerCase();
+          return base === lowerId || m.name?.toLowerCase() === lowerId;
+        });
+    }
+  }
+
+  if (!availableModel) {
+    availableModel =
+      AVAILABLE_MODELS.find((m) => m.id === idStr || m.id.toLowerCase() === lowerId) ||
+      AVAILABLE_MODELS.find((m) => {
+        const base = m.id.split('/').pop()?.toLowerCase();
+        return base === lowerId || m.name?.toLowerCase() === lowerId;
+      }) ||
+      AVAILABLE_MODELS.find(
+        (m) => lowerId.startsWith(m.id.toLowerCase()) || m.id.toLowerCase().startsWith(lowerId)
+      );
+  }
 
   // Whether this model ID is explicitly catalogued
   const inCatalog = !!availableModel;
@@ -319,20 +464,11 @@ export const getModelCapabilities = (modelId: any): ModelCapabilities => {
       : isReasoningModel(idStr);
 
   // ── Vision ───────────────────────────────────────────────────────────────────
-  // Prefer catalog. Fall back to name patterns only for uncatalogued IDs.
+  // Prefer catalog. Fall back to metadata-driven capability.
   const isVision =
     availableModel?.capabilities?.vision !== undefined
       ? !!availableModel.capabilities.vision
-      : lowerId.includes('vl') ||
-        lowerId.includes('vision') ||
-        lowerId.includes('multimodal') ||
-        lowerId.includes('pixtral') ||
-        lowerId.includes('llava') ||
-        lowerId.includes('minicpm-v') ||
-        lowerId.includes('idefics') ||
-        lowerId.includes('deepseek-vl') ||
-        lowerId.includes('internvl') ||
-        lowerId.includes('moondream');
+      : false;
   // Note: 'gemini' is NOT in the vision fallback list — all Gemini models are
   // catalogued with explicit vision flags.
 
@@ -352,17 +488,6 @@ export const getModelCapabilities = (modelId: any): ModelCapabilities => {
     lowerId.includes('nemotron') ||
     lowerId.includes('qwen-2.5') ||
     lowerId.includes('groq/');
-
-  const parseTokenCount = (val?: string, fallback: number = 8192): number => {
-    if (!val) return fallback;
-    const cleaned = val.replace(/,/g, '');
-    const match = cleaned.match(/\b(\d+)\b/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (!isNaN(num) && num > 0) return num;
-    }
-    return fallback;
-  };
 
   // Context window: catalog → provider-based fallback (only for unknown aliases)
   const modelCtx = availableModel?.specs?.contextWindow
@@ -416,7 +541,6 @@ export const getModelCapabilities = (modelId: any): ModelCapabilities => {
       caps.maxOutputTokens = 65536;
     }
   } else if (isGemma) {
-    caps.supportsAudio = false;
     caps.latencyClass = lowerId.includes('moe') || lowerId.includes('a4b') ? 'ultra-fast' : 'fast';
     if (!inCatalog) {
       caps.supportsTools = true;
@@ -603,22 +727,20 @@ export const isReasoningModel = (modelId: any): boolean => {
   try {
     const localLib = useModelStore.getState().localLibraryModels;
     if (localLib && Array.isArray(localLib)) {
-      const localFound = localLib.find(
-        (m: any) =>
-          m.id === cleanId ||
-          m.name === cleanId ||
-          m.path === cleanId ||
-          m.id?.toLowerCase() === lower
-      );
-      if (localFound?.capabilities?.reasoning !== undefined) {
-        return !!localFound.capabilities.reasoning;
+      const localFound = findLocalModelDef(cleanId, localLib);
+      if (localFound) {
+        if (localFound.capabilities?.reasoning !== undefined) {
+          return !!localFound.capabilities.reasoning;
+        }
+        if (localFound.supports_reasoning !== undefined) {
+          return !!localFound.supports_reasoning;
+        }
       }
     }
   } catch {
     // Ignore outside Zustand
   }
 
-  // Steps 1 & 2 exhausted — no metadata says this model reasons. Return false.
-  // Never infer capability from model name patterns.
+  // Steps 1 & 2 exhausted — no metadata indicates this model reasons.
   return false;
 };

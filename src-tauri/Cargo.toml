@@ -29,7 +29,7 @@ tauri-plugin-window-state = "2"
 tokio = { version = "1", features = ["full", "macros", "process", "rt", "rt-multi-thread", "sync", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "gzip"] }
 eventsource-stream = "0.2.3"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "chrono", "json"] }
 tokio-util = { version = "0.7", features = ["io", "codec"] }
@@ -39,7 +39,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 thiserror = "1"
 sysinfo = "0.30"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
 base64 = "0.22"
 keyring = "3"
@@ -47,8 +47,6 @@ dirs = "5"
 uuid = { version = "1", features = ["v4"] }
 tokio-tungstenite = "0.24"
 open = "5"
-enigo = "0.3.0"
-xcap = "0.9.6"
 image = "0.25.6"
 portable-pty = "0.8"
 notify = "6.1"
@@ -57,7 +55,6 @@ tiktoken-rs = "0.11.0"
 async-trait = "0.1.89"
 lazy_static = "1.5"
 url = "2"
-fastembed = "5.17.2"
 walkdir = "2.5.0"
 scraper = "0.20"
 urlencoding = "2.1"
@@ -66,17 +63,12 @@ dashmap = "5"
 axum = { version = "0.7", features = ["json"] }
 mimalloc = "0.1"
 
-lancedb = "0.30.0"
-lance-index = "=7.0.0"
-
 once_cell = "1.21.4"
-arrow = "58.3.0"
-arrow-array = "58.3.0"
-arrow-schema = "58.3.0"
 futures = "0.3.32"
 zip = "4.2.0"
 async-stream = "0.3.6"
-rig-core = "0.7"
+similar = "2.6"
+ignore = "0.4"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

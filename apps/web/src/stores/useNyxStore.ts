@@ -17,7 +17,6 @@ export interface ModelSettings {
   batchSize: number;
   repeatPenalty: number;
   mirostat: number;
-  antigravity?: boolean;
   flashAttention?: boolean;
   kvCacheType?: string;
   useMlock?: boolean;
@@ -25,6 +24,7 @@ export interface ModelSettings {
   disableKvOffload?: boolean;
   splitMode?: string;
   tensorSplit?: string;
+  enableSpeculative?: boolean;
 }
 
 export type ActiveMode =
@@ -98,7 +98,7 @@ export interface NyxState {
 }
 
 export const DEFAULT_SETTINGS: ModelSettings = {
-  temperature: 0.7,
+  temperature: 0.3,
   maxTokens: 16384,
   topP: 0.95,
   topK: 40,
@@ -108,7 +108,6 @@ export const DEFAULT_SETTINGS: ModelSettings = {
   batchSize: 0,
   repeatPenalty: 1.1,
   mirostat: 0,
-  antigravity: true,
   flashAttention: true,
   kvCacheType: 'auto',
   useMlock: false,
@@ -460,11 +459,28 @@ export const useNyxStore = create<NyxState>()(
     }),
     {
       name: 'nyx-global-state',
-      version: 5,
+      version: 7,
       migrate: (persistedState: any, version: number) => {
         if (version <= 4) {
           if (persistedState.modelSettings && persistedState.modelSettings.gpuLayers === 99) {
             persistedState.modelSettings.gpuLayers = undefined;
+          }
+        }
+        if (version <= 6) {
+          // Upgrade contextSize default to 32768 (32k) and temperature to 0.3 for optimal speculative decoding
+          const updateDefaults = (settings: any) => {
+            if (settings) {
+              if (!settings.contextSize || settings.contextSize === 0) {
+                settings.contextSize = 32768;
+              }
+              if (settings.temperature === 0.7) {
+                settings.temperature = 0.3;
+              }
+            }
+          };
+          updateDefaults(persistedState.modelSettings);
+          if (persistedState.modelConfigs && typeof persistedState.modelConfigs === 'object') {
+            Object.values(persistedState.modelConfigs).forEach(updateDefaults);
           }
         }
         return persistedState;

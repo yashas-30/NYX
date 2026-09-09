@@ -11,7 +11,6 @@ export interface ModelSettings {
   batchSize: number;
   repeatPenalty: number;
   mirostat: number;
-  antigravity?: boolean;
   maxContextTokens?: number;
   preservationTurns?: number;
   contextMode?: 'off' | 'prune' | 'summarize';
@@ -19,7 +18,7 @@ export interface ModelSettings {
 }
 
 const DEFAULT_CHAT_SETTINGS: ModelSettings = {
-  temperature: 0.7,
+  temperature: 0.3,
   maxTokens: 8192,
   topP: 0.95,
   topK: 40,
@@ -30,7 +29,6 @@ const DEFAULT_CHAT_SETTINGS: ModelSettings = {
   repeatPenalty: 1.1,
   mirostat: 0,
   kvCacheType: 'auto',
-  antigravity: true,
   maxContextTokens: 32000,
   preservationTurns: 6,
   contextMode: 'prune',

@@ -14,17 +14,27 @@ import { ModelDefinition, ChatMessage, ToolCall } from '@src/infrastructure/type
 import { toast } from '@src/shared/components/ui/sonner';
 
 import { ChatHeader } from './ChatHeader';
-import { ChatMessageList, extractArtifactTitle } from './ChatMessageList';
+import {
+  ChatMessageList,
+  extractArtifactTitle,
+  replaceCodeBlockInContent,
+} from './ChatMessageList';
 import { ChatPromptInput, AttachedFileItem } from './ChatPromptInput';
 import { ChatSidebar } from './ChatSidebar';
+import { CodeBlockPanel, CodeBlockItem } from './CodeBlockPanel';
+import { applySearchReplace } from '../utils/searchReplace';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { useChatLogic } from '../hooks/useChatLogic';
-import { ArtifactCanvas } from '../../artifacts/components/ArtifactCanvas';
 import { MemoryPanel } from './MemoryPanel';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { useModelStore } from '@src/core/stores/useModelStore';
+import { useAppStore } from '@src/stores/useAppStore';
 import { BranchingTreePanel } from './BranchingTreePanel';
-import { detectProvider, getModelCapabilities } from '@src/infrastructure/utils/provider';
+import {
+  detectProvider,
+  getModelCapabilities,
+  parseTokenCount,
+} from '@src/infrastructure/utils/provider';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -65,53 +75,72 @@ interface ChatImage {
 // ---------------------------------------------------------------------------
 
 function getModelContextWindow(model: any): number {
-  if (!model) return 128000;
+  if (!model) return 131072;
   if (typeof model === 'number') return model;
-  if (typeof model === 'string') {
-    const parsed = parseInt(model);
-    if (!isNaN(parsed)) {
-      const lower = model.toLowerCase();
-      if (lower.includes('m')) return parsed * 1000000;
-      if (lower.includes('k')) return parsed * 1000;
-      return parsed;
-    }
+  if (typeof model === 'string') return parseTokenCount(model, 131072);
+  if (typeof model.contextWindow === 'number' && model.contextWindow > 0)
+    return model.contextWindow;
+  if (typeof model.context_window === 'number' && model.context_window > 0)
+    return model.context_window;
+  if (model.specs?.contextWindow) return parseTokenCount(model.specs.contextWindow, 131072);
+  if (model.contextWindow) return parseTokenCount(model.contextWindow, 131072);
+  if (model.context_window) return parseTokenCount(model.context_window, 131072);
+  const idStr = model.id || model.name;
+  if (idStr) {
+    const caps = getModelCapabilities(idStr);
+    if (caps.contextWindow > 0) return caps.contextWindow;
   }
-  if (typeof model.contextWindow === 'number') return model.contextWindow;
-  if (typeof model.context_window === 'number') return model.context_window;
-  if (model.contextWindow) {
-    const valStr = String(model.contextWindow);
-    const parsed = parseInt(valStr);
-    if (!isNaN(parsed)) {
-      const lower = valStr.toLowerCase();
-      if (lower.includes('m')) return parsed * 1000000;
-      if (lower.includes('k')) return parsed * 1000;
-      return parsed;
+  return 131072;
+}
+
+export interface ExtractedCodeBlock {
+  language: string;
+  code: string;
+  filename?: string;
+  isClosed: boolean;
+}
+
+export function extractLatestCodeBlock(text: string): ExtractedCodeBlock | null {
+  if (!text || typeof text !== 'string') return null;
+
+  // Match markdown code fences: ```[language][ filename]\n[code](```|$)
+  const fenceRegex =
+    /(?:^|\r?\n)```([a-zA-Z0-9_.-]*)(?:[: \t]+([^\r\n]+))?[ \t]*\r?\n([\s\S]*?)(?:(?:\r?\n```)|$)/g;
+  let match: RegExpExecArray | null;
+  let latest: ExtractedCodeBlock | null = null;
+
+  while ((match = fenceRegex.exec(text)) !== null) {
+    const rawLang = (match[1] || '').trim().toLowerCase();
+    const rawFilename = (match[2] || '').trim();
+    const code = match[3] || '';
+    const fullMatch = match[0];
+    const isClosed = fullMatch.trimEnd().endsWith('```');
+
+    // Skip slidev presentations and diagrams (diagrams render directly inline in chat, slidev in visual window)
+    if (['slidev', 'presentation', 'slides', 'diagram-design', 'diagram', 'svg'].includes(rawLang))
+      continue;
+    if (/<svg\b/i.test(code)) continue;
+
+    // Ignore non-code languages like markdown/text/plain unless an explicit filename was given
+    if (['markdown', 'md', 'text', 'txt', 'table'].includes(rawLang) && !rawFilename) {
+      continue;
     }
+
+    // Ignore tiny 1-2 line shell commands (e.g. `npm run dev`)
+    const isShortCmd =
+      ['bash', 'sh', 'shell', 'cmd', 'powershell', 'zsh', 'terminal'].includes(rawLang) &&
+      code.split('\n').length <= 2;
+    if (isShortCmd) continue;
+
+    latest = {
+      language: rawLang || 'code',
+      code,
+      filename: rawFilename || undefined,
+      isClosed,
+    };
   }
-  if (model.context_window) {
-    const valStr = String(model.context_window);
-    const parsed = parseInt(valStr);
-    if (!isNaN(parsed)) {
-      const lower = valStr.toLowerCase();
-      if (lower.includes('m')) return parsed * 1000000;
-      if (lower.includes('k')) return parsed * 1000;
-      return parsed;
-    }
-  }
-  // Try specs
-  if (model.specs && model.specs.contextWindow) {
-    const val = model.specs.contextWindow;
-    if (typeof val === 'number') return val;
-    const valStr = String(val);
-    const parsed = parseInt(valStr);
-    if (!isNaN(parsed)) {
-      const lower = valStr.toLowerCase();
-      if (lower.includes('m')) return parsed * 1000000;
-      if (lower.includes('k')) return parsed * 1000;
-      return parsed;
-    }
-  }
-  return 128000;
+
+  return latest;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,13 +179,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const [branchManagerOpen, setBranchManagerOpen] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
-  // --- Artifact State ---
-  const [activeArtifact, setActiveArtifact] = useState<{
-    id?: string;
-    content: string;
-    language?: string;
-    title?: string;
-  } | null>(null);
+  // --- Right-Side Code Block Window State ---
+  const [activeCodeBlock, setActiveCodeBlock] = useState<CodeBlockItem | null>(null);
+  const editingBaseCodeRef = useRef<CodeBlockItem | null>(null);
 
   // --- Project State ---
   const activeProjectId = useNyxStore((s) => s.activeProjectId);
@@ -235,8 +260,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     submitReward,
     maxContextTokens:
       activeSettings?.contextSize && activeSettings.contextSize > 0
-        ? Math.floor(activeSettings.contextSize * 0.9)
-        : Math.floor(getModelContextWindow(currentModel) * 0.9),
+        ? activeSettings.contextSize
+        : getModelContextWindow(currentModel),
     currentProvider: currentModel?.provider || detectProvider(currentModelId),
     gatewayUrl: gatewayUrls[currentModel?.provider || detectProvider(currentModelId)],
   });
@@ -253,6 +278,34 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     prevStreamMsgRef.current = activeStreamMessage;
   }, [activeStreamMessage]);
 
+  const setCodeBlockPanelOpen = useAppStore((s) => s.setCodeBlockPanelOpen);
+  const wasSidebarOpenRef = useRef<boolean | null>(null);
+
+  // Sync code block panel open state with global store & handle automatic sidebar closing
+  useEffect(() => {
+    const isPanelOpen = !!activeCodeBlock;
+    if (isPanelOpen) {
+      if (wasSidebarOpenRef.current === null) {
+        wasSidebarOpenRef.current = useAppStore.getState().sidebarOpen;
+      }
+      setCodeBlockPanelOpen(true);
+    } else {
+      setCodeBlockPanelOpen(false);
+      if (wasSidebarOpenRef.current !== null) {
+        if (wasSidebarOpenRef.current) {
+          useAppStore.getState().setSidebarOpen(true);
+        }
+        wasSidebarOpenRef.current = null;
+      }
+    }
+  }, [!!activeCodeBlock, setCodeBlockPanelOpen]);
+
+  useEffect(() => {
+    return () => {
+      setCodeBlockPanelOpen(false);
+    };
+  }, [setCodeBlockPanelOpen]);
+
   // Extract last user prompt from history to intelligently name artifacts
   const lastUserPrompt = useMemo(() => {
     for (let i = history.length - 1; i >= 0; i--) {
@@ -267,92 +320,86 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     return '';
   }, [history]);
 
-  // Helper to extract artifact or code fence from streaming / finished message
-  const extractArtifactFromMessage = useCallback(
-    (msg: ChatMessage | null | undefined) => {
-      if (!msg) return null;
-      if (msg.artifacts && msg.artifacts.length > 0) {
-        const art = msg.artifacts[msg.artifacts.length - 1];
-        return {
-          id: art.id || `artifact-${msg.id || msg.timestamp || 'stream'}`,
-          type: art.type || 'code',
-          title:
-            art.title || extractArtifactTitle(art.content, art.language || 'html', lastUserPrompt),
-          content: art.content,
-          language: art.language || 'html',
-        };
-      }
-      const text = typeof msg.content === 'string' ? msg.content : '';
-      const match = /```(\w+)?\s*\n?([\s\S]*?)(?:```|$)/i.exec(text);
-      if (!match) return null;
-      const lang = (match[1] || 'html').toLowerCase();
-      if (['markdown', 'md', 'text', 'txt'].includes(lang)) return null;
-      const rawCode = match[2].trim();
-      if (!rawCode) return null;
-
-      const title = extractArtifactTitle(rawCode, lang, lastUserPrompt);
-      const msgId = msg.id || (msg.timestamp ? String(msg.timestamp) : 'stream');
-
-      return {
-        id: `artifact-${msgId}`,
-        type: ['html', 'htm', 'jsx', 'tsx', 'react'].includes(lang)
-          ? 'app'
-          : lang === 'slidev' || lang === 'presentation'
-            ? 'presentation'
-            : lang === 'mermaid'
-              ? 'diagram'
-              : 'code',
-        title,
-        content: rawCode,
-        language: lang,
-      };
-    },
-    [lastUserPrompt]
-  );
-
-  // Sync streaming updates if the user has opened this artifact in Studio/Code Block.
-  // Continuously streams live updates into Monaco Editor and live preview iframe.
+  // Real-time live code streaming into CodeBlockPanel
   useEffect(() => {
-    if (!activeArtifact) return;
+    if (!activeStreamMessage || typeof activeStreamMessage.content !== 'string') return;
 
-    if (activeStreamMessage && activeStreamMessage.role === 'assistant') {
-      const detected = extractArtifactFromMessage(activeStreamMessage);
-      if (detected && detected.content && detected.content !== activeArtifact.content) {
-        const isCurrentStream =
-          detected.id === activeArtifact.id ||
-          activeArtifact.id === 'artifact-stream' ||
-          activeArtifact.id?.includes('stream') ||
-          (activeArtifact as any).isStreaming ||
-          (activeStreamMessage.timestamp &&
-            activeArtifact.id?.includes(String(activeStreamMessage.timestamp)));
+    if (userDismissedRef.current) return;
 
-        if (isCurrentStream) {
-          setActiveArtifact((prev) => {
-            if (!prev) return null;
-            return {
-              ...detected,
-              title:
-                prev.title &&
-                prev.title !== 'Code Artifact' &&
-                prev.title !== 'HTML Application' &&
-                prev.title !== 'Web Application'
-                  ? prev.title
-                  : detected.title,
-              id: prev.id,
-              isStreaming: true,
-            };
-          });
-        }
+    // 1. If currently modifying an existing code block, check for SEARCH/REPLACE blocks
+    if (editingBaseCodeRef.current?.code) {
+      const patchResult = applySearchReplace(
+        editingBaseCodeRef.current.code,
+        activeStreamMessage.content
+      );
+
+      if (patchResult.appliedCount > 0 || patchResult.activeEditLine) {
+        const resolvedTitle =
+          editingBaseCodeRef.current.filename || editingBaseCodeRef.current.title || 'Code Block';
+
+        setActiveCodeBlock({
+          code: patchResult.code,
+          language: editingBaseCodeRef.current.language,
+          filename: resolvedTitle,
+          title: resolvedTitle,
+          isStreaming: true,
+          activeEditLine: patchResult.activeEditLine,
+          activeEditRange: patchResult.activeEditRange,
+        });
+        return;
       }
     }
-  }, [activeStreamMessage, activeArtifact, extractArtifactFromMessage]);
 
-  // Auto-close sidebar when activeArtifact is mounted or opened
-  useEffect(() => {
-    if (activeArtifact && sidebarOpen && onToggleSidebar) {
-      onToggleSidebar();
+    // 2. Otherwise extract full code block fences
+    const streamBlock = extractLatestCodeBlock(activeStreamMessage.content);
+    if (!streamBlock || !streamBlock.code) return;
+
+    // Avoid wiping out existing code panel with short partial stubs (< 50 chars) while streaming starts
+    if (editingBaseCodeRef.current?.code && !streamBlock.isClosed && streamBlock.code.length < 50) {
+      return;
     }
-  }, [activeArtifact, sidebarOpen, onToggleSidebar]);
+
+    const artTitle = extractArtifactTitle(streamBlock.code, streamBlock.language, lastUserPrompt);
+    const resolvedTitle =
+      streamBlock.filename || editingBaseCodeRef.current?.filename || artTitle || 'Code Block';
+
+    setActiveCodeBlock({
+      code: streamBlock.code,
+      language: streamBlock.language || editingBaseCodeRef.current?.language || 'code',
+      filename: resolvedTitle,
+      title: resolvedTitle,
+      isStreaming: !streamBlock.isClosed,
+    });
+  }, [activeStreamMessage?.content, lastUserPrompt]);
+
+  // When stream finishes, mark activeCodeBlock as finalized (not streaming)
+  useEffect(() => {
+    if (!activeStreamMessage && activeCodeBlock?.isStreaming) {
+      setActiveCodeBlock((prev) => (prev ? { ...prev, isStreaming: false } : null));
+      editingBaseCodeRef.current = null;
+    }
+  }, [activeStreamMessage, activeCodeBlock?.isStreaming]);
+
+  // Listen for direct code updates from external coding subagents
+  useEffect(() => {
+    const handleCodeBlockUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<{ code: string; language: string; filename?: string }>;
+      if (customEvent.detail?.code) {
+        userDismissedRef.current = false;
+        setActiveCodeBlock({
+          code: customEvent.detail.code,
+          language: customEvent.detail.language || 'code',
+          filename: customEvent.detail.filename || 'Code Block',
+          title: customEvent.detail.filename || 'Code Block',
+          isStreaming: false,
+        });
+      }
+    };
+    window.addEventListener('nyx:codeblock_update', handleCodeBlockUpdate);
+    return () => {
+      window.removeEventListener('nyx:codeblock_update', handleCodeBlockUpdate);
+    };
+  }, []);
 
   const streaming = (rest as any).streaming;
 
@@ -385,26 +432,59 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       if ((!finalPrompt.trim() && (!images || images.length === 0) && !hasFiles) || isLoading)
         return false;
 
+      userDismissedRef.current = false;
+
       const { cloudModelId, localModelId } = useNyxStore.getState();
       if (!currentModelId && !cloudModelId && !localModelId) {
         toast.error('Please select a model first');
         return false;
       }
 
-      // Detect if user prompt is asking to modify/edit the currently open artifact
-      const isEditIntent =
-        !!activeArtifact &&
-        /\b(?:edit|change|modify|update|fix|refactor|add|remove|replace|make|tweak|adjust|improve|styled|color|speed|controls?|physics|animation|button|feature|bug|error)\b/i.test(
+      // Check if finalPrompt has an embedded code block to edit (from CodeBlock or CodeBlockPanel)
+      let effectivePrompt = finalPrompt;
+      let editCodeContext: CodeBlockItem | null = null;
+
+      const embeddedCodeMatch = finalPrompt.match(
+        /(?:\[MODIFY CODE SNIPPET\]:|\[CODE SNIPPET TO EDIT[^\n]*\]:)\s*```([a-zA-Z0-9_-]*)[ \t]*\r?\n([\s\S]*?)\r?\n```\s*(?:\[USER (?:EDIT )?REQUEST\]:)?\s*([\s\S]*)/i
+      );
+
+      if (embeddedCodeMatch) {
+        const lang = embeddedCodeMatch[1] || activeCodeBlock?.language || 'code';
+        const snippetCode = embeddedCodeMatch[2];
+        const userReq = (embeddedCodeMatch[3] || '').trim();
+        effectivePrompt = userReq || 'Please update the code as instructed.';
+        editCodeContext = {
+          code: snippetCode,
+          language: lang,
+          filename: activeCodeBlock?.filename || 'snippet',
+          title: activeCodeBlock?.title || 'Code Block',
+        };
+      } else if (
+        activeCodeBlock?.code &&
+        /\b(?:edit|change|modify|update|fix|refactor|add|remove|replace|make|tweak|adjust|improve|rewrite|implement|bug|error|style|function|feature)\b/i.test(
           finalPrompt
-        );
+        )
+      ) {
+        editCodeContext = { ...activeCodeBlock };
+      }
 
       let contextInjection: string | undefined = undefined;
-      if (isEditIntent && activeArtifact?.content) {
-        contextInjection = `[ACTIVE ARTIFACT CODE: "${activeArtifact.title}" (${activeArtifact.language || 'html'})]\n\`\`\`${activeArtifact.language || 'html'}\n${activeArtifact.content}\n\`\`\`\n\n[USER MODIFICATION INSTRUCTIONS]:\n${finalPrompt}\n\nPlease generate the full updated code incorporating these changes.`;
-      } else if (!isEditIntent && activeArtifact) {
-        // Brand new creation: reset active artifact so a new fresh codeblock is created for the new prompt
-        setActiveArtifact(null);
-        hasAutoOpenedRef.current = {};
+      if (editCodeContext?.code) {
+        editingBaseCodeRef.current = { ...editCodeContext };
+        if (!userDismissedRef.current) {
+          setActiveCodeBlock((prev) => {
+            if (prev && prev.code === editCodeContext!.code) return prev;
+            return {
+              code: editCodeContext!.code,
+              language: editCodeContext!.language,
+              filename: editCodeContext!.filename,
+              title: editCodeContext!.title,
+              isStreaming: false,
+            };
+          });
+        }
+
+        contextInjection = `[EXISTING CODE FILE: "${editCodeContext.filename || editCodeContext.title || 'snippet'}"]\n\`\`\`${editCodeContext.language || 'text'}\n${editCodeContext.code}\n\`\`\`\n\n[USER MODIFICATION INSTRUCTIONS]:\n${effectivePrompt}\n\n[MANDATORY IN-PLACE EDITING RULES]:\nYou are modifying the existing code file above.\nCRITICAL: DO NOT rewrite the file from scratch.\nCRITICAL: DO NOT output full duplicate code blocks or copies of the existing code.\nCRITICAL: You MUST output ONLY precise <<<<<<< SEARCH / ======= / >>>>>>> blocks targeting the exact lines that need to change.\n\nFormat for every edit:\n<<<<<<< SEARCH\n[exact lines to replace from the existing code]\n=======\n[new replacement lines]\n>>>>>>>\n\n1. Match existing code character-for-character including indentation.\n2. Keep SEARCH blocks minimal (only the lines being changed).\n3. Output as many SEARCH/REPLACE blocks as needed.\n4. DO NOT wrap SEARCH/REPLACE in markdown code fences.\n5. Outside of the edit blocks, output only a brief explanation of what was modified.`;
       }
 
       // Optimistically clear the input so it doesn't stay in the text box while generating
@@ -416,7 +496,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       setPendingFiles([]);
 
       // Format attached files (documents, code, audio) into prompt context
-      let promptWithAttachments = finalPrompt;
+      let promptWithAttachments = effectivePrompt;
       if (previousFiles.length > 0) {
         const fileSections = previousFiles
           .map((file) => {
@@ -428,13 +508,13 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           })
           .join('\n\n');
 
-        promptWithAttachments = finalPrompt.trim()
-          ? `${fileSections}\n\n${finalPrompt}`
+        promptWithAttachments = effectivePrompt.trim()
+          ? `${fileSections}\n\n${effectivePrompt}`
           : `${fileSections}\n\nPlease analyze the attached file(s) and provide a comprehensive response.`;
       }
 
       const displayPrompt =
-        finalPrompt.trim() ||
+        effectivePrompt.trim() ||
         (previousFiles.length > 0
           ? `Attached ${previousFiles.map((f) => f.name).join(', ')}`
           : finalPrompt);
@@ -442,6 +522,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       const success = await parentRunChat(promptWithAttachments, images || previousImages, {
         userDisplayPrompt: displayPrompt,
         contextInjection,
+        modelOverride: currentModelId,
       });
       if (!success) {
         // Restore if failed to start
@@ -451,7 +532,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       }
       return success;
     },
-    [isLoading, currentModelId, parentRunChat, pendingImages, pendingFiles, prompt, activeArtifact]
+    [isLoading, currentModelId, parentRunChat, pendingImages, pendingFiles, prompt, activeCodeBlock]
   );
 
   // --- Copy handler ---
@@ -535,12 +616,69 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     });
   }
 
+  function extractCleanTextFromDocument(fileName: string, rawText: string): string {
+    const isPdf = /\.pdf$/i.test(fileName);
+    if (!isPdf) return rawText;
+
+    const matches: string[] = [];
+    const tjRegex = /\(([^)]+)\)\s*(?:Tj|'|")/g;
+    let m: RegExpExecArray | null;
+    while ((m = tjRegex.exec(rawText)) !== null) {
+      const clean = m[1].replace(/\\([()\\])/g, '$1').trim();
+      if (clean.length > 0) matches.push(clean);
+    }
+
+    const tjArrayRegex = /\[((?:\([^)]*\)|[0-9.-]+|\s+)+)\]\s*TJ/gi;
+    while ((m = tjArrayRegex.exec(rawText)) !== null) {
+      const inner = m[1];
+      const subMatch = inner.match(/\(([^)]*)\)/g);
+      if (subMatch) {
+        const line = subMatch.map((s) => s.slice(1, -1).replace(/\\([()\\])/g, '$1')).join('');
+        if (line.trim().length > 0) matches.push(line.trim());
+      }
+    }
+
+    if (matches.length >= 3) {
+      return matches.join('\n');
+    }
+
+    const printable = rawText.match(/[\x20-\x7E\t\n\r]{4,}/g) || [];
+    const filtered = printable.filter(
+      (b) =>
+        !b.startsWith('/Type') &&
+        !b.startsWith('/Filter') &&
+        !b.startsWith('/Length') &&
+        !b.startsWith('/Font') &&
+        !b.includes('endobj') &&
+        !b.includes('endstream') &&
+        !b.includes('xref') &&
+        !b.includes('trailer')
+    );
+    return filtered.join('\n').trim() || `[PDF document "${fileName}" content attached]`;
+  }
+
   const handleAttachFiles = useCallback(
     async (files: File[]) => {
+      const MAX_ATTACHMENTS = 4;
+      const currentTotal = pendingImages.length + pendingFiles.length;
+      if (currentTotal >= MAX_ATTACHMENTS) {
+        toast.error(`Maximum limit of ${MAX_ATTACHMENTS} attachments reached`);
+        return;
+      }
+
+      let allowedFiles = files;
+      if (currentTotal + allowedFiles.length > MAX_ATTACHMENTS) {
+        const remainingSlots = MAX_ATTACHMENTS - currentTotal;
+        toast.warning(
+          `Attachment limit reached (${MAX_ATTACHMENTS}). Only attaching the first ${remainingSlots} item(s).`
+        );
+        allowedFiles = allowedFiles.slice(0, remainingSlots);
+      }
+
       const images: File[] = [];
       const nonImages: File[] = [];
 
-      files.forEach((file) => {
+      allowedFiles.forEach((file) => {
         if (file.type.startsWith('image/')) {
           images.push(file);
         } else {
@@ -600,9 +738,17 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           continue;
         }
 
-        // Text document or code file
+        // Text document, code file, or PDF
         try {
-          const text = await file.text();
+          const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+          let text = '';
+          if (isPdf) {
+            const raw = await file.text();
+            text = extractCleanTextFromDocument(file.name, raw);
+          } else {
+            text = await file.text();
+          }
+
           setPendingFiles((prev) => [
             ...prev,
             {
@@ -610,19 +756,13 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               name: file.name,
               size: file.size,
               type: isCode ? 'code' : 'document',
-              mimeType: file.type || 'text/plain',
+              mimeType: file.type || (isPdf ? 'application/pdf' : 'text/plain'),
               content: text,
             },
           ]);
-          toast.success(`Attached ${isCode ? 'code file' : 'document'} "${file.name}"`);
-
-          // Background ingest into TurboVec if available
-          if (text.length > 50) {
-            invoke('turbovec_add_memory', {
-              text: `Document [${file.name}]:\n${text}`,
-              metadata: JSON.stringify({ filename: file.name, size: file.size, type: file.type }),
-            }).catch(() => {});
-          }
+          toast.success(
+            `Attached ${isPdf ? 'PDF document' : isCode ? 'code file' : 'document'} "${file.name}"`
+          );
         } catch (err: any) {
           toast.error(`Failed to read ${file.name}: ${err.message || String(err)}`);
         }
@@ -650,7 +790,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         });
       }
     },
-    [currentModel, currentModelId]
+    [currentModel, currentModelId, pendingImages.length, pendingFiles.length]
   );
 
   const handleRemoveImage = useCallback((index: number) => {
@@ -842,10 +982,64 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     [handleAttachFiles]
   );
 
-  const handleArtifactClick = useCallback((art: any) => {
-    userDismissedRef.current = false;
-    setActiveArtifact(art);
+  const handleVisualClick = useCallback((vis: any) => {
+    if (!vis) return;
+    const isDiagram =
+      vis.type === 'diagram' ||
+      vis.type === 'diagram-design' ||
+      vis.language === 'diagram-design' ||
+      vis.language === 'svg' ||
+      (typeof vis.content === 'string' && /^\s*<svg\b/i.test(vis.content.trim()));
+    if (isDiagram) {
+      // Diagrams render cleanly inline in chat messages. Do not open code panel.
+      return;
+    }
+    if (vis.code || vis.content) {
+      setActiveCodeBlock({
+        code: vis.code || vis.content || '',
+        language: vis.language || 'text',
+        filename: vis.filename || vis.title || 'snippet',
+        title: vis.title || vis.filename || 'Code Block',
+      });
+    }
   }, []);
+
+  const handleOpenCodePanel = useCallback((item: CodeBlockItem) => {
+    if (!item) return;
+    const lang = (item.language || '').toLowerCase().trim();
+    if (['diagram-design', 'diagram', 'svg'].includes(lang) || /<svg\b/i.test(item.code || '')) {
+      // Do not open code block panel for diagrams
+      return;
+    }
+    userDismissedRef.current = false;
+    setActiveCodeBlock(item);
+  }, []);
+
+  const handleCodeBlockChange = useCallback(
+    (oldCode: string, newCode: string, lang?: string) => {
+      setActiveCodeBlock((prev) => (prev ? { ...prev, code: newCode } : null));
+
+      const trimmedOld = (oldCode || '').trim();
+      const msgIndex = history.findIndex((m) => {
+        if (typeof m.content !== 'string') return false;
+        return m.content.includes(trimmedOld);
+      });
+
+      if (msgIndex !== -1) {
+        const msg = history[msgIndex];
+        const updatedContent = replaceCodeBlockInContent(
+          msg.content as string,
+          oldCode,
+          newCode,
+          lang
+        );
+        if (updatedContent !== msg.content) {
+          handleEditMessage(msgIndex, updatedContent);
+        }
+      }
+    },
+    [history, handleEditMessage]
+  );
 
   const handleSuggestedPromptClick = useCallback(
     (p: string) => {
@@ -898,8 +1092,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       {/* Global sidebar is managed by AppDashboard */}
 
       <div
-        className={`flex-1 min-h-0 flex flex-col overflow-hidden relative transition-all duration-300 ease-out ${
-          activeArtifact ? 'w-full md:mr-[650px] lg:mr-[750px] xl:mr-[850px]' : 'w-full mr-0'
+        className={`min-h-0 flex flex-col overflow-hidden relative transition-all duration-300 ease-out ${
+          activeCodeBlock ? 'w-full md:w-1/2 md:max-w-[50%]' : 'w-full flex-1'
         }`}
       >
         {/* CHAT HEADER */}
@@ -910,6 +1104,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onStopGeneration={stopChat}
           sidebarOpen={sidebarOpen}
           onToggleSidebar={onToggleSidebar}
+          isCodePanelOpen={!!activeCodeBlock}
           sessionTitle={chatSessions?.activeSession?.title || 'New Chat'}
           onTitleChange={async (title) => {
             if (chatSessions?.activeSid && title.trim()) {
@@ -985,10 +1180,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onSuggestedPromptClick={handleSuggestedPromptClick}
           submitReward={submitReward}
           onEditMessage={handleEditMessage}
+          onSubmitPrompt={(promptText) => handleSubmit(promptText)}
           onRegenerate={handleRegenerate}
           onBranchFromMessage={handleBranch}
           activeModel={currentModel?.name}
-          onArtifactClick={handleArtifactClick}
+          onArtifactClick={handleVisualClick}
+          onOpenCodePanel={handleOpenCodePanel}
           approveTool={approveTool}
           rejectTool={rejectTool}
         />
@@ -1026,20 +1223,20 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         />
       </div>
 
-      {/* ARTIFACT CANVAS */}
-      <ArtifactCanvas
-        id={activeArtifact?.id}
-        isOpen={!!activeArtifact}
-        isStreaming={isLoading && activeStreamMessage !== null}
-        content={activeArtifact?.content || ''}
-        language={activeArtifact?.language}
-        title={activeArtifact?.title}
+      {/* TRUE BLACK RIGHT-SIDE CODE BLOCK WINDOW */}
+      <CodeBlockPanel
+        codeBlock={activeCodeBlock}
+        isOpen={!!activeCodeBlock}
         onClose={() => {
           userDismissedRef.current = true;
-          setActiveArtifact(null);
+          editingBaseCodeRef.current = null;
+          setActiveCodeBlock(null);
+          if (isLoading) {
+            stopChat();
+          }
         }}
-        onSubmitPrompt={(p) => handleSubmit(p)}
-        history={history}
+        onCodeChange={handleCodeBlockChange}
+        onAskAiEdit={(instruction) => handleSubmit(instruction)}
       />
 
       {/* MEMORY MANAGER PANEL */}

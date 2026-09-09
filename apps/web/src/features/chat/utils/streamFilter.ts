@@ -1,6 +1,8 @@
 const LEAKED_TAG_PATTERNS = [
-  // ── Leaked instruction tags & prompt structure XML ──────────────────────────
-  /^(?:<\/?(?:role|state|constraints|tools|system|system_instructions|instructions|context|prompt|user|assistant|think|thought|thinking|reasoning|antThinking|plan|reflection|safety|user_input|date_context|turn_format_directive|execution_rules)\b[^>]*>|\[\/?(?:INST|SYSTEM|SAFETY|RESEARCH|CONTEXT|THINKING|REASONING)\]|<\|im_start\|>|<\|im_end\|>)\s*/i,
+  // ── Leaked instruction tags & prompt structure XML / Channels ───────────────
+  /^(?:<\/?(?:role|state|constraints|tools|system|system_instructions|instructions|context|prompt|user|assistant|think|thought|thinking|reasoning|antThinking|plan|reflection|safety|user_input|date_context|turn_format_directive|execution_rules)\b[^>]*>|\[\/?(?:INST|SYSTEM|SAFETY|RESEARCH|CONTEXT|THINKING|REASONING)\]|<\|im_start\|>|<\|im_end\|>|<\|channel\|?>thought|<channel\|?>|<\|channel\|?>)\s*/i,
+  // ── Leaked dual-channel thought blocks ──────────────────────────────────────
+  /^<\|channel\|?>thought\s*[\s\S]*?(?:<channel\|?>|<\|channel\|?>)\s*/i,
   // ── Leaked prompt context wrappers ──────────────────────────────────────────
   /^\[LIVE (?:REAL-TIME )?WEB SEARCH RESULTS[^\]]*\][\s\S]*?\[\/(?:LIVE )?WEB SEARCH RESULTS\]\s*/i,
   /^\[(?:CONTEXT|RESEARCH CONTEXT|SYSTEM CONTEXT|LIVE WEB SEARCH RESULTS)[^\]]*\][\s\S]*?\[\/(?:CONTEXT|RESEARCH CONTEXT|SYSTEM CONTEXT|LIVE WEB SEARCH RESULTS)\]\s*/i,
@@ -67,15 +69,19 @@ export function sanitizeLeakedMediaUrls(text: string): string {
  */
 export function extractThinkingAndContent(
   rawContent: string,
-  existingReasoning?: string
+  existingReasoning?: string,
+  options?: { stripReasoning?: boolean }
 ): { parsedReasoning: string; parsedContent: string } {
   if (!rawContent) {
-    return { parsedReasoning: existingReasoning?.trim() || '', parsedContent: '' };
+    return {
+      parsedReasoning: options?.stripReasoning ? '' : existingReasoning?.trim() || '',
+      parsedContent: '',
+    };
   }
 
   let content = rawContent;
   const thinkingChunks: string[] = [];
-  if (existingReasoning?.trim()) {
+  if (existingReasoning?.trim() && !options?.stripReasoning) {
     thinkingChunks.push(existingReasoning.trim());
   }
 
@@ -98,22 +104,37 @@ export function extractThinkingAndContent(
       const outside = (
         content.substring(0, startIndex) + content.substring(endIndex + endTagLen)
       ).trim();
-      if (inner) thinkingChunks.push(inner);
+      if (inner && !options?.stripReasoning) thinkingChunks.push(inner);
       content = outside;
     } else {
       // Unclosed think tag (streaming in progress)
       const inner = content.substring(startIndex + startTagLen).trim();
-      if (inner) thinkingChunks.push(inner);
+      if (inner && !options?.stripReasoning) thinkingChunks.push(inner);
       content = content.substring(0, startIndex).trim();
       break;
     }
     thinkStartMatch = content.match(thinkTagRegex);
   }
 
+  // 1.5 Extract dual-channel thoughts: <|channel>thought ... <channel|> or <|channel|>thought ... <|channel|>
+  const channelThoughtRegex =
+    /<\|channel\|?>thought\s*([\s\S]*?)(?:<channel\|?>|<\|channel\|?>|$)/gi;
+  content = content.replace(channelThoughtRegex, (_, inner) => {
+    if (inner && inner.trim() && !options?.stripReasoning) {
+      thinkingChunks.push(inner.trim());
+    }
+    return '';
+  });
+
+  // Strip any lingering channel boundary delimiters
+  content = content
+    .replace(/<\|channel\|?>thought\s*/gi, '')
+    .replace(/<channel\|?>|<\|channel\|?>/gi, '');
+
   // 2. Extract Bracket tags: [THINKING]...[/THINKING], [REASONING]...[/REASONING]
   const bracketTagRegex = /\[(THINKING|REASONING)\]([\s\S]*?)\[\/\1\]/gi;
   content = content.replace(bracketTagRegex, (_, _tag, inner) => {
-    if (inner && inner.trim()) {
+    if (inner && inner.trim() && !options?.stripReasoning) {
       thinkingChunks.push(inner.trim());
     }
     return '';
@@ -122,7 +143,7 @@ export function extractThinkingAndContent(
   // 3. Extract Fenced thought blocks: ```thought ... ``` or ```thinking ... ```
   const fencedThoughtRegex = /```(?:thought|thinking|reasoning)\s*\n([\s\S]*?)(?:```|$)/gi;
   content = content.replace(fencedThoughtRegex, (_, inner) => {
-    if (inner && inner.trim()) {
+    if (inner && inner.trim() && !options?.stripReasoning) {
       thinkingChunks.push(inner.trim());
     }
     return '';
@@ -133,9 +154,13 @@ export function extractThinkingAndContent(
   content = content.replace(toolCallRegex, (_, inner) => {
     try {
       const parsed = JSON.parse(inner.trim());
-      thinkingChunks.push(`🛠️ Executed Tool: \`${parsed.name || 'unknown'}\``);
+      if (!options?.stripReasoning) {
+        thinkingChunks.push(`🛠️ Executed Tool: \`${parsed.name || 'unknown'}\``);
+      }
     } catch {
-      thinkingChunks.push(`🛠️ Tool Call: ${inner.trim()}`);
+      if (!options?.stripReasoning) {
+        thinkingChunks.push(`🛠️ Tool Call: ${inner.trim()}`);
+      }
     }
     return '';
   });
@@ -149,7 +174,9 @@ export function extractThinkingAndContent(
     const paragraphs = afterHeader.split(/\n\s*\n/);
     const retainedContent: string[] = [];
 
-    thinkingChunks.push(dissectionHeaderMatch[0].trim());
+    if (!options?.stripReasoning) {
+      thinkingChunks.push(dissectionHeaderMatch[0].trim());
+    }
 
     for (const para of paragraphs) {
       const trimmedPara = para.trim();
@@ -162,7 +189,9 @@ export function extractThinkingAndContent(
           trimmedPara
         )
       ) {
-        thinkingChunks.push(trimmedPara);
+        if (!options?.stripReasoning) {
+          thinkingChunks.push(trimmedPara);
+        }
       } else {
         retainedContent.push(trimmedPara);
       }
@@ -176,7 +205,9 @@ export function extractThinkingAndContent(
       const trimmedPara = para.trim();
       if (!trimmedPara) continue;
       if (/^I(?:'ve started by dissecting|'m building a framework to process)/i.test(trimmedPara)) {
-        thinkingChunks.push(trimmedPara);
+        if (!options?.stripReasoning) {
+          thinkingChunks.push(trimmedPara);
+        }
       } else {
         retainedContent.push(trimmedPara);
       }
@@ -187,13 +218,17 @@ export function extractThinkingAndContent(
       /^((?:(?:\d+\.\s+[A-Z][^\n]+|\b(?:Defining the Project Scope|Project Planning|Analyze the Request)\b[^\n]*)\n[\s\S]*?))(?=(?:^|\n)#{1,3}\s+[A-Z0-9])/i
     );
     if (structuralPlanningMatch) {
-      thinkingChunks.push(structuralPlanningMatch[1].trim());
+      if (!options?.stripReasoning) {
+        thinkingChunks.push(structuralPlanningMatch[1].trim());
+      }
       content = content.substring(structuralPlanningMatch[1].length).trim();
     }
   }
 
   const finalContent = stripResponsePreamble(content.trim());
-  const finalReasoning = thinkingChunks.filter(Boolean).join('\n\n').trim();
+  const finalReasoning = options?.stripReasoning
+    ? ''
+    : thinkingChunks.filter(Boolean).join('\n\n').trim();
 
   return {
     parsedReasoning: finalReasoning,

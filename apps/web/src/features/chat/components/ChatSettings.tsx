@@ -1,6 +1,6 @@
 import React from 'react';
-import { XIcon as X, ZapIcon as Zap } from '@animateicons/react/lucide';
-import { Settings2, Sliders, Database, BrainCircuit, Maximize } from 'lucide-react';
+import { XIcon as X } from '@animateicons/react/lucide';
+import { Settings2, Sliders, Database, BrainCircuit, Sparkles } from 'lucide-react';
 import { useSettingsStore } from '../../../core/stores/useSettingsStore';
 
 interface ChatSettingsProps {
@@ -36,7 +36,9 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
               <Sliders className="w-4 h-4 text-muted-foreground" />
               Temperature
             </label>
-            <span className="text-[12px] font-mono text-primary">{chatSettings.temperature ?? 0.7}</span>
+            <span className="text-[12px] font-mono text-primary">
+              {chatSettings.temperature ?? 0.7}
+            </span>
           </div>
           <input
             type="range"
@@ -60,17 +62,27 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
               <Database className="w-4 h-4 text-muted-foreground" />
               Max Output Tokens
             </label>
-            <span className="text-[12px] font-mono text-primary">{chatSettings.maxTokens ?? 8192}</span>
+            <span className="text-[12px] font-mono text-primary">
+              {chatSettings.maxTokens ?? 8192}
+            </span>
           </div>
-          <select 
+          <select
             value={chatSettings.maxTokens ?? 8192}
             onChange={(e) => updateChatSettings({ maxTokens: parseInt(e.target.value) })}
             className="w-full bg-input border border-border rounded text-[13px] text-foreground p-2 focus:outline-none focus:border-primary cursor-pointer"
           >
-            <option value="4096" className="bg-popover text-foreground">4096 tokens</option>
-            <option value="8192" className="bg-popover text-foreground">8192 tokens</option>
-            <option value="16384" className="bg-popover text-foreground">16384 tokens</option>
-            <option value="32768" className="bg-popover text-foreground">32768 tokens</option>
+            <option value="4096" className="bg-popover text-foreground">
+              4096 tokens
+            </option>
+            <option value="8192" className="bg-popover text-foreground">
+              8192 tokens
+            </option>
+            <option value="16384" className="bg-popover text-foreground">
+              16384 tokens
+            </option>
+            <option value="32768" className="bg-popover text-foreground">
+              32768 tokens
+            </option>
           </select>
         </div>
 
@@ -82,51 +94,27 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
               Context Optimizer
             </label>
           </div>
-          <select 
+          <select
             value={chatSettings.contextMode ?? 'prune'}
-            onChange={(e) => updateChatSettings({ contextMode: e.target.value as 'off' | 'prune' | 'summarize' })}
+            onChange={(e) =>
+              updateChatSettings({ contextMode: e.target.value as 'off' | 'prune' | 'summarize' })
+            }
             className="w-full bg-input border border-border rounded text-[13px] text-foreground p-2 focus:outline-none focus:border-primary cursor-pointer"
           >
-            <option value="off" className="bg-popover text-foreground">Off (Fixed Context)</option>
-            <option value="prune" className="bg-popover text-foreground">Prune Middle (Fast)</option>
-            <option value="summarize" className="bg-popover text-foreground">Summarize Middle (Smart)</option>
+            <option value="off" className="bg-popover text-foreground">
+              Off (Fixed Context)
+            </option>
+            <option value="prune" className="bg-popover text-foreground">
+              Prune Middle (Fast)
+            </option>
+            <option value="summarize" className="bg-popover text-foreground">
+              Summarize Middle (Smart)
+            </option>
           </select>
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Dynamic context management. "Prune" drops old messages. "Summarize" uses AI to dense old context.
+            Dynamic context management. "Prune" drops old messages. "Summarize" uses AI to dense old
+            context.
           </p>
-        </div>
-
-
-
-        {/* Features Toggle */}
-        <div className="space-y-4 pt-4 border-t border-border">
-          <h4 className="text-[13px] font-medium text-foreground flex items-center gap-2">
-            <Zap className="w-4 h-4 text-muted-foreground" />
-            Agent Capabilities
-          </h4>
-
-          <label className="flex items-center justify-between cursor-pointer group">
-            <span className="text-[13px] text-foreground/80 group-hover:text-foreground transition-colors">
-              Subagent Swarm
-            </span>
-            <input
-              type="checkbox"
-              className="accent-primary w-4 h-4 bg-input border border-border"
-              defaultChecked
-            />
-          </label>
-
-          <label className="flex items-center justify-between cursor-pointer group">
-            <span className="text-[13px] text-foreground/80 group-hover:text-foreground transition-colors">
-              Artifact Generation
-            </span>
-            <input
-              type="checkbox"
-              checked={chatSettings.antigravity ?? true}
-              onChange={(e) => updateChatSettings({ antigravity: e.target.checked })}
-              className="accent-primary w-4 h-4 bg-input border border-border"
-            />
-          </label>
         </div>
       </div>
 

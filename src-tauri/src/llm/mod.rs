@@ -58,6 +58,8 @@ pub use local_orchestrator::{
     open_external_installer_cli,
     start_local_server,
     stop_local_server,
+    load_multimodal_support,
+    unload_multimodal_support,
     check_local_server_status,
     list_local_models,
     hf_set_token,
@@ -71,6 +73,7 @@ pub use local_orchestrator::{
     hf_get_model_details,
     hf_get_model_files,
     hf_get_model_readme,
+    hf_find_companion_files,
     get_llamacpp_version,
     check_and_update_binaries,
 };

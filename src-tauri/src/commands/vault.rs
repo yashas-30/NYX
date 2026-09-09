@@ -37,7 +37,10 @@ pub fn sync_provider_env_var(provider: &str, key: Option<&str>) {
     let prov = provider.to_lowercase();
     match key {
         Some(k) if !k.is_empty() => match prov.as_str() {
-            "gemini" => std::env::set_var("GEMINI_API_KEY", k),
+            "gemini" => {
+                std::env::set_var("GEMINI_API_KEY", k);
+                std::env::set_var("GOOGLE_API_KEY", k);
+            }
             "openrouter" => std::env::set_var("OPENROUTER_API_KEY", k),
             "groq" => std::env::set_var("GROQ_API_KEY", k),
             "mistral" => std::env::set_var("MISTRAL_API_KEY", k),
@@ -49,7 +52,10 @@ pub fn sync_provider_env_var(provider: &str, key: Option<&str>) {
             _ => {}
         },
         _ => match prov.as_str() {
-            "gemini" => std::env::remove_var("GEMINI_API_KEY"),
+            "gemini" => {
+                std::env::remove_var("GEMINI_API_KEY");
+                std::env::remove_var("GOOGLE_API_KEY");
+            }
             "openrouter" => std::env::remove_var("OPENROUTER_API_KEY"),
             "groq" => std::env::remove_var("GROQ_API_KEY"),
             "mistral" => std::env::remove_var("MISTRAL_API_KEY"),
@@ -63,7 +69,7 @@ pub fn sync_provider_env_var(provider: &str, key: Option<&str>) {
     }
 }
 
-fn get_vault_file_path() -> std::path::PathBuf {
+pub fn get_vault_file_path() -> std::path::PathBuf {
     let base_dir = dirs::config_dir()
         .or_else(dirs::data_dir)
         .unwrap_or_else(|| std::path::PathBuf::from("."));
@@ -72,7 +78,7 @@ fn get_vault_file_path() -> std::path::PathBuf {
     nyx_dir.join("vault.json")
 }
 
-fn load_file_vault() -> HashMap<String, String> {
+pub fn load_file_vault() -> HashMap<String, String> {
     let path = get_vault_file_path();
     if let Ok(data) = std::fs::read_to_string(&path) {
         if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&data) {

@@ -171,6 +171,8 @@ export function HuggingFaceExplorer() {
         batchSize: targetConfig.batchSize,
         draftModelId: targetConfig.draftModelId,
         disableKvOffload: targetConfig.disableKvOffload ?? false,
+        loadDraftModel: targetConfig.enableSpeculative ?? true,
+        loadVisionProjector: true,
       }).catch((err) => {
         cleanup();
         deferredReject(new Error(String(err)));

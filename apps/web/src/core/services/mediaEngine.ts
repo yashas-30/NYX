@@ -3,7 +3,7 @@
  *
  * Unified Media Retrieval & Synthesis Engine for NYX:
  * 1. Real Web Photos: DuckDuckGo Images + Bing Web Images (via Rust native backend & browser fallback)
- * 2. AI Generative Visual Assets: Rust local Diffusers engine + Pollinations FLUX cloud fallback
+ * 2. Visual Assets: Rust local Diffusers engine & DuckDuckGo/Bing Web Images
  * 3. Vector Logos & Favicons: Iconify Logos API + Google Favicons Service
  */
 
@@ -92,161 +92,10 @@ function fetchWithTimeout(url: string, opts: RequestInit = {}, ms = 5000): Promi
   return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(id));
 }
 
-// ── Known Tech Keywords for Iconify ───────────────────────────────────────────
+// ── Dynamic Topic Icon & Emoji Resolution ──────────────────────────────────────
 
-const KNOWN_TECH_KEYWORDS = new Set([
-  'python',
-  'javascript',
-  'typescript',
-  'react',
-  'vue',
-  'angular',
-  'svelte',
-  'rust',
-  'golang',
-  'go',
-  'java',
-  'c++',
-  'cpp',
-  'c#',
-  'csharp',
-  'php',
-  'ruby',
-  'swift',
-  'kotlin',
-  'scala',
-  'haskell',
-  'elixir',
-  'erlang',
-  'clojure',
-  'dart',
-  'perl',
-  'lua',
-  'r',
-  'matlab',
-  'julia',
-  'fortran',
-  'zig',
-  'assembly',
-  'docker',
-  'kubernetes',
-  'k8s',
-  'aws',
-  'azure',
-  'gcp',
-  'github',
-  'git',
-  'linux',
-  'node',
-  'nodejs',
-  'express',
-  'nextjs',
-  'nuxt',
-  'remix',
-  'sveltekit',
-  'astro',
-  'tailwind',
-  'bootstrap',
-  'postgres',
-  'postgresql',
-  'mysql',
-  'sqlite',
-  'mariadb',
-  'mongodb',
-  'redis',
-  'cassandra',
-  'elasticsearch',
-  'graphql',
-  'rest',
-  'grpc',
-  'html',
-  'css',
-  'sass',
-  'webpack',
-  'vite',
-  'rollup',
-  'esbuild',
-  'bun',
-  'terraform',
-  'ansible',
-  'jenkins',
-  'gitlab',
-  'vercel',
-  'netlify',
-  'cloudflare',
-  'nginx',
-  'apache',
-  'prometheus',
-  'grafana',
-  'datadog',
-  'sentry',
-  'pytorch',
-  'tensorflow',
-  'huggingface',
-  'openai',
-  'anthropic',
-  'gemini',
-  'langchain',
-  'llamaindex',
-  'ollama',
-  'stable-diffusion',
-  'midjourney',
-  'flutter',
-  'expo',
-  'react-native',
-  'android',
-  'ios',
-  'xcode',
-  'swiftui',
-  'pandas',
-  'numpy',
-  'spark',
-  'kafka',
-  'airflow',
-  'dbt',
-  'snowflake',
-  'bigquery',
-]);
-
-// ── Curated Topic Emojis ──────────────────────────────────────────────────────
-
-const TOPIC_EMOJI_MAP: Array<[RegExp, string]> = [
-  [/\b(artificial intelligence|ai|machine learning|ml|deep learning|neural network|llm)\b/i, '🤖'],
-  [/\b(robot|robotics|automation|autonomous|drone)\b/i, '🦾'],
-  [/\b(quantum|qubit|supercomputer)\b/i, '⚛️'],
-  [/\b(blockchain|crypto|bitcoin|ethereum|web3|nft|defi)\b/i, '🔗'],
-  [/\b(cybersecurity|security|hacking|vulnerability|encryption|privacy|firewall)\b/i, '🔐'],
-  [/\b(cloud|server|infrastructure|devops|deployment|datacenter)\b/i, '☁️'],
-  [/\b(database|data|analytics|big data|warehouse|sql)\b/i, '🗄️'],
-  [/\b(api|endpoint|microservice|backend|rest|grpc)\b/i, '🔌'],
-  [/\b(mobile|app|smartphone|android|ios|swiftui)\b/i, '📱'],
-  [/\b(web|website|frontend|ui|ux|design|css)\b/i, '🌐'],
-  [/\b(game|gaming|vr|ar|metaverse|graphics|gpu|nvidia)\b/i, '🎮'],
-  [/\b(chip|semiconductor|cpu|processor|hardware|silicon)\b/i, '💾'],
-  [/\b(space|astronomy|galaxy|star|planet|cosmos|nasa|spacex|telescope|black hole)\b/i, '🚀'],
-  [/\b(physics|quantum mechanics|relativity|particle|atom)\b/i, '⚡'],
-  [/\b(chemistry|molecule|compound|element|reaction|lab)\b/i, '🧪'],
-  [/\b(biology|cell|dna|gene|genome|evolution|organism|crispr)\b/i, '🧬'],
-  [/\b(medicine|medical|health|disease|drug|treatment|vaccine|pharma|doctor)\b/i, '💊'],
-  [/\b(brain|neuroscience|psychology|mental|cognitive|mind)\b/i, '🧠'],
-  [/\b(climate|environment|ecology|green|renewable|solar|wind energy|earth)\b/i, '🌱'],
-  [/\b(ocean|marine|sea|underwater|aquatic|coral|fish)\b/i, '🌊'],
-  [/\b(geology|earthquake|volcano|plate tectonics|fossil|mountain)\b/i, '🏔️'],
-  [/\b(mathematics|math|calculus|algebra|geometry|statistics)\b/i, '📐'],
-  [/\b(finance|financial|investment|stock|market|trading|hedge fund)\b/i, '📈'],
-  [/\b(economy|economics|gdp|inflation|recession|monetary)\b/i, '💹'],
-  [/\b(bank|banking|credit|loan|mortgage|interest rate)\b/i, '🏦'],
-  [/\b(history|historical|ancient|civilization|empire|war|revolution|rome|egypt)\b/i, '🏛️'],
-  [/\b(car|automotive|engine|supercar|porsche|ferrari|tesla|racing|f1)\b/i, '🏎️'],
-  [/\b(food|nutrition|diet|recipe|cuisine|cooking|restaurant)\b/i, '🍽️'],
-  [/\b(music|soundtrack|song|audio|album|symphony|piano|guitar)\b/i, '🎵'],
-];
-
-export function getEmojiForTopic(text: string): string {
-  if (!text?.trim()) return '';
-  for (const [pattern, emoji] of TOPIC_EMOJI_MAP) {
-    if (pattern.test(text)) return emoji;
-  }
+export function getEmojiForTopic(_text: string): string {
+  // Domain-agnostic: avoid hardcoding topic strings or regex tables
   return '';
 }
 
@@ -256,8 +105,11 @@ export function getEmojiForTopic(text: string): string {
 
 export async function fetchIconifyUrl(keyword: string): Promise<string | null> {
   if (!keyword?.trim()) return null;
-  const clean = keyword.trim().toLowerCase();
-  if (!KNOWN_TECH_KEYWORDS.has(clean)) return null;
+  const clean = keyword
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
+  if (!clean || clean.length < 2) return null;
 
   try {
     const res = await fetchWithTimeout(
@@ -280,35 +132,19 @@ export async function fetchIconifyUrl(keyword: string): Promise<string | null> {
   return null;
 }
 
-export function getDomainFaviconUrl(domainOrTech: string): string {
-  let domain = domainOrTech.toLowerCase().trim();
-  const domainMap: Record<string, string> = {
-    apple: 'apple.com',
-    google: 'google.com',
-    microsoft: 'microsoft.com',
-    amazon: 'amazon.com',
-    python: 'python.org',
-    react: 'react.dev',
-    rust: 'rust-lang.org',
-    github: 'github.com',
-    openai: 'openai.com',
-    chatgpt: 'openai.com',
-    nvidia: 'nvidia.com',
-    tesla: 'tesla.com',
-    anthropic: 'anthropic.com',
-    meta: 'meta.com',
-    wikipedia: 'wikipedia.org',
-  };
-
-  for (const [key, val] of Object.entries(domainMap)) {
-    if (domain.includes(key)) {
-      domain = val;
-      break;
+export function getDomainFaviconUrl(domainOrUrl: string): string {
+  if (!domainOrUrl?.trim()) return '';
+  let clean = domainOrUrl.toLowerCase().trim();
+  try {
+    if (clean.startsWith('http://') || clean.startsWith('https://')) {
+      clean = new URL(clean).hostname;
     }
+  } catch {
+    // Fall back to clean string
   }
-
-  if (!domain.includes('.')) domain = `${domain}.com`;
-  return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+  clean = clean.replace(/^[a-z0-9_-]+:\/\//i, '').split('/')[0];
+  if (!clean.includes('.')) clean = `${clean}.com`;
+  return `https://www.google.com/s2/favicons?domain=${clean}&sz=64`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -913,31 +749,38 @@ export async function generateVisualAsset(
       }
     }
   } catch (err) {
-    console.warn('[MediaEngine] Local generate_image fallback to FLUX:', err);
+    console.warn('[MediaEngine] Local generate_image error:', err);
   }
 
-  // Cloud fallback: Pollinations FLUX with aspect ratio dimension mapping
-  const dimensions: Record<string, { w: number; h: number }> = {
-    '16:9': { w: 1344, h: 768 },
-    '9:16': { w: 768, h: 1344 },
-    '4:3': { w: 1152, h: 864 },
-    '1:1': { w: 1024, h: 1024 },
-  };
+  // Authentic web image retrieval fallback
+  try {
+    const webImages = await searchTopicImages(cleanPrompt, 1);
+    if (webImages.length > 0) {
+      const topImg = webImages[0];
+      const payload: GeneratedImagePayload = {
+        success: true,
+        imageUrl: topImg.url,
+        prompt: cleanPrompt,
+        aspectRatio,
+        engine: topImg.source || 'DuckDuckGo & Bing Web Images',
+      };
+      setCached(_genCacheStore, cacheKey, {
+        imageUrl: topImg.url,
+        source: topImg.source || 'DuckDuckGo & Bing Web Images',
+      });
+      return payload;
+    }
+  } catch (webErr) {
+    console.warn('[MediaEngine] searchTopicImages fallback failed:', webErr);
+  }
 
-  const { w, h } = dimensions[aspectRatio] || dimensions['1:1'];
-  const seed = Math.floor(Math.random() * 1000000);
-  const cloudUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=${w}&height=${h}&nologo=true&seed=${seed}&model=flux`;
-
-  const payload: GeneratedImagePayload = {
-    success: true,
-    imageUrl: cloudUrl,
+  return {
+    success: false,
+    imageUrl: '',
     prompt: cleanPrompt,
     aspectRatio,
-    engine: 'Pollinations FLUX Cloud',
+    engine: 'No visual asset found',
   };
-
-  setCached(_genCacheStore, cacheKey, { imageUrl: cloudUrl, source: 'Pollinations FLUX Cloud' });
-  return payload;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

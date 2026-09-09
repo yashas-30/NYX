@@ -1,16 +1,17 @@
-import React, { memo, useRef, useMemo, useState } from 'react';
+import React, { memo, useRef, useMemo, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Loader2, Square, Shield, Zap, Presentation, Tv, FileDown } from 'lucide-react';
 import { CheckIcon as Check, XIcon as X } from '@animateicons/react/lucide';
 import { ChatMessage, ToolCall } from '@src/infrastructure/types';
 import { isReasoningModel } from '@src/infrastructure/utils/provider';
 import { toast } from '@src/shared/components/ui/sonner';
+import { useAppStore } from '@src/stores/useAppStore';
 import { stripResponsePreamble, extractThinkingAndContent } from '../../utils/streamFilter';
 
 import { ThinkingBlock } from '../ThinkingBlock';
 import { FourDotsWaveLoader } from '../FourDotsWaveLoader';
 import { StreamingCursor } from '../ChatMessageList';
-import { MarkdownContent } from '../ChatMessageList';
+import { MarkdownContent, replaceCodeBlockInContent } from '../ChatMessageList';
 import { MessageActions } from '../ChatMessageList';
 import { FeedbackButtons } from '../ChatMessageList';
 import { FileAttachment } from '../ChatMessageList';
@@ -20,16 +21,9 @@ import { MessageHeader } from './MessageHeader';
 import { CollapsibleUserText } from './CollapsibleUserText';
 import { ErrorRenderer } from './ErrorRenderer';
 import { ToolCallRenderer } from './ToolCallRenderer';
+import { AgentActivityTracker } from './AgentActivityTracker';
 import { ImageArtifactCard } from '../ImageArtifactCard';
 import { ImageLightbox } from '../ImageLightbox';
-import { exportSlidevToPptx } from '../../../artifacts/utils/pptxExporter';
-import { parseSlidevMarkdown } from '../../../artifacts/utils/slidevParser';
-import {
-  compileResponseToSlidev,
-  extractSlidevCodeBlock,
-  isPresentationPrompt,
-  isSlidevContent,
-} from '../../../presentation/utils/slidevCompiler';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +39,7 @@ export interface MessageBubbleProps {
   copiedId: string | null;
   submitReward?: (id: string, reward: number) => void;
   onEdit?: (index: number, content: string) => void;
+  onSubmitPrompt?: (prompt: string) => void;
   onRegenerate?: (index: number) => void;
   onBranch?: (index: number) => void;
   activeModel?: string;
@@ -56,6 +51,7 @@ export interface MessageBubbleProps {
     content: string;
     language?: string;
   }) => void;
+  onOpenCodePanel?: (codeBlock: any) => void;
   approveTool?: (index: number, approvalId: string) => void;
   rejectTool?: (index: number, approvalId: string) => void;
   onPinToggle?: (index: number) => void;
@@ -160,23 +156,14 @@ function parseMessageContent(
         .replace(/\+---+/g, '')
         .replace(/\|{2,}/g, '\n\n')
         .replace(/\|\s*PHASE\s*(\d+)[:\s]*([^|]+)\|/gi, '\n#### 🚀 Phase $1: $2\n')
-        .replace(/\|\s*\[\s*\]\s*([^|]+)\|/g, '- [ ] $1\n')
-        .replace(/\n{3,}/g, '\n\n');
+        .replace(/\|\s*\[\s*\]\s*([^|]+)\|/g, '- [ ] $1\n');
     }
-
-    // Strip accidental CLI terminal commands telling the user to run slidev locally
-    parsedContent = parsedContent
-      .replace(
-        /(?:(?:you can now )?(?:paste|save) (?:the above|this) (?:markdown|content|code) into a file[\s\S]*?(?:slidev\s+[^\n]+)[\s\S]*?(?:enjoy[!.]?)?)/gi,
-        ''
-      )
-      .replace(/```(?:bash|sh|cmd|powershell)?\s*\n\s*slidev\s+[^\n]+\s*\n```/gi, '')
-      .replace(/(?:End of deck[.]?\s*)/gi, '')
-      .trim();
   }
 
   if (!isUser) {
-    return extractThinkingAndContent(parsedContent, parsedReasoning);
+    return extractThinkingAndContent(parsedContent, parsedReasoning, {
+      stripReasoning: !reasoningEnabled,
+    });
   }
 
   return { parsedReasoning, parsedContent };
@@ -197,11 +184,13 @@ export const MessageBubble = memo<MessageBubbleProps>(
     copiedId,
     submitReward,
     onEdit,
+    onSubmitPrompt,
     onRegenerate,
     onBranch,
     onBranchChange,
     activeModel,
     onArtifactClick,
+    onOpenCodePanel,
     approveTool,
     rejectTool,
     onPinToggle,
@@ -216,15 +205,18 @@ export const MessageBubble = memo<MessageBubbleProps>(
         msg.content.includes('Local Model Not Loaded'));
 
     const msgId = `${msg.timestamp}-${index}`;
-    const reasoningEnabled =
-      isReasoningModel(msg.model || activeModel) ||
-      !!msg.reasoning ||
-      !!(
-        typeof msg.content === 'string' &&
+    const storeReasoningEnabled = useAppStore((s) => s.reasoningEnabled);
+    const hasReasoningTokens =
+      (typeof msg.reasoning === 'string' && msg.reasoning.trim().length > 0) ||
+      (typeof msg.content === 'string' &&
         /<(?:think|thought|thinking|reasoning|antThinking|plan|reflection)(?:\s+[^>]*?)?>/i.test(
           msg.content
-        )
-      );
+        ));
+    // If the user explicitly toggled Reasoning OFF, do NOT force reasoning state unless the model actually emitted reasoning tokens
+    const reasoningEnabled =
+      storeReasoningEnabled !== false
+        ? storeReasoningEnabled || isReasoningModel(msg.model || activeModel) || hasReasoningTokens
+        : hasReasoningTokens;
     const [lightboxState, setLightboxState] = useState<{
       isOpen: boolean;
       url: string;
@@ -237,7 +229,38 @@ export const MessageBubble = memo<MessageBubbleProps>(
       engine: '',
     });
 
-    // Hide internal tool feedback messages
+    const userPromptText = useMemo(() => {
+      if (!previousMsg) return '';
+      if (typeof previousMsg.content === 'string') return previousMsg.content;
+      if (Array.isArray(previousMsg.content)) {
+        return (previousMsg.content as any[])
+          .map((c) => (typeof c === 'string' ? c : c?.text || ''))
+          .join('\n');
+      }
+      return String(previousMsg.content || '');
+    }, [previousMsg]);
+
+    const handleCodeChange = useCallback(
+      (oldCode: string, newCode: string, lang?: string) => {
+        const currentContent = typeof msg.content === 'string' ? msg.content : '';
+        const updatedContent = replaceCodeBlockInContent(currentContent, oldCode, newCode, lang);
+        if (updatedContent !== currentContent) {
+          onEdit?.(index, updatedContent);
+        }
+      },
+      [msg.content, onEdit, index]
+    );
+
+    const handleAskAiEdit = useCallback(
+      (instruction: string) => {
+        if (onSubmitPrompt) {
+          onSubmitPrompt(instruction);
+        }
+      },
+      [onSubmitPrompt]
+    );
+
+    // Hide internal tool feedback messages (placed safely after all hook declarations)
     if (
       isUser &&
       typeof msg.content === 'string' &&
@@ -249,17 +272,6 @@ export const MessageBubble = memo<MessageBubbleProps>(
     }
 
     const { parsedReasoning, parsedContent } = parseMessageContent(msg, isUser, reasoningEnabled);
-
-    const userPromptText = useMemo(() => {
-      if (!previousMsg) return '';
-      if (typeof previousMsg.content === 'string') return previousMsg.content;
-      if (Array.isArray(previousMsg.content)) {
-        return (previousMsg.content as any[])
-          .map((c) => (typeof c === 'string' ? c : c?.text || ''))
-          .join('\n');
-      }
-      return String(previousMsg.content || '');
-    }, [previousMsg]);
 
     const isThinking =
       isStreaming &&
@@ -380,7 +392,16 @@ export const MessageBubble = memo<MessageBubbleProps>(
                   !parsedContent &&
                   (!msg.toolCalls || msg.toolCalls.length === 0) && <FourDotsWaveLoader />}
 
-                {(parsedContent || (msg.toolCalls && msg.toolCalls.length > 0)) && (
+                {msg.agentActivity && msg.agentActivity.length > 0 && (
+                  <AgentActivityTracker
+                    activities={msg.agentActivity}
+                    isStreaming={isStreaming && isLast}
+                  />
+                )}
+
+                {(parsedContent ||
+                  (msg.toolCalls && msg.toolCalls.length > 0) ||
+                  (msg.agentActivity && msg.agentActivity.length > 0)) && (
                   <div className="pl-0">
                     {msg.toolCalls &&
                       msg.toolCalls.filter(
@@ -416,6 +437,7 @@ export const MessageBubble = memo<MessageBubbleProps>(
                         images={msg.images}
                         videos={(msg as any).videos}
                         audios={(msg as any).audios}
+                        artifacts={msg.artifacts}
                         onOpenLightbox={(url?: string, prompt?: string, engine?: string) => {
                           setLightboxState({
                             isOpen: true,
@@ -425,6 +447,9 @@ export const MessageBubble = memo<MessageBubbleProps>(
                           });
                         }}
                         onArtifactClick={onArtifactClick as any}
+                        onOpenCodePanel={onOpenCodePanel}
+                        onCodeChange={handleCodeChange}
+                        onAskAiEdit={handleAskAiEdit}
                         messageId={msg.id || (msg.timestamp ? String(msg.timestamp) : undefined)}
                         userPrompt={userPromptText}
                         hasSupersededArtifact={hasSupersededArtifact}

@@ -65,23 +65,46 @@ export function getParameterCount(tags?: string[], numParameters?: number): stri
   return match ? match.toUpperCase() : null;
 }
 
+export function extractQuantToken(filename: string): string {
+  if (!filename) return '';
+  // Extract standardized GGUF quant tokens (e.g., Q4_K_M, Q4_K_S, Q4_0, Q4_1, UD-Q4_K_XL, IQ4_XS, IQ4_NL, Q8_0, BF16, F16, etc.)
+  const match = filename.match(
+    /(?:^|[._-])((?:UD-)?(?:I?Q[1-8]_[A-Za-z0-9_]+|Q[1-8]_[0-9]|Q[1-8]_[KMSL]|Q[1-8][A-Za-z0-9_]*|F16|F32|BF16|FP16|FP32))(?:[._-]|\.gguf$)/i
+  );
+  if (match) {
+    return match[1].toUpperCase();
+  }
+  // Fallback for simple tokens
+  const simpleMatch = filename.match(/(?:^|[._-])(Q[1-8]|F16|BF16|F32)(?:[._-]|\.gguf$)/i);
+  return simpleMatch ? simpleMatch[1].toUpperCase() : '';
+}
+
 export function parseQuantLabel(filename: string): QuantInfo {
-  const match = filename
-    .toLowerCase()
-    .match(/[._-](q\d[_k]?[_smkl]?[msl]?|iq\d_\w+|f16|f32|bf16)([._-]|$)/i);
-  const quant = match ? match[1].toUpperCase() : '';
-  const bitsMap: Record<string, string> = {
-    Q2: '2-bit',
-    Q3: '3-bit',
-    Q4: '4-bit',
-    Q5: '5-bit',
-    Q6: '6-bit',
-    Q8: '8-bit',
-    F1: '16-bit',
-    BF: '16-bit',
-  };
-  const bits = bitsMap[quant.substring(0, 2)] ?? '';
-  return { quant, bits };
+  const quant = extractQuantToken(filename);
+  let bits = '';
+  const qUpper = quant.toUpperCase();
+  if (qUpper === 'Q4_K_M') bits = '4.5 bpw';
+  else if (qUpper === 'Q4_K_S') bits = '4.3 bpw';
+  else if (qUpper === 'Q4_K_L') bits = '4.6 bpw';
+  else if (qUpper.includes('Q4_K_XL')) bits = '4.9 bpw';
+  else if (qUpper === 'IQ4_XS') bits = '4.25 bpw';
+  else if (qUpper === 'IQ4_NL') bits = '4.5 bpw';
+  else if (qUpper === 'Q5_K_M') bits = '5.5 bpw';
+  else if (qUpper === 'Q5_K_S') bits = '5.3 bpw';
+  else if (qUpper === 'Q6_K') bits = '6.6 bpw';
+  else if (qUpper === 'Q8_0') bits = '8.0 bpw';
+  else if (qUpper.includes('Q1') || qUpper.includes('IQ1')) bits = '1-bit';
+  else if (qUpper.includes('Q2') || qUpper.includes('IQ2')) bits = '2-bit';
+  else if (qUpper.includes('Q3') || qUpper.includes('IQ3')) bits = '3-bit';
+  else if (qUpper.includes('Q4') || qUpper.includes('IQ4')) bits = '4-bit';
+  else if (qUpper.includes('Q5') || qUpper.includes('IQ5')) bits = '5-bit';
+  else if (qUpper.includes('Q6') || qUpper.includes('IQ6')) bits = '6-bit';
+  else if (qUpper.includes('Q8') || qUpper.includes('IQ8')) bits = '8-bit';
+  else if (qUpper.includes('F16') || qUpper.includes('BF16') || qUpper.includes('FP16'))
+    bits = '16-bit';
+  else if (qUpper.includes('F32') || qUpper.includes('FP32')) bits = '32-bit';
+
+  return { quant: quant || 'Standard', bits };
 }
 
 export interface QuantDetails {
@@ -93,136 +116,254 @@ export interface QuantDetails {
 }
 
 export function parseQuantDetails(filename: string): QuantDetails {
-  const match = filename
-    .toLowerCase()
-    .match(/[._-](q\d[_k]?[_smkl]?[msl]?|iq\d_\w+|f16|f32|bf16)([._-]|$)/i);
-  const quant = match ? match[1].toUpperCase() : '';
+  const quant = extractQuantToken(filename);
+  const { bits } = parseQuantLabel(filename);
+  const qUpper = quant.toUpperCase();
 
-  const detailsMap: Record<
-    string,
-    { bits: string; quality: QuantDetails['quality']; label: string; desc: string }
-  > = {
-    Q8_0: {
-      bits: '8-bit',
-      quality: 'max',
-      label: 'Max Quality',
-      desc: 'Virtually identical to original model. High VRAM/RAM required.',
-    },
-    Q6_K: {
-      bits: '6-bit',
-      quality: 'high',
-      label: 'Very High Quality',
-      desc: 'Minimal quality loss, recommended if you have extra memory.',
-    },
-    Q5_K_M: {
-      bits: '5-bit',
-      quality: 'high',
-      label: 'High Quality',
-      desc: 'Great balance of high accuracy and reduced memory.',
-    },
-    Q5_K_S: {
-      bits: '5-bit',
-      quality: 'high',
-      label: 'High Quality',
-      desc: 'Slightly more compact 5-bit quant.',
-    },
-    Q4_K_M: {
-      bits: '4-bit',
-      quality: 'balanced',
-      label: 'Recommended (Balanced)',
-      desc: 'Standard sweet-spot. Excellent quality with small footprint.',
-    },
-    Q4_K_S: {
-      bits: '4-bit',
-      quality: 'balanced',
-      label: 'Balanced (Fast)',
-      desc: 'Slightly faster, slightly smaller 4-bit.',
-    },
-    Q4_0: {
-      bits: '4-bit',
-      quality: 'balanced',
-      label: 'Standard 4-bit',
-      desc: 'Fast, legacy 4-bit quantization.',
-    },
-    IQ4_XS: {
-      bits: '4-bit',
-      quality: 'compact',
-      label: 'Compact 4-bit',
-      desc: 'Importance matrix optimized for lower memory.',
-    },
-    IQ4_NL: {
-      bits: '4-bit',
-      quality: 'compact',
-      label: 'Non-linear 4-bit',
-      desc: 'Optimized 4-bit representation.',
-    },
-    Q3_K_L: {
-      bits: '3-bit',
-      quality: 'compact',
-      label: 'Low Resource (Large)',
-      desc: 'Noticeable quality reduction, fits low RAM machines.',
-    },
-    Q3_K_M: {
-      bits: '3-bit',
-      quality: 'compact',
-      label: 'Low Resource',
-      desc: 'For systems with limited RAM/VRAM.',
-    },
-    Q3_K_S: {
-      bits: '3-bit',
-      quality: 'compact',
-      label: 'Very Low Resource',
-      desc: 'Small size, noticeable loss in complex tasks.',
-    },
-    IQ3_M: {
-      bits: '3-bit',
-      quality: 'compact',
-      label: 'Compact 3-bit',
-      desc: 'Higher quality 3-bit via importance matrix.',
-    },
-    Q2_K: {
-      bits: '2-bit',
-      quality: 'extreme',
-      label: 'Extreme Compression',
-      desc: 'Significant quality degradation. Only for extreme low RAM.',
-    },
-    IQ2_M: {
-      bits: '2-bit',
-      quality: 'extreme',
-      label: 'Extreme Compact 2-bit',
-      desc: 'Minimal footprint.',
-    },
-    F16: {
-      bits: '16-bit',
-      quality: 'max',
-      label: 'Uncompressed (16-bit)',
-      desc: 'Full fp16 precision. Huge memory required.',
-    },
-    BF16: { bits: '16-bit', quality: 'max', label: 'BFloat16', desc: 'Full precision weights.' },
-  };
+  let quality: QuantDetails['quality'] = 'standard';
+  let qualityLabel = quant || 'Standard';
+  let description = 'Model file weights.';
 
-  const lookup = detailsMap[quant];
-  if (lookup) {
-    return {
-      quant,
-      bits: lookup.bits,
-      quality: lookup.quality,
-      qualityLabel: lookup.label,
-      description: lookup.desc,
-    };
+  if (qUpper.includes('F16') || qUpper.includes('BF16') || qUpper.includes('FP16')) {
+    quality = 'max';
+    qualityLabel = 'Uncompressed (16-bit)';
+    description = 'Full precision floating-point weights without quantization.';
+  } else if (qUpper === 'Q8_0' || qUpper.includes('Q8_')) {
+    quality = 'max';
+    qualityLabel = 'Max Quality (Near-Lossless)';
+    description = 'Virtually indistinguishable from 16-bit float. Ideal if VRAM permits.';
+  } else if (qUpper === 'Q6_K' || qUpper.includes('Q6_')) {
+    quality = 'high';
+    qualityLabel = 'Very High Quality';
+    description = 'Minimal perplexity loss; excellent quality-to-size ratio.';
+  } else if (qUpper === 'Q5_K_M' || qUpper.includes('Q5_K')) {
+    quality = 'high';
+    qualityLabel = 'High Quality (5-bit)';
+    description = 'High precision 5-bit quantization with very low degradation.';
+  } else if (qUpper === 'Q5_0' || qUpper === 'Q5_1') {
+    quality = 'high';
+    qualityLabel = 'Standard 5-bit';
+    description = 'Solid 5-bit precision with moderate memory usage.';
+  } else if (qUpper === 'Q4_K_M') {
+    quality = 'balanced';
+    qualityLabel = 'Recommended (Balanced Sweet Spot)';
+    description =
+      'Optimal sweet spot: exceptional balance between speed, size, and reasoning quality.';
+  } else if (qUpper === 'Q4_K_S') {
+    quality = 'balanced';
+    qualityLabel = 'Balanced (Fast)';
+    description = 'Slightly smaller, faster 4-bit quantization with minimal quality loss.';
+  } else if (qUpper === 'Q4_K_L') {
+    quality = 'balanced';
+    qualityLabel = 'Balanced (High Precision)';
+    description = 'Higher precision 4-bit quantization preserving attention weights.';
+  } else if (qUpper.includes('Q4_K_XL')) {
+    quality = 'balanced';
+    qualityLabel = 'Extra-Large Dynamic 4-bit';
+    description = 'Extended dynamic 4-bit quantization with heightened precision.';
+  } else if (qUpper === 'Q4_0' || qUpper === 'Q4_1') {
+    quality = 'balanced';
+    qualityLabel = 'Standard 4-bit';
+    description = 'Standard legacy 4-bit quantization.';
+  } else if (qUpper.startsWith('IQ4')) {
+    quality = 'compact';
+    qualityLabel = 'Compact 4-bit (i-Matrix)';
+    description = 'Importance matrix optimized 4-bit for reduced size.';
+  } else if (qUpper.includes('Q3_') || qUpper.includes('IQ3')) {
+    quality = 'compact';
+    qualityLabel = 'Compact 3-bit';
+    description = 'Noticeable compression to fit lower memory budgets.';
+  } else if (qUpper.includes('Q2_') || qUpper.includes('IQ2')) {
+    quality = 'extreme';
+    qualityLabel = 'Extreme 2-bit';
+    description = 'Maximum compression for very constrained hardware; expect accuracy reduction.';
+  } else if (qUpper.includes('IQ1')) {
+    quality = 'extreme';
+    qualityLabel = 'Ultra 1-bit';
+    description = 'Ultra-low bitwidth quantization.';
   }
 
-  const { bits } = parseQuantLabel(filename);
   return {
     quant: quant || 'Standard',
-    bits: bits || 'Variable',
-    quality: 'standard',
-    qualityLabel: quant || 'Standard Format',
-    description: 'Model file weights.',
+    bits,
+    quality,
+    qualityLabel,
+    description,
   };
 }
 
-export type HardwareCompatibilityTier = 'full_gpu' | 'partial_gpu' | 'cpu_only' | 'too_large';
+export type HfFileCategory = 'model' | 'vision' | 'audio' | 'draft' | 'ignored';
+
+export interface ClassifiedHfFile {
+  category: HfFileCategory;
+  companionType?: 'vision' | 'audio' | 'draft';
+  label?: string;
+}
+
+/**
+ * Classifies a file from a Hugging Face repository into a standalone model,
+ * companion/support file (vision, audio, draft/mtp), or ignored non-model file.
+ * Handles subdirectories (e.g. MTP/, draft/, mmproj/), naming conventions, and file structures.
+ */
+export function classifyHfFile(filename: string): ClassifiedHfFile {
+  const norm = filename.toLowerCase().replace(/\\/g, '/');
+  if (!norm.endsWith('.gguf')) {
+    return { category: 'ignored' };
+  }
+
+  const basename = norm.split('/').pop() || norm;
+  const dir = norm.includes('/') ? norm.slice(0, norm.lastIndexOf('/')) : '';
+  const dirSegments = dir.split('/');
+
+  // Directory-level companion detection
+  const inMtpDir = dirSegments.some((s) => s === 'mtp' || s.includes('mtp'));
+  const inDraftDir = dirSegments.some((s) => s === 'draft' || s.includes('draft'));
+  const inVisionDir = dirSegments.some(
+    (s) => s === 'mmproj' || s.includes('projector') || s === 'vision' || s === 'visual'
+  );
+  const inAudioDir = dirSegments.some((s) => s.includes('audio') || s.includes('whisper'));
+
+  // Importance matrices / utilities
+  if (basename.includes('imatrix')) {
+    return { category: 'ignored' };
+  }
+
+  // 1. Audio Projectors & Encoders
+  if (
+    inAudioDir ||
+    basename.includes('audio-projector') ||
+    basename.includes('audio_projector') ||
+    basename.includes('audio-encoder') ||
+    basename.includes('audio_encoder') ||
+    basename.includes('whisper') ||
+    basename.includes('speech_encoder') ||
+    basename.includes('speech-encoder') ||
+    basename.includes('conformer') ||
+    /(?:^|[._-])audio(?:[._-]|\.gguf$)/i.test(basename)
+  ) {
+    return {
+      category: 'audio',
+      companionType: 'audio',
+      label: `Audio Projector (${basename})`,
+    };
+  }
+
+  // 2. Draft / MTP speculative models
+  if (
+    inMtpDir ||
+    inDraftDir ||
+    basename.startsWith('draft-') ||
+    basename.startsWith('draft_') ||
+    basename.startsWith('mtp-') ||
+    basename.startsWith('mtp_') ||
+    basename.includes('-draft') ||
+    basename.includes('_draft') ||
+    basename.includes('-mtp') ||
+    basename.includes('_mtp') ||
+    basename.endsWith('.mtp.gguf') ||
+    basename.includes('.mtp.') ||
+    basename.includes('speculative')
+  ) {
+    const isMtp = inMtpDir || basename.includes('mtp');
+    return {
+      category: 'draft',
+      companionType: 'draft',
+      label: `${isMtp ? 'MTP Speculative Model' : 'Draft Model'} (${basename})`,
+    };
+  }
+
+  // 3. Vision Projectors (mmproj, vision-tower, encoders, adapters, and precision-tagged vision companions)
+  const isVisionProjector =
+    inVisionDir ||
+    basename.includes('mmproj') ||
+    basename.includes('projector') ||
+    basename.includes('vision_tower') ||
+    basename.includes('vision-tower') ||
+    basename.includes('vision_encoder') ||
+    basename.includes('vision-encoder') ||
+    basename.includes('image_encoder') ||
+    basename.includes('image-encoder') ||
+    basename.includes('image_adapter') ||
+    basename.includes('image-adapter') ||
+    basename.includes('resampler') ||
+    basename.includes('siglip') ||
+    basename.includes('clip-vision') ||
+    basename.includes('clip_vision') ||
+    basename.includes('clip-vit') ||
+    basename.includes('clip_vit') ||
+    /(?:^|[._-])(?:vision|visual|vit|clip)(?:[._-](?:f16|f32|bf16|fp16|fp32|q[0-9][a-z0-9_]*))(?:\.gguf$)/i.test(
+      basename
+    ) ||
+    /^(?:vision|visual|vit|clip)\.gguf$/i.test(basename);
+
+  if (isVisionProjector) {
+    return {
+      category: 'vision',
+      companionType: 'vision',
+      label: `Vision Projector (${basename})`,
+    };
+  }
+
+  return { category: 'model' };
+}
+
+export interface CompanionFileInfo {
+  file: { filename: string; size: number };
+  type: 'vision' | 'audio' | 'draft';
+  label: string;
+  repoId?: string;
+  isExternal?: boolean;
+}
+
+/**
+ * Finds the best support file (vision mmproj, audio, draft) for a specific target model quantization.
+ * If a Q4 model is selected, pairs with a Q4 mmproj when available.
+ * Falls back to F16 only when no matching quantized support file exists in the repository.
+ */
+export function findMatchingSupportFile(
+  companions: CompanionFileInfo[],
+  targetQuantToken: string,
+  type: 'vision' | 'audio' | 'draft'
+): CompanionFileInfo | null {
+  const candidates = companions.filter((c) => c.type === type);
+  if (candidates.length === 0) return null;
+
+  const targetUpper = targetQuantToken.toUpperCase();
+  const targetFamily = targetUpper.match(/(?:UD-)?(I?Q[1-8]|F16|BF16)/i)?.[1]?.toUpperCase() || '';
+
+  let bestCandidate: CompanionFileInfo = candidates[0];
+  let bestScore = -1;
+
+  for (const cand of candidates) {
+    const fn = cand.file.filename.toUpperCase();
+    let score = 0;
+
+    if (targetUpper && fn.includes(targetUpper)) {
+      // Exact match e.g. Q4_K_M or Q4_0
+      score = 100;
+    } else if (targetFamily && fn.includes(targetFamily)) {
+      // Family match e.g. Q4_K vs Q4_0
+      score = 80;
+    } else if (fn.includes('F16') || fn.includes('FP16')) {
+      // Standard precision fallback
+      score = 30;
+    } else if (fn.includes('BF16') || fn.includes('F32') || fn.includes('FP32')) {
+      // Avoid massive uncompressed precision unless necessary
+      score = 5;
+    } else {
+      score = 15;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestCandidate = cand;
+    }
+  }
+
+  return bestCandidate;
+}
+
+export type HardwareCompatibilityTier = 'full_gpu' | 'partial_gpu' | 'too_large';
 
 export interface HardwareMatchResult {
   tier: HardwareCompatibilityTier;
@@ -236,115 +377,116 @@ export interface HardwareMatchResult {
 }
 
 /**
- * Calculates exact device compatibility for a model file based on real system RAM and GPU VRAM.
+ * Calculates exact device compatibility for a model file and its support files
+ * based on real system RAM, dedicated VRAM, and shared GPU memory.
  */
 export function analyzeHardwareMatch(
   fileSizeBytes: number,
-  filename: string,
-  hw: { total_ram: number; free_ram?: number; gpu_vram: number; gpu_name?: string } | null
+  secondArg: string | number,
+  hw: {
+    total_ram: number;
+    free_ram?: number;
+    gpu_vram: number;
+    gpu_name?: string;
+    shared_gpu_memory?: number;
+    dedicated_vram?: number;
+    has_dedicated_gpu?: boolean;
+  } | null,
+  supportFilesBytesArg?: number
 ): HardwareMatchResult {
-  if (!hw || fileSizeBytes <= 0) {
+  const supportFilesBytes =
+    typeof secondArg === 'number'
+      ? secondArg
+      : typeof supportFilesBytesArg === 'number'
+        ? supportFilesBytesArg
+        : 0;
+
+  const totalModelAndSupportBytes = (fileSizeBytes || 0) + supportFilesBytes;
+
+  if (!hw || totalModelAndSupportBytes <= 0) {
     return {
-      tier: 'cpu_only',
-      label: 'Unknown',
+      tier: 'partial_gpu',
+      label: 'Compatible',
       badgeText: 'Compatible',
       color: 'zinc',
       estimatedOffloadPercent: 0,
-      memoryRequiredBytes: fileSizeBytes,
+      memoryRequiredBytes: totalModelAndSupportBytes,
       isRecommended: false,
       explanation: 'System hardware specs unavailable',
     };
   }
 
-  const totalRamGb = hw.total_ram / 1024 ** 3;
-  const vramGb = hw.gpu_vram / 1024 ** 3;
-  const fileSizeGb = fileSizeBytes / 1024 ** 3;
+  const totalRamBytes = hw.total_ram || 0;
+  // Dedicated VRAM: explicit dedicated_vram if available, else gpu_vram
+  const dedicatedVramBytes = hw.dedicated_vram ?? hw.gpu_vram ?? 0;
+  // Shared GPU memory budget: explicit WDDM shared memory or 50% of system RAM
+  const sharedGpuBudgetBytes = hw.shared_gpu_memory ?? Math.floor(totalRamBytes * 0.5);
+  const totalGpuCapacityBytes = dedicatedVramBytes + sharedGpuBudgetBytes;
 
-  // Runtime buffer required for KV cache, context window (4k-8k tokens), activations, llama.cpp context
-  const contextBufferGb = Math.min(Math.max(1.0, fileSizeGb * 0.12), 3.0);
-  const memoryRequiredGb = fileSizeGb + contextBufferGb;
-  const memoryRequiredBytes = memoryRequiredGb * 1024 ** 3;
+  // Runtime buffer for KV cache (context window 4k-8k tokens), activations, and inference runtime
+  const modelGb = totalModelAndSupportBytes / 1024 ** 3;
+  const contextBufferGb = Math.min(Math.max(1.0, modelGb * 0.12), 2.5);
+  const totalRequiredBytes = totalModelAndSupportBytes + contextBufferGb * 1024 ** 3;
+  const dedicatedVramGb = dedicatedVramBytes / 1024 ** 3;
+  const totalGpuCapacityGb = totalGpuCapacityBytes / 1024 ** 3;
 
-  // Windows WDDM Shared GPU Memory: up to 50% of system RAM can be mapped as shared GPU memory
-  const sharedGpuBudgetGb = Math.min(totalRamGb * 0.5, Math.max(0, totalRamGb - 2.0));
-  const totalGpuCapacityGb = vramGb + sharedGpuBudgetGb;
+  const hasDedicated = hw.has_dedicated_gpu ?? dedicatedVramBytes >= 2 * 1024 ** 3;
 
-  // 1. Full Dedicated GPU Acceleration: Entire model + context fits inside dedicated VRAM
-  if (vramGb >= 2 && memoryRequiredGb <= vramGb * 0.95) {
+  // 1. Fits in device dedicated VRAM (or Apple Unified Memory)
+  if (hasDedicated && totalRequiredBytes <= dedicatedVramBytes * 0.95) {
     return {
       tier: 'full_gpu',
-      label: 'Full GPU Offload',
-      badgeText: '⚡ Fits VRAM (Fastest)',
+      label: 'Fits in device',
+      badgeText: '⚡ Fits in device',
       color: 'emerald',
       estimatedOffloadPercent: 100,
-      memoryRequiredBytes,
-      isRecommended: false, // Calculated separately in pickBestFile
-      explanation: `Fits entirely in ${vramGb.toFixed(1)} GB dedicated VRAM. Maximum inference speed.`,
-    };
-  }
-
-  // 1b. Windows Shared GPU Memory: 100% GPU accelerated across dedicated VRAM + host Shared GPU Memory
-  if (vramGb >= 2 && memoryRequiredGb <= totalGpuCapacityGb * 0.95) {
-    const sharedUsedGb = Math.max(0, memoryRequiredGb - vramGb);
-    return {
-      tier: 'full_gpu',
-      label: 'GPU + Shared Memory',
-      badgeText: '⚡ 100% GPU (Shared RAM)',
-      color: 'emerald',
-      estimatedOffloadPercent: 100,
-      memoryRequiredBytes,
+      memoryRequiredBytes: totalRequiredBytes,
       isRecommended: false,
-      explanation: `100% GPU accelerated using ${vramGb.toFixed(1)} GB dedicated VRAM + ${sharedUsedGb.toFixed(1)} GB Shared GPU Memory.`,
+      explanation: `Fits in device VRAM (${dedicatedVramGb.toFixed(1)} GB dedicated). Full GPU acceleration.`,
     };
   }
 
-  // 2. Partial GPU Offload: GPU holds as many layers as possible, remaining layers in System RAM
-  const totalUsableMemGb = vramGb + totalRamGb * 0.75;
-  if (
-    vramGb >= 2 &&
-    memoryRequiredGb <= totalUsableMemGb &&
-    fileSizeGb <= vramGb + totalRamGb * 0.85
-  ) {
-    const offloadPercent = Math.min(
-      95,
-      Math.max(15, Math.round((vramGb / memoryRequiredGb) * 100))
-    );
+  if (!hasDedicated && totalRequiredBytes <= totalGpuCapacityBytes * 0.85) {
+    return {
+      tier: 'full_gpu',
+      label: 'Fits in device',
+      badgeText: '⚡ Fits in device',
+      color: 'emerald',
+      estimatedOffloadPercent: 100,
+      memoryRequiredBytes: totalRequiredBytes,
+      isRecommended: false,
+      explanation: `Fits in device unified memory (${totalGpuCapacityGb.toFixed(1)} GB usable). Full GPU acceleration.`,
+    };
+  }
+
+  // 2. Fits using Shared GPU Memory / System RAM
+  if (totalRequiredBytes <= totalGpuCapacityBytes * 0.95) {
+    const offloadPercent =
+      dedicatedVramBytes > 0
+        ? Math.min(95, Math.max(10, Math.round((dedicatedVramBytes / totalRequiredBytes) * 100)))
+        : 0;
     return {
       tier: 'partial_gpu',
-      label: 'Hybrid GPU + RAM',
-      badgeText: `⚡ Hybrid (~${offloadPercent}% GPU)`,
+      label: 'Some layers and support files will be loaded in shared GPU memory',
+      badgeText: '⚡ Some layers and support files will be loaded in shared GPU memory',
       color: 'blue',
       estimatedOffloadPercent: offloadPercent,
-      memoryRequiredBytes,
+      memoryRequiredBytes: totalRequiredBytes,
       isRecommended: false,
-      explanation: `Offloads ~${offloadPercent}% of layers to GPU VRAM; remaining run in RAM.`,
+      explanation: `Some layers and support files will be loaded in shared GPU memory (${offloadPercent}% in dedicated VRAM, remainder in shared memory).`,
     };
   }
 
-  // 3. CPU Only: Fits into System RAM safely
-  if (memoryRequiredGb <= totalRamGb * 0.78) {
-    return {
-      tier: 'cpu_only',
-      label: 'CPU / RAM Only',
-      badgeText: 'Runs on CPU',
-      color: 'zinc',
-      estimatedOffloadPercent: 0,
-      memoryRequiredBytes,
-      isRecommended: false,
-      explanation: `Runs entirely in system RAM (${fileSizeGb.toFixed(1)} GB used). Slower generation speed.`,
-    };
-  }
-
-  // 4. Too Large: Exceeds total system memory (will OOM or swap heavily)
+  // 3. Exceeds both VRAM and Shared GPU Memory
   return {
     tier: 'too_large',
-    label: 'Out of Memory',
-    badgeText: '⚠️ Too Large for Device',
+    label: 'Will not fit',
+    badgeText: '⚠️ Will not fit',
     color: 'rose',
     estimatedOffloadPercent: 0,
-    memoryRequiredBytes,
+    memoryRequiredBytes: totalRequiredBytes,
     isRecommended: false,
-    explanation: `Requires ~${memoryRequiredGb.toFixed(1)} GB RAM/VRAM, but your system only has ${totalRamGb.toFixed(1)} GB RAM + ${vramGb.toFixed(1)} GB VRAM.`,
+    explanation: `Will not fit. Requires ~${(totalRequiredBytes / 1024 ** 3).toFixed(1)} GB total memory, exceeding your device's VRAM and shared memory limit.`,
   };
 }
 
@@ -353,33 +495,39 @@ export function analyzeHardwareMatch(
  * Returns NULL if NO files fit the user's machine (never falsely recommends an OOM file!).
  */
 export function pickBestFile(
-  files: { filename: string; size: number }[],
-  hw: { total_ram: number; free_ram?: number; gpu_vram: number; gpu_name?: string } | null
+  files: { filename: string; size: number; supportSize?: number }[],
+  hw: {
+    total_ram: number;
+    free_ram?: number;
+    gpu_vram: number;
+    gpu_name?: string;
+    shared_gpu_memory?: number;
+    dedicated_vram?: number;
+    has_dedicated_gpu?: boolean;
+  } | null,
+  supportFilesBytes = 0
 ): string | null {
   if (!files.length) return null;
   if (!hw) {
-    // Pick standard Q4_K_M if no hardware info
     const q4 = files.find((f) => f.filename.toLowerCase().includes('q4_k_m'));
     return q4?.filename ?? files[0].filename;
   }
 
-  // Filter ONLY files that actually fit on the system
   const scored = files.map((f) => {
-    const match = analyzeHardwareMatch(f.size, f.filename, hw);
+    const supp = f.supportSize ?? supportFilesBytes;
+    const match = analyzeHardwareMatch(f.size, supp, hw);
     if (match.tier === 'too_large') return { file: f, score: -1000 };
 
     let score = 0;
     if (match.tier === 'full_gpu') score += 300;
     else if (match.tier === 'partial_gpu') score += 200;
-    else if (match.tier === 'cpu_only') score += 100;
 
     const fn = f.filename.toLowerCase();
     if (fn.includes('q4_k_m')) score += 75;
     else if (fn.includes('q4_k') || fn.includes('q4_0')) score += 70;
     else if (fn.includes('q5_k_m') || fn.includes('q5_k')) score += 65;
     else if (fn.includes('iq4_xs') || fn.includes('q4_k_s')) score += 55;
-    else if (fn.includes('q8_0') && match.tier === 'full_gpu')
-      score += 68; // Q8 is great if full GPU fits
+    else if (fn.includes('q8_0') && match.tier === 'full_gpu') score += 68;
     else if (fn.includes('q6_k')) score += 50;
     else if (fn.includes('q3_k_m') || fn.includes('iq3_m')) score += 30;
     else if (fn.includes('q2_k')) score += 5;
@@ -389,7 +537,6 @@ export function pickBestFile(
 
   scored.sort((a, b) => b.score - a.score);
 
-  // If even the best score is negative (means all files are too large), return null
   if (scored[0]?.score <= 0) {
     return null;
   }
@@ -404,15 +551,16 @@ export function getModelHardwareCompatibility(
   modelId: string,
   tags: string[] = [],
   numParameters?: number,
-  hw?: { total_ram: number; gpu_vram: number } | null
+  hw?: {
+    total_ram: number;
+    gpu_vram: number;
+    shared_gpu_memory?: number;
+    dedicated_vram?: number;
+    has_dedicated_gpu?: boolean;
+  } | null
 ): { badge: string; color: 'emerald' | 'blue' | 'rose' | 'zinc'; fits: boolean } | null {
   if (!hw) return null;
 
-  const totalRamGb = hw.total_ram / 1024 ** 3;
-  const vramGb = hw.gpu_vram / 1024 ** 3;
-  const totalUsableGb = vramGb + totalRamGb * 0.75;
-
-  // Extract parameter count
   const name = modelId.split('/').pop() || modelId;
   const match = name.match(/(\d+(?:\.\d+)?)[Bb](?:[._-]|$)/);
   let paramsB = match ? parseFloat(match[1]) : null;
@@ -428,18 +576,23 @@ export function getModelHardwareCompatibility(
 
   if (paramsB === null) return null;
 
-  // Approximate Q4 GGUF memory required (weights + context overhead)
-  const approxMemGb = Math.max(1.8, paramsB * 0.65 + 1.5);
+  const approxModelBytes = paramsB * 0.65 * 1024 ** 3;
+  const isMultimodal = tags.some(
+    (t) =>
+      typeof t === 'string' &&
+      (t.includes('multimodal') || t.includes('vision') || t.includes('image-text'))
+  );
+  const approxSupportBytes = isMultimodal ? 0.8 * 1024 ** 3 : 0;
 
-  if (vramGb >= 2 && approxMemGb <= vramGb * 0.95) {
-    return { badge: '⚡ Fits VRAM', color: 'emerald', fits: true };
+  const result = analyzeHardwareMatch(approxModelBytes, approxSupportBytes, hw);
+
+  if (result.tier === 'full_gpu') {
+    return { badge: '⚡ Fits in device', color: 'emerald', fits: true };
   }
-
-  if (approxMemGb <= totalUsableGb) {
-    return { badge: '🟢 Fits Device', color: 'blue', fits: true };
+  if (result.tier === 'partial_gpu') {
+    return { badge: '⚡ Shared GPU Memory', color: 'blue', fits: true };
   }
-
-  return { badge: '⚠️ Too Large', color: 'rose', fits: false };
+  return { badge: '⚠️ Will not fit', color: 'rose', fits: false };
 }
 
 export function formatEta(seconds?: number): string {
@@ -467,4 +620,124 @@ export function hashColor(str: string): [string, string] {
 export function getInitials(name: string): string {
   const p = name.replace(/[-_]/g, ' ').split(' ').filter(Boolean);
   return p.length >= 2 ? (p[0][0] + p[1][0]).toUpperCase() : name.substring(0, 2).toUpperCase();
+}
+
+/**
+ * Domain-agnostic helper to derive a clean, dedicated folder name for a model and its support files.
+ * Strips quantization tags, file extensions, and support prefixes/suffixes (mtp, mmproj, draft, vision, projector)
+ * so both the base weights and its companions naturally map to the exact same folder.
+ */
+export function deriveModelFolderName(modelId: string, filename?: string): string {
+  if (modelId && modelId.trim()) {
+    const repoLeaf = modelId.split('/').pop() || modelId;
+    const cleaned = repoLeaf.replace(/\.(?:gguf|GGUF)$/i, '').replace(/-(?:gguf|GGUF)$/i, '');
+    if (cleaned.trim()) {
+      return cleaned.trim();
+    }
+  }
+
+  if (!filename) return 'unorganized';
+
+  let stem = filename.split('/').pop() || filename;
+
+  while (true) {
+    const lower = stem.toLowerCase();
+    if (lower.endsWith('.meta.json')) {
+      stem = stem.slice(0, -'.meta.json'.length);
+    } else if (lower.endsWith('.meta')) {
+      stem = stem.slice(0, -'.meta'.length);
+    } else if (lower.endsWith('.json')) {
+      stem = stem.slice(0, -'.json'.length);
+    } else if (lower.endsWith('.gguf')) {
+      stem = stem.slice(0, -'.gguf'.length);
+    } else if (lower.endsWith('.part')) {
+      stem = stem.slice(0, -'.part'.length);
+    } else {
+      break;
+    }
+  }
+
+  // Strip prefixes
+  const prefixes = [
+    'mmproj-',
+    'mmproj_',
+    'mmproj.',
+    'mtp-',
+    'mtp_',
+    'mtp.',
+    'draft-',
+    'draft_',
+    'draft.',
+    'vision-',
+    'vision_',
+    'visual-',
+    'visual_',
+    'projector-',
+    'projector_',
+  ];
+  for (const p of prefixes) {
+    if (stem.toLowerCase().startsWith(p)) {
+      stem = stem.slice(p.length);
+      break;
+    }
+  }
+
+  // Strip quant tags from the end (up to 2 rounds, e.g. -UD-Q4_K_XL)
+  for (let i = 0; i < 2; i++) {
+    const lastDelim = Math.max(stem.lastIndexOf('-'), stem.lastIndexOf('.'));
+    if (lastDelim > 0) {
+      const last = stem.slice(lastDelim + 1);
+      const lastUpper = last.toUpperCase();
+      const isQuant =
+        lastUpper.startsWith('Q') ||
+        lastUpper === 'BF16' ||
+        lastUpper === 'F16' ||
+        lastUpper === 'F32' ||
+        lastUpper.startsWith('IQ') ||
+        lastUpper.startsWith('UD');
+      if (isQuant && lastDelim > 0) {
+        stem = stem.slice(0, lastDelim);
+      } else {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+
+  // Strip suffixes
+  const suffixes = [
+    '-mmproj',
+    '_mmproj',
+    '.mmproj',
+    '-mtp',
+    '_mtp',
+    '.mtp',
+    '-draft',
+    '_draft',
+    '.draft',
+    '-vision',
+    '_vision',
+    '.vision',
+    '-visual',
+    '_visual',
+    '.visual',
+    '-projector',
+    '_projector',
+    '.projector',
+    '-vit',
+    '_vit',
+    '.vit',
+    '-clip',
+    '_clip',
+    '.clip',
+  ];
+  for (const s of suffixes) {
+    if (stem.toLowerCase().endsWith(s)) {
+      stem = stem.slice(0, -s.length);
+      break;
+    }
+  }
+
+  return stem.trim() || 'unorganized';
 }

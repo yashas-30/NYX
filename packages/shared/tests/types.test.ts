@@ -125,4 +125,44 @@ describe('Shared Zod Schemas', () => {
       expect(result.success).toBe(true);
     });
   });
+
+  describe('parseTokenCount and getModelCapabilities', () => {
+    it('correctly parses token count representations without hardcoding', async () => {
+      const { parseTokenCount } = await import('../src/provider');
+      expect(parseTokenCount('1,048,576 (1M)')).toBe(1048576);
+      expect(parseTokenCount('262,144 (262K)')).toBe(262144);
+      expect(parseTokenCount('131,072 (131K)')).toBe(131072);
+      expect(parseTokenCount('65,536 (64K)')).toBe(65536);
+      expect(parseTokenCount('32,768 (32K)')).toBe(32768);
+      expect(parseTokenCount('1M')).toBe(1048576);
+      expect(parseTokenCount('2M')).toBe(2097152);
+      expect(parseTokenCount('128K')).toBe(131072);
+      expect(parseTokenCount('256k')).toBe(262144);
+      expect(parseTokenCount('32k')).toBe(32768);
+      expect(parseTokenCount('64k')).toBe(65536);
+      expect(parseTokenCount(32768)).toBe(32768);
+      expect(parseTokenCount(undefined, 8192)).toBe(8192);
+      expect(parseTokenCount(null, 131072)).toBe(131072);
+    });
+
+    it('derives actual real contextWindow and maxOutputTokens for cloud models', async () => {
+      const { getModelCapabilities } = await import('../src/provider');
+
+      // Gemini 3.8 Flash (1M ctx, 64K maxOutput)
+      const geminiCaps = getModelCapabilities('gemini-3.8-flash');
+      expect(geminiCaps.contextWindow).toBe(1048576);
+      expect(geminiCaps.maxOutputTokens).toBe(65536);
+
+      // Nemotron 3 Super 120B on OpenRouter (262K ctx, 235K maxOutput)
+      const nemotronCaps = getModelCapabilities('nvidia/nemotron-3-super-120b-a12b:free');
+      expect(nemotronCaps.contextWindow).toBe(262144);
+      expect(nemotronCaps.maxOutputTokens).toBe(235929);
+
+      // Dots3-Note Preview on OpenRouter (512K ctx, 460K maxOutput)
+      const dotsCaps = getModelCapabilities('dots-studio/dots-3-note-preview:free');
+      expect(dotsCaps.contextWindow).toBe(512000);
+      expect(dotsCaps.maxOutputTokens).toBe(460800);
+      expect(dotsCaps.supportsVision).toBe(true);
+    });
+  });
 });

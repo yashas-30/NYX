@@ -7,6 +7,7 @@ import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { useModelStore } from '@src/core/stores/useModelStore';
 import { useUsageStore } from '@src/core/stores/useUsageStore';
 import { useAppStore } from '@src/stores/useAppStore';
+import { useSettingsStore } from '@src/stores/useSettingsStore';
 import {
   detectProvider,
   getEffectiveApiKey,
@@ -21,34 +22,77 @@ import {
   extractThinkingAndContent,
 } from '../utils/streamFilter';
 import {
-  buildChatPrompts,
   ChatContext,
   PromptCategory,
   isDiagramPrompt,
   isWebSearchPrompt,
   detectPromptCategory,
-} from '@src/core/prompts/chatPrompts';
+  isCodePrompt,
+} from '@src/core/prompts';
 import { TOOL_REGISTRY, toolExecutor } from '@src/infrastructure/services/toolSystem';
-import {
-  isPresentationPrompt,
-  compileResponseToSlidev,
-  isSlidevContent,
-} from '@src/features/presentation/utils/slidevCompiler';
+import { applySearchReplace } from '../utils/searchReplace';
 import { ChatArtifact } from '@nyx/shared';
-import { isModelLoaded } from '@src/shared/hooks/useLocalModels';
-import { extractCoreSubject } from '@src/core/services/intelligentQueryEngine';
-import { antigravityAgent } from '@src/core/agents/antigravityAgent';
-import { isCodePrompt } from '@src/core/prompts/classifier';
+import { isModelLoaded, findLocalModelDef } from '@src/shared/hooks/useLocalModels';
+import { AgentActivityItem } from '@src/features/chat/components/MessageBubble/AgentActivityTracker';
+import { searchTopicImages } from '@src/core/services/mediaEngine';
+import { distillSearchQuery } from '@src/shared/querySynthesizer';
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
 function resolveSupportsVision(modelId: string, modelState: any): boolean {
-  let hasVision = getModelCapabilities(modelId).supportsVision;
-  const localModelDef = modelState.localLibraryModels?.find((m: any) => m.id === modelId);
-  if (localModelDef && localModelDef.capabilities?.vision !== undefined) {
-    hasVision = localModelDef.capabilities.vision;
+  const localModelDef = findLocalModelDef(modelId, modelState?.localLibraryModels);
+  if (localModelDef) {
+    if (localModelDef.capabilities?.vision !== undefined) {
+      return !!localModelDef.capabilities.vision;
+    }
+    if (localModelDef.supports_vision !== undefined) {
+      return !!localModelDef.supports_vision;
+    }
+    if (localModelDef.has_mmproj !== undefined) {
+      return !!localModelDef.has_mmproj;
+    }
   }
-  return hasVision;
+  return !!getModelCapabilities(modelId).supportsVision;
+}
+
+/**
+ * Context-aware web search formatter.
+ * Preserves the full deep-scraped web context (50,000+ characters) for cloud models
+ * or high-context setups, while intelligently pruning redundant boilerplate for
+ * resource-constrained local models without losing a single factual metric, table,
+ * percentage, or citation.
+ */
+export function formatWebSearchContext(
+  rawResults: string,
+  isLocal: boolean,
+  contextLimit: number
+): string {
+  if (!rawResults || !rawResults.trim()) return '';
+  // Cloud models or high-context local models (>= 32k tokens): deliver full scraped web context unconstrained
+  if (!isLocal || contextLimit >= 32768) {
+    return rawResults.trim();
+  }
+
+  // For smaller local context windows: keep all factual data, tables, markdown headers, and numbers
+  const lines = rawResults.split('\n');
+  const distilledLines: string[] = [];
+  const charBudget = Math.min(Math.max(contextLimit * 2, 14000), 30000);
+  let currentLen = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith('<!--') && trimmed.endsWith('-->')) continue;
+
+    distilledLines.push(trimmed);
+    currentLen += trimmed.length + 1;
+    if (currentLen >= charBudget) {
+      distilledLines.push('...[Remaining sources condensed for local context budget]');
+      break;
+    }
+  }
+
+  return distilledLines.join('\n');
 }
 
 export function isExplicitImageGenerationRequest(prompt: string): boolean {
@@ -138,9 +182,43 @@ export function useChatPipeline({
     };
   }, []);
 
+  const activeEventNameRef = useRef<string | null>(null);
+
   const cancelPipeline = useCallback(() => {
+    // 1. Abort any in-flight promises and controllers
     abortCtrlRef.current?.abort();
-  }, []);
+
+    // 2. Invalidate generation ID so incoming chunks from previous stream are discarded
+    generationIdRef.current++;
+
+    // 3. Emit cancellation signals to Tauri backend
+    try {
+      emit('cancel_chat_stream').catch(() => {});
+      if (activeEventNameRef.current) {
+        emit(`cancel_${activeEventNameRef.current}`).catch(() => {});
+      }
+    } catch {
+      // Non-critical if outside Tauri
+    }
+
+    // 4. Immediately finalize active streaming message in chat history
+    if (activeStreamRef.current) {
+      const stoppedMsg: ChatMessage = {
+        ...activeStreamRef.current,
+        status: 'stopped',
+      };
+      dispatch({ type: 'APPEND', message: stoppedMsg });
+      historyRef.current = [...historyRef.current, stoppedMsg];
+      persistHistory(historyRef.current);
+      activeStreamRef.current = null;
+      setActiveStreamMessage(null);
+    }
+
+    // 5. Instantly release supervising state so Stop button toggles back to Send
+    setIsSupervising(false);
+    abortCtrlRef.current = null;
+    activeEventNameRef.current = null;
+  }, [dispatch, historyRef, activeStreamRef, persistHistory, setActiveStreamMessage]);
 
   const runChat = useCallback(
     async (
@@ -197,14 +275,16 @@ export function useChatPipeline({
 
       const estimatedInput = Math.ceil(prompt.length / 4) + (images?.length || 0) * 512;
       const contextTokens = estimateContextTokens(historyRef.current);
-      const projectedTotal = contextTokens + estimatedInput + 4096;
 
       const userSelectedModel =
         options?.modelOverride ||
-        cloudModelId ||
+        (localModelId && isModelLoaded(localModelId, modelState.loadedLocalModel)
+          ? localModelId
+          : null) ||
         localModelId ||
-        nyxState.cloudModelId ||
+        cloudModelId ||
         nyxState.localModelId ||
+        nyxState.cloudModelId ||
         nyxState.currentModel?.id ||
         models?.nyx ||
         useModelStore.getState().modelsState?.chat ||
@@ -291,46 +371,6 @@ export function useChatPipeline({
           persistHistory(historyRef.current);
 
           try {
-            const listenPromise = new Promise<{ unlisten: () => void; promise: Promise<any> }>(
-              (resolve, reject) => {
-                let unlistenReady: (() => void) | undefined;
-                let unlistenError: (() => void) | undefined;
-                const cleanup = () => {
-                  unlistenReady?.();
-                  unlistenError?.();
-                };
-                const readyPromise = new Promise<{ status: string }>((res) => {
-                  listen<{ status: string }>('llm-server-ready', (event) => {
-                    cleanup();
-                    res(event.payload);
-                  }).then((fn) => {
-                    unlistenReady = fn;
-                  });
-                });
-                const errorPromise = new Promise<never>((_, rej) => {
-                  listen<{ error: string }>('llm-server-error', (event) => {
-                    cleanup();
-                    rej(new Error(event.payload.error));
-                  }).then((fn) => {
-                    unlistenError = fn;
-                  });
-                });
-                const timeoutPromise = new Promise<never>((_, rej) => {
-                  setTimeout(() => {
-                    cleanup();
-                    rej(new Error('Model load timed out after 60 seconds.'));
-                  }, 60000);
-                });
-
-                resolve({
-                  unlisten: cleanup,
-                  promise: Promise.race([readyPromise, errorPromise, timeoutPromise]),
-                });
-              }
-            );
-
-            const { unlisten, promise } = await listenPromise;
-
             await invoke('start_local_server', {
               modelId: modelToUse,
               contextSize: modelSettings?.contextSize ?? 0,
@@ -347,9 +387,12 @@ export function useChatPipeline({
               disableKvOffload: modelSettings?.disableKvOffload ?? false,
               splitMode: modelSettings?.splitMode,
               tensorSplit: modelSettings?.tensorSplit,
+              reasoning: useAppStore.getState().reasoningEnabled,
+              loadVisionProjector: true,
+              loadAudioProjector: false,
+              loadDraftModel: modelSettings?.enableSpeculative ?? true,
             });
 
-            await promise;
             modelState.setLoadedLocalModel(modelToUse);
 
             // Clear loading message and proceed with generation recursively
@@ -398,21 +441,18 @@ export function useChatPipeline({
 
       // dynamically size effectiveMaxCtx
       const earlyCaps = getModelCapabilities(modelToUse);
+      const configuredLocalCtx =
+        nyxState.modelConfigs?.[modelToUse]?.contextSize ?? modelSettings?.contextSize;
+      const detectedLocalCtx = (earlyCaps as any)?.contextLength || earlyCaps?.contextWindow;
       let effectiveMaxCtx = isLocalModel
-        ? (nyxState.modelConfigs?.[modelToUse]?.contextSize ?? modelSettings?.contextSize ?? 32768)
-        : earlyCaps.contextWindow || (maxContextTokens > 0 ? maxContextTokens : 131072);
-
-      let llmHistory = historyRef.current;
-      if (projectedTotal > effectiveMaxCtx) {
-        const outputReserve = Math.min(Math.floor(effectiveMaxCtx * 0.25), 1024);
-        const targetHistoryBudget = Math.max(effectiveMaxCtx - estimatedInput - outputReserve, 256);
-        llmHistory = await compactHistoryAsync(
-          historyRef.current,
-          targetHistoryBudget,
-          AIService,
-          modelSettings
-        );
-      }
+        ? configuredLocalCtx && configuredLocalCtx > 0
+          ? configuredLocalCtx
+          : detectedLocalCtx && detectedLocalCtx > 0
+            ? detectedLocalCtx
+            : 4096
+        : modelSettings?.contextSize && modelSettings.contextSize > 0
+          ? modelSettings.contextSize
+          : earlyCaps.contextWindow || (maxContextTokens > 0 ? maxContextTokens : 131072);
 
       if (tokensUsed + estimatedInput > tokenBudget) {
         toast.error('Token budget exhausted');
@@ -423,31 +463,76 @@ export function useChatPipeline({
 
       let onProgress = new Channel<any>();
 
+      const skipUserMessage = options?.skipUserMessage;
+      let finalPrompt = prompt;
+      if (options?.contextInjection) {
+        finalPrompt = `${options.contextInjection}\n\n${prompt}`;
+      }
+
+      // ── SUB-MICROSECOND DISPATCH (< 0.1ms) ──
+      // Synchronously dispatch user message and assistant loading/thinking state to React UI immediately.
+      if (!skipUserMessage) {
+        const userMsg: ChatMessage = {
+          id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
+          role: 'user',
+          content: options?.userDisplayPrompt || prompt,
+          timestamp: Date.now(),
+          images: images
+            ?.map((img) => ({
+              name: img.name,
+              mimeType: img.mimeType || 'image/jpeg',
+              data: img.data || '',
+            }))
+            .filter((img) => !!img.data),
+        };
+        dispatch({ type: 'APPEND', message: userMsg });
+        historyRef.current = [...historyRef.current, userMsg];
+        persistHistory(historyRef.current);
+      }
+
+      const storeReasoningEnabled = useAppStore.getState().reasoningEnabled ?? true;
+      const isReasoning = storeReasoningEnabled
+        ? storeReasoningEnabled || isReasoningModel(modelToUse)
+        : false;
+
+      // Assistant message initialized with reasoning ready so thinking indicator activates in 0.001ms
+      const assistantMsg: ChatMessage = {
+        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        status: 'loading',
+        model: modelToUse,
+        reasoning: isReasoning ? '' : undefined,
+      };
+
+      setActiveStreamMessage(assistantMsg);
+      activeStreamRef.current = assistantMsg;
+      setIsSupervising(true);
+
+      let llmHistory = historyRef.current;
+      const outputReserve = Math.min(Math.floor(effectiveMaxCtx * 0.25), 1024);
+      const projectedTotal = contextTokens + estimatedInput + outputReserve;
+
+      if (projectedTotal > effectiveMaxCtx && historyRef.current.length > 2) {
+        const targetHistoryBudget = Math.max(effectiveMaxCtx - estimatedInput - outputReserve, 256);
+        llmHistory = await compactHistoryAsync(
+          historyRef.current,
+          targetHistoryBudget,
+          AIService,
+          modelSettings
+        );
+      }
+
       try {
         const supportsVision = resolveSupportsVision(modelToUse, modelState);
-        let finalPrompt = prompt;
-        if (options?.contextInjection) {
-          finalPrompt = `${options.contextInjection}\n\n${prompt}`;
-        }
         if (images && images.length > 0 && !supportsVision) {
-          toast.info('Attached image context provided as text reference to active model.');
-          const imgRefText = images
-            .map(
-              (img) =>
-                `[USER ATTACHED IMAGE: ${img.name || 'Image'} (URL: ${img.url || 'Attached'})]`
-            )
-            .join('\n');
-          finalPrompt = `${finalPrompt}\n\n[USER ATTACHED IMAGES]\n${imgRefText}\n[/USER ATTACHED IMAGES]`;
+          toast.warning(
+            'The active model does not support native vision. Running fast OCR text extraction...'
+          );
         }
 
-        const skipUserMessage = options?.skipUserMessage;
-
-        // ── Handle image generation (explicit /image command, natural intent, OR active image model) ──
-        // ── Handle image generation (ONLY when user explicitly requests image generation or active image model loaded) ──
-        const isExplicitImageCmd = isExplicitImageGenerationRequest(prompt);
-
-        // If the currently loaded local model is an image generation model, treat prompt as image request.
-        // Uses the pre-computed isActiveModelImageGen flag set by useModelStore.setLoadedLocalModel.
+        // ── Handle image generation ONLY when an explicit image generation local model is loaded ──
         const isImageModelActive =
           modelState.isActiveModelImageGen ||
           (!!modelState.loadedLocalModel &&
@@ -468,7 +553,7 @@ export function useChatPipeline({
               'unet',
             ].some((kw) => modelState.loadedLocalModel!.toLowerCase().includes(kw)));
 
-        if (isExplicitImageCmd || isImageModelActive) {
+        if (isImageModelActive) {
           const imagePrompt =
             prompt
               .replace(/^(?:\/image|\/img|image:|draw:|paint:|generate\s+image:)\s*/i, '')
@@ -478,7 +563,7 @@ export function useChatPipeline({
               )
               .trim() || prompt.trim();
 
-          toast.info(`Generating image asset for "${imagePrompt}"…`);
+          toast.info(`Generating local image for "${imagePrompt}"…`);
 
           if (!skipUserMessage) {
             const userMsg: ChatMessage = {
@@ -520,7 +605,7 @@ export function useChatPipeline({
                   ? crypto.randomUUID()
                   : Math.random().toString(36).substring(2, 15),
                 role: 'assistant',
-                content: `🎨 **Generated Image** for _"${imagePrompt}"_:\n\n![Generated Image](${displaySrc})`,
+                content: `![Generated Image](${displaySrc})\n\n_${imagePrompt}_`,
                 timestamp: Date.now(),
                 status: 'success',
               };
@@ -530,20 +615,19 @@ export function useChatPipeline({
               persistHistory(historyRef.current);
               toast.success('Image generated successfully!');
             } else {
-              const errMsg = res?.error || 'Image generation returned no output.';
-              toast.error(`Image generation failed: ${errMsg}`);
+              const errMsg = res?.error || 'Local image generation failed.';
+              toast.error(errMsg);
             }
           } catch (err: any) {
             toast.error(`Image generation failed: ${err?.message || String(err)}`);
           }
 
-          // Return early — image generated, no further text LLM pass needed for explicit image command
           setTokensUsed((prev) => prev + estimatedInput);
           return true;
         }
 
-        // ── Run Local PaddleOCR Text Extraction if image attached ─────────
-        if (images && images.length > 0) {
+        // ── Fast OCR text extraction ONLY if model lacks native vision ─────────
+        if (images && images.length > 0 && !supportsVision) {
           try {
             const ocrRes = await invoke<{ success: boolean; extracted_text: string }>(
               'run_local_ocr',
@@ -559,109 +643,107 @@ export function useChatPipeline({
           }
         }
 
-        if (!skipUserMessage) {
-          const userMsg: ChatMessage = {
-            id: crypto.randomUUID
-              ? crypto.randomUUID()
-              : Math.random().toString(36).substring(2, 15),
-            role: 'user',
-            content: options?.userDisplayPrompt || prompt,
-            timestamp: Date.now(),
-            images: images
-              ?.map((img) => ({
-                name: img.name,
-                mimeType: img.mimeType || 'image/jpeg',
-                data: img.data || '',
-              }))
-              .filter((img) => !!img.data),
-          };
-          dispatch({ type: 'APPEND', message: userMsg });
-          historyRef.current = [...historyRef.current, userMsg];
-          persistHistory(historyRef.current);
-          llmHistory = [...llmHistory, userMsg];
-        }
-
         let initialWarning = '';
+        const localDef = isLocalModel
+          ? modelState.localLibraryModels?.find(
+              (m: any) =>
+                m.id === modelToUse ||
+                (m.id || '').replace(/\\/g, '/').split('/').pop() ===
+                  (modelToUse || '').replace(/\\/g, '/').split('/').pop()
+            )
+          : null;
+        const nativeModelCtx =
+          typeof localDef?.context_length === 'number' && localDef.context_length > 0
+            ? localDef.context_length
+            : localDef?.specs?.contextWindow && typeof localDef.specs.contextWindow === 'number'
+              ? localDef.specs.contextWindow
+              : (() => {
+                  const str = String(localDef?.specs?.contextWindow || '');
+                  const mMatch = str.match(/(\d+)\s*M/i);
+                  if (mMatch) return parseInt(mMatch[1]) * 1024 * 1024;
+                  const kMatch = str.match(/(\d+)\s*K/i);
+                  if (kMatch) return parseInt(kMatch[1]) * 1024;
+                  const n = parseInt(str);
+                  return !isNaN(n) && n > 0 ? n : 0;
+                })();
+
+        const configuredCtx =
+          nyxState.modelConfigs?.[modelToUse]?.contextSize ?? modelSettings?.contextSize ?? 0;
         const actualContextLimit = isLocalModel
-          ? (nyxState.modelConfigs?.[modelToUse]?.contextSize ??
-            modelSettings?.contextSize ??
-            32768)
-          : earlyCaps.contextWindow || (maxContextTokens > 0 ? maxContextTokens : 131072);
+          ? configuredCtx > 0
+            ? configuredCtx
+            : nativeModelCtx > 0
+              ? nativeModelCtx
+              : 4096
+          : configuredCtx > 0
+            ? configuredCtx
+            : earlyCaps.contextWindow || (maxContextTokens > 0 ? maxContextTokens : 131072);
+
+        // Calculate post-compaction tokens
+        const postCompactionHistoryTokens = estimateContextTokens(llmHistory);
+        const completionReserve = Math.min(1024, Math.floor(actualContextLimit * 0.15));
+        const postCompactionProjectedTotal =
+          postCompactionHistoryTokens + estimatedInput + completionReserve;
+
         const isContextTooSmall =
-          isLocalModel && actualContextLimit > 0 && actualContextLimit < 4096;
+          isLocalModel && actualContextLimit > 0 && actualContextLimit < 2048;
         const isContextNearLimit =
-          actualContextLimit > 0 && projectedTotal > actualContextLimit * 0.85;
+          actualContextLimit > 0 && postCompactionProjectedTotal > actualContextLimit * 0.95;
 
         if (isContextTooSmall) {
-          initialWarning = `> ⚠️ **Low Context Length**: The configured context length of the model is low (${actualContextLimit} tokens). Auto mode recommended.\n\n`;
+          toast.warning(
+            `Model context size is low (${actualContextLimit} tokens). Auto mode recommended.`
+          );
         } else if (isContextNearLimit) {
-          initialWarning = `> ⚠️ **Context Near Limit**: Total tokens (${projectedTotal}) are close to configured context size (${actualContextLimit} tokens).\n\n`;
+          toast.warning(
+            `Context window is near capacity (${postCompactionProjectedTotal}/${actualContextLimit} tokens).`
+          );
         }
 
-        const assistantMsg: ChatMessage = {
-          id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
-          role: 'assistant',
-          content: initialWarning,
-          timestamp: Date.now(),
-          status: 'loading',
-          model: modelToUse,
-        };
-
-        setActiveStreamMessage(assistantMsg);
-        activeStreamRef.current = assistantMsg;
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        const isReasoning = isReasoningModel(modelToUse);
         const resolvedProviderEarly2 = resolvedProviderEarly;
         const promptCat = detectPromptCategory(prompt);
 
-        // ── Sub-Microsecond Antigravity Intent Classifier (< 0.002ms) ──
-        const fastDecision = antigravityAgent.classifyIntentFast(prompt);
+        const resolvedNeedsSearch = promptCat === 'websearch' || isWebSearchPrompt(prompt);
+        const resolvedDiagramFormat = null;
 
-        let rustRouteDecision: any = fastDecision;
-        // Asynchronous non-blocking IPC refinement only for ambiguous long queries
-        if (fastDecision.intent === 'DirectChat' && prompt.length > 30) {
-          try {
-            const classifyPromise = invoke<any>('nyx_classify_intent', {
-              prompt,
-              apiKeyOverride: null,
-            });
-            const classifyTimeout = new Promise<null>((resolve) =>
-              setTimeout(() => resolve(null), 300)
-            );
-            const refined = await Promise.race([classifyPromise, classifyTimeout]);
-            if (refined && refined.intent) {
-              rustRouteDecision = refined;
-            }
-          } catch {
-            // Keep fastDecision
-          }
-        }
+        const hasExistingCodeContext =
+          !!options?.contextInjection?.includes('[EXISTING CODE FILE:') ||
+          !!options?.contextInjection?.includes('[CODE SNIPPET TO EDIT') ||
+          historyRef.current.some(
+            (m) =>
+              (m.artifacts && m.artifacts.some((a) => a.type === 'code' || a.language)) ||
+              (typeof m.content === 'string' && m.content.includes('```'))
+          );
 
-        // Merge resolved decisions
-        const resolvedIntent = rustRouteDecision?.intent ?? fastDecision.intent;
-        const resolvedNeedsSearch =
-          rustRouteDecision?.needs_web_search ?? fastDecision.needs_web_search;
-        const resolvedDiagramFormat =
-          rustRouteDecision?.target_diagram_format ?? fastDecision.target_diagram_format;
+        const isExplicitFileWrite =
+          /\b(?:save\s+to\s+file|write\s+to\s+file|create\s+(?:a\s+)?file\s+(?:at|named|called)|overwrite\s+file)\b/i.test(
+            prompt
+          );
+
+        const isCodeEditRequest =
+          /\b(?:fix|edit|modify|update|patch|refactor|change|correct|replace|rewrite|debug|resolve\s+(?:bug|issue|error)|redesign|tweak|adjust|improve|feature|build|implement|make\s+it\s+realistic|render|planet|rocket|element|canvas|layout)\b/i.test(
+            prompt
+          );
+
+        const isCoderMode = executionMode === 'coder';
 
         const isCodeReq =
-          promptCat === 'code' || resolvedIntent === 'AutonomousCoding' || isCodePrompt(prompt);
+          promptCat === 'code' ||
+          isCodePrompt(prompt, hasExistingCodeContext) ||
+          (hasExistingCodeContext && (isCodeEditRequest || prompt.trim().length > 3)) ||
+          isCodeEditRequest ||
+          isExplicitFileWrite ||
+          isCoderMode;
 
         const isExplicitSearchOrResearch =
-          !isCodeReq &&
-          (resolvedNeedsSearch ||
-            resolvedIntent === 'DeepResearch' ||
-            promptCat === 'websearch' ||
-            promptCat === 'research' ||
-            isWebSearchPrompt(prompt));
+          !isCodeReq && (resolvedNeedsSearch || isWebSearchPrompt(prompt));
 
         const isGreetingOrTrivial =
           /^(?:hi|hello|hey|greetings|howdy|yo|sup|thanks|thank you|good\s+(?:morning|afternoon|evening))\b/i.test(
             prompt.trim()
           ) || prompt.trim().length <= 3;
         const isPureDiagramSyntax =
-          /^(?:draw|create|generate|make|build)\s+(?:an?\s+)?(?:mermaid\s+)?(?:diagram|flowchart|sequence\s+diagram|class\s+diagram|state\s+diagram|er\s+diagram)\s+(?:of|for|between)?\s*(?:[A-Z0-9_\s]{1,20})$/i.test(
+          /^(?:draw|create|generate|make|build)\s+(?:an?\s+)?(?:diagram|flowchart|sequence\s+diagram|class\s+diagram|state\s+diagram|er\s+diagram|architecture\s+diagram)\s+(?:of|for|between)?\s*(?:[A-Z0-9_\s]{1,20})$/i.test(
             prompt.trim()
           );
 
@@ -673,102 +755,158 @@ export function useChatPipeline({
           (useAppStore.getState().webSearchEnabled ||
             webSearchEnabled ||
             isExplicitSearchOrResearch);
-        const cleanSearchQuery = extractCoreSubject(prompt) || prompt;
+        const cleanSearchQuery = distillSearchQuery(prompt) || prompt.trim();
+        const modelCaps = getModelCapabilities(modelToUse);
+        const supportsTools = !!modelCaps.supportsTools;
+        const isLocalModelRun = resolvedProviderEarly2 === 'nyx-native';
 
-        // Execute live web search or deep research DAG via Rust engine
+        // When web search is enabled, the pipeline coordinates web scraping for both
+        // local models (which run in offline llama.cpp engines without native web access) and non-tool models,
+        // retrieving the top sources and scraping webpage content into structured Markdown.
         let webSearchResults: string | undefined = undefined;
-        if (liveWebSearchEnabled) {
+        let retrievedWebImages: Array<{ name: string; url: string; engine: string }> = [];
+
+        const shouldRunPreflightSearch =
+          liveWebSearchEnabled && (!supportsTools || isLocalModelRun);
+
+        if (shouldRunPreflightSearch) {
+          if (abortCtrlRef.current?.signal.aborted) {
+            throw new Error('Aborted');
+          }
+          const preflightSearchActId = `act_search_${Date.now()}`;
           try {
             const storeState = useNyxStore.getState();
             const searchProvider = storeState.searchProvider || 'duckduckgo';
             const apiKey = storeState.apiKeys[searchProvider] || '';
 
+            if (activeStreamRef.current) {
+              const liveSearchAct: AgentActivityItem = {
+                id: preflightSearchActId,
+                type: 'search',
+                label: `Searching web: "${cleanSearchQuery.slice(0, 45)}..."`,
+                status: 'running',
+                timestamp: Date.now(),
+              };
+              activeStreamRef.current = {
+                ...activeStreamRef.current,
+                agentActivity: [liveSearchAct],
+              };
+              setActiveStreamMessage(activeStreamRef.current);
+            }
+
             const searchPromise = invoke<string>('search_web_command', {
               query: cleanSearchQuery,
-              numResults:
-                promptCat === 'research' ||
-                resolvedIntent === 'DeepResearch' ||
-                (rustRouteDecision?.search_depth ?? 0) >= 2
-                  ? 8
-                  : 5,
+              numResults: 5,
               searchProvider,
               apiKey,
             });
 
-            // Bounded timeout: 4-second max for quick web search
+            // Allow up to 12 seconds for deep multi-page content scraping
             const timeoutSearch = new Promise<string>((resolve) =>
-              setTimeout(() => resolve(''), 4000)
+              setTimeout(() => resolve(''), 12000)
             );
 
-            const searchRes = await Promise.race([searchPromise, timeoutSearch]).catch(() => '');
-            if (searchRes && typeof searchRes === 'string' && searchRes.trim().length > 0) {
-              webSearchResults = searchRes.trim();
-            }
-
-            const isMediaSearchExplicit =
-              /\b(?:pictures?|images?|photos?|videos?|youtube|clip|movie)\b/i.test(prompt) &&
-              !/\b(?:code|html|css|js|javascript|typescript|python|bug|fix|error|component|refactor|function|script|app|application|cursor|freeze|glitch)\b/i.test(
-                prompt
-              );
-
-            if (webSearchResults && isMediaSearchExplicit) {
-              const mediaMatch = webSearchResults.match(/<!-- NYX_MEDIA_DATA:\s*([\s\S]*?)\s*-->/);
-              if (mediaMatch && mediaMatch[1]) {
-                try {
-                  const parsedMedia = JSON.parse(mediaMatch[1]);
-                  if (
-                    parsedMedia.images &&
-                    Array.isArray(parsedMedia.images) &&
-                    parsedMedia.images.length > 0
-                  ) {
-                    assistantMsg.images = parsedMedia.images.map((img: any) => ({
-                      url: img.url,
-                      name: img.title,
-                      engine: img.source || 'DuckDuckGo Images',
-                    }));
-                  }
-                  if (
-                    parsedMedia.videos &&
-                    Array.isArray(parsedMedia.videos) &&
-                    parsedMedia.videos.length > 0
-                  ) {
-                    (assistantMsg as any).videos = parsedMedia.videos.map((vid: any) => ({
-                      url: vid.url,
-                      previewUrl: vid.thumbnail_url,
-                      title: vid.title,
-                      duration: vid.duration,
-                      source: 'YouTube',
-                      author: vid.uploader,
-                    }));
-                  }
-                  activeStreamRef.current = { ...assistantMsg };
-                  setActiveStreamMessage({ ...assistantMsg });
-                } catch (e) {
-                  console.warn('[useChatPipeline] Failed to parse NYX_MEDIA_DATA:', e);
-                }
+            const abortSearch = new Promise<string>((_, reject) => {
+              if (abortCtrlRef.current?.signal.aborted) {
+                reject(new Error('Aborted'));
+                return;
               }
+              abortCtrlRef.current?.signal.addEventListener(
+                'abort',
+                () => reject(new Error('Aborted')),
+                { once: true }
+              );
+            });
+
+            const searchRes = await Promise.race([searchPromise, timeoutSearch, abortSearch]).catch(
+              (err) => {
+                if (err?.message === 'Aborted') throw err;
+                return '';
+              }
+            );
+            if (searchRes && typeof searchRes === 'string' && searchRes.trim().length > 0) {
+              webSearchResults = searchRes
+                .trim()
+                .replace(/<!--\s*NYX_MEDIA_DATA:[\s\S]*?-->/gi, '')
+                .trim();
             }
-          } catch (searchErr) {
-            console.warn('[useChatPipeline] Live web search/research execution failed:', searchErr);
+
+            // Immediately mark preflight search activity as completed/finished so it never hangs in 'running'
+            if (activeStreamRef.current) {
+              const acts = (activeStreamRef.current.agentActivity || []).map((a) =>
+                a.id === preflightSearchActId
+                  ? {
+                      ...a,
+                      status: (webSearchResults ? 'completed' : 'error') as 'completed' | 'error',
+                      label: webSearchResults
+                        ? `DuckDuckGo Web Search: Top sources scraped`
+                        : `Live Web Search: Completed`,
+                    }
+                  : a
+              );
+              activeStreamRef.current = {
+                ...activeStreamRef.current,
+                agentActivity: acts,
+              };
+              setActiveStreamMessage(activeStreamRef.current);
+            }
+          } catch (searchErr: any) {
+            if (searchErr?.message === 'Aborted') throw searchErr;
+            console.warn('[useChatPipeline] Live web search execution failed:', searchErr);
+            if (activeStreamRef.current) {
+              const acts = (activeStreamRef.current.agentActivity || []).map((a) =>
+                a.id === preflightSearchActId
+                  ? { ...a, status: 'error' as const, label: 'Live Web Search: Failed' }
+                  : a
+              );
+              activeStreamRef.current = {
+                ...activeStreamRef.current,
+                agentActivity: acts,
+              };
+              setActiveStreamMessage(activeStreamRef.current);
+            }
           }
         }
 
-        const isPresentationReq = isPresentationPrompt(prompt);
-        const isCoderMode = executionMode === 'coder';
-        const isExplicitFileWrite =
-          /\b(?:save\s+to\s+file|write\s+to\s+file|create\s+(?:a\s+)?file\s+(?:at|named|called)|overwrite\s+file)\b/i.test(
-            prompt
-          );
+        // For local models or non-tool-use models: if user requested media/images, retrieve verified web images
+        const isMediaOrImageRequest = /\b(?:photos?|images?|pictures?|wallpaper|graphics?)\b/i.test(
+          prompt
+        );
 
-        const activeTools = isPresentationReq
-          ? TOOL_REGISTRY.filter((t) =>
-              ['web_search', 'search_images', 'search_videos', 'generate_image'].includes(t.name)
-            )
-          : isCoderMode || isExplicitFileWrite
-            ? TOOL_REGISTRY
-            : TOOL_REGISTRY.filter(
-                (t) => !['write_file', 'edit_file', 'run_terminal'].includes(t.name)
-              );
+        if (isMediaOrImageRequest && (!supportsTools || isLocalModelRun)) {
+          if (abortCtrlRef.current?.signal.aborted) {
+            throw new Error('Aborted');
+          }
+          try {
+            const mediaImgs = await searchTopicImages(cleanSearchQuery, 4);
+            if (abortCtrlRef.current?.signal.aborted) {
+              throw new Error('Aborted');
+            }
+            if (mediaImgs && mediaImgs.length > 0) {
+              retrievedWebImages = mediaImgs.map((img) => ({
+                name: img.title || cleanSearchQuery,
+                url: img.url,
+                engine: img.source || 'DuckDuckGo & Bing Web Images',
+              }));
+              if (activeStreamRef.current) {
+                const existing = activeStreamRef.current.images || [];
+                const merged = [...existing, ...retrievedWebImages];
+                activeStreamRef.current = {
+                  ...activeStreamRef.current,
+                  images: merged,
+                };
+                setActiveStreamMessage(activeStreamRef.current);
+              }
+            }
+          } catch (mediaErr: any) {
+            if (mediaErr?.message === 'Aborted') throw mediaErr;
+            console.warn('[useChatPipeline] Agentic media retrieval failed:', mediaErr);
+          }
+        }
+
+        const isDiagramReq = promptCat === 'diagram' || isDiagramPrompt(prompt);
+
+        const activeTools = TOOL_REGISTRY;
 
         const standardTools = activeTools.map((t) => ({
           type: 'function',
@@ -780,23 +918,9 @@ export function useChatPipeline({
         }));
 
         const eventName = `dag_update_${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)}`;
-        const targetPromptCategory: PromptCategory =
-          resolvedIntent === 'SlidevPresentation'
-            ? 'presentation'
-            : resolvedIntent === 'DiagramGeneration'
-              ? 'diagram'
-              : resolvedIntent === 'DeepResearch'
-                ? 'research'
-                : resolvedIntent === 'AutonomousCoding'
-                  ? 'code'
-                  : promptCat;
+        const targetPromptCategory: PromptCategory = promptCat;
 
         const dynamicDirectives: string[] = [];
-        if (resolvedDiagramFormat) {
-          dynamicDirectives.push(
-            `Target Diagram Format: ${resolvedDiagramFormat}. Produce production-grade, valid syntax for this format.`
-          );
-        }
 
         const chatContext: ChatContext = {
           conversationTone: 'casual',
@@ -806,83 +930,50 @@ export function useChatPipeline({
           localModel: resolvedProviderEarly2 === 'nyx-native',
           customSystemPrompt: modelSystemPrompts?.[modelToUse] || undefined,
           hasWebSearch: liveWebSearchEnabled,
-          hasDeepResearch: targetPromptCategory === 'research',
           promptCategory: targetPromptCategory,
           lightningDirectives: dynamicDirectives.length > 0 ? dynamicDirectives : undefined,
           availableTools:
             resolvedProviderEarly2 === 'nyx-native' ? (activeTools as any) : undefined,
         };
 
-        // Retrieve relevant semantic context (TurboVec Memory + Codebase RAG in parallel)
+        // ── Direct Prompt & Dynamic Stored Memory Retrieval ──
         let memoryContext: string | undefined = undefined;
-        try {
-          const needsCodebase =
-            promptCat === 'code' ||
-            resolvedIntent === 'AutonomousCoding' ||
-            /\b(?:code|function|class|file|repo|component|bug|fix|error|implement|refactor)\b/i.test(
-              prompt
-            );
-
-          const tvPromise = invoke<Array<{ text: string; metadata: string }>>(
-            'turbovec_search_chat_history',
-            { query: prompt, limit: 3 }
-          ).catch(() => []);
-
-          const cbPromise = needsCodebase
-            ? invoke<{
-                success: boolean;
-                results: Array<{ path: string; content: string; score: number }>;
-              }>('codebase_search_command', { query: prompt, limit: 3 }).catch(() => ({
-                success: false,
-                results: [],
-              }))
-            : Promise.resolve({ success: false, results: [] });
-
-          const timeoutGuard = new Promise<[any[], any]>((resolve) =>
-            setTimeout(() => resolve([[], { success: false, results: [] }]), 350)
+        const isExplicitRecall =
+          /\b(?:previous\s+response|last\s+response|what\s+did\s+you\s+(?:just\s+)?say|repeat\s+that|earlier\s+response|what\s+was\s+your\s+previous|remember\s+what\s+you\s+said)\b/i.test(
+            prompt
           );
-
-          const [tvResults, cbRes] = await Promise.race([
-            Promise.all([tvPromise, cbPromise]),
-            timeoutGuard,
-          ]);
-
-          const parts: string[] = [];
-          if (tvResults && tvResults.length > 0) {
-            const memSnippets = tvResults
-              .map(
-                (r: any, idx: number) => `[Memory Snippet ${idx + 1} (${r.metadata})]: ${r.text}`
-              )
-              .join('\n\n');
-            parts.push(`[TURBOVEC RELEVANT CHAT CONTEXT]:\n${memSnippets}`);
+        if (isExplicitRecall) {
+          try {
+            const mems = await invoke<any[]>('db_search_memories', {
+              query: finalPrompt,
+              limit: 5,
+            });
+            if (mems && mems.length > 0) {
+              memoryContext =
+                `[RECALLED RELEVANT MEMORIES]:\n` +
+                mems.map((m: any) => `- ${m.content || m.fact || m.text || ''}`).join('\n');
+            }
+          } catch {
+            // Non-critical memory fallback
           }
-
-          if (cbRes?.success && cbRes.results && cbRes.results.length > 0) {
-            const snippets = cbRes.results
-              .map((r: any) => `[File: ${r.path}]\n${r.content.substring(0, 1500)}`)
-              .join('\n\n');
-            parts.push(`[WORKSPACE CODEBASE RAG CONTEXT]:\n${snippets}`);
-          }
-
-          if (parts.length > 0) {
-            memoryContext = parts.join('\n\n');
-          }
-        } catch {
-          // Non-critical context retrieval fallback
         }
 
-        const promptResult = buildChatPrompts(
-          modelToUse,
-          chatContext,
-          finalPrompt,
-          llmHistory,
-          webSearchResults,
-          resolvedProviderEarly2,
-          undefined,
-          memoryContext
-        );
+        // Assemble direct user prompt without static persona bloat
+        let assembledUserPrompt = finalPrompt;
+        if (memoryContext) {
+          assembledUserPrompt = `${memoryContext}\n\n[User Request]:\n${finalPrompt}`;
+        }
+        if (webSearchResults) {
+          const formattedSearchResults = formatWebSearchContext(
+            webSearchResults,
+            isLocalModelRun,
+            actualContextLimit
+          );
+          assembledUserPrompt = `[Live Web Search Context — Top Sources]:\n${formattedSearchResults}\n\n${assembledUserPrompt}`;
+        }
 
-        let currentContent = initialWarning;
+        let accumulatedTurnContent = '';
+        let currentContent = '';
         let currentReasoning = '';
         let thinkStartIdx = -1;
         let thinkTagLen = 0;
@@ -911,7 +1002,9 @@ export function useChatPipeline({
               currentContent += filteredChunk;
 
               if (thinkStartIdx === -1) {
-                const match = currentContent.match(/<(?:think|thought|thinking)(?:\s+[^>]*?)?>/i);
+                const match = currentContent.match(
+                  /(?:<(?:think|thought|thinking)(?:\s+[^>]*?)?>|<\|channel\|?>thought\s*)/i
+                );
                 if (match) {
                   thinkStartIdx = match.index!;
                   thinkTagLen = match[0].length;
@@ -920,7 +1013,9 @@ export function useChatPipeline({
 
               if (thinkStartIdx !== -1 && thinkEndIdx === -1) {
                 const searchArea = currentContent.substring(thinkStartIdx + thinkTagLen);
-                const match = searchArea.match(/<\/(?:think|thought|thinking)>/i);
+                const match = searchArea.match(
+                  /(?:<\/(?:think|thought|thinking)>|<channel\|?>|<\|channel\|?>)/i
+                );
                 if (match) {
                   thinkEndIdx = thinkStartIdx + thinkTagLen + match.index!;
                   thinkEndTagLen = match[0].length;
@@ -930,9 +1025,11 @@ export function useChatPipeline({
 
               let displayContent = currentContent;
               let extractedReasoning = '';
-              const isModelReasoningType = isReasoningModel(modelToUse);
+              const reasoningEnabled = useAppStore.getState().reasoningEnabled ?? true;
+              const isReasoningActive =
+                reasoningEnabled && (isReasoningModel(modelToUse) || thinkStartIdx !== -1);
 
-              if (thinkStartIdx !== -1 && isModelReasoningType) {
+              if (thinkStartIdx !== -1 && isReasoningActive) {
                 const innerText =
                   thinkEndIdx !== -1
                     ? currentContent.substring(thinkStartIdx + thinkTagLen, thinkEndIdx).trim()
@@ -948,18 +1045,38 @@ export function useChatPipeline({
 
                 extractedReasoning = innerText;
                 displayContent = outsideText;
-              } else if (thinkStartIdx !== -1 && !isModelReasoningType) {
-                displayContent = currentContent
-                  .replace(/<\/?(?:think|thought|thinking)(?:\s+[^>]*?)?>/gi, '')
+              } else if (thinkStartIdx !== -1 && !isReasoningActive) {
+                const outsideText =
+                  thinkEndIdx !== -1
+                    ? (
+                        currentContent.substring(0, thinkStartIdx) +
+                        currentContent.substring(thinkEndIdx + thinkEndTagLen)
+                      ).trim()
+                    : currentContent.substring(0, thinkStartIdx).trim();
+                displayContent = outsideText
+                  .replace(
+                    /<\/?(?:think|thought|thinking|reasoning|antThinking|plan|reflection)(?:\s+[^>]*?)?>/gi,
+                    ''
+                  )
+                  .replace(/<\|channel\|?>thought\s*|<channel\|?>|<\|channel\|?>/gi, '')
+                  .replace(/\[\/?(?:THINKING|REASONING)\]/gi, '')
                   .trim();
                 extractedReasoning = '';
+              } else if (!isReasoningActive) {
+                displayContent = displayContent
+                  .replace(
+                    /<\/?(?:think|thought|thinking|reasoning|antThinking|plan|reflection)(?:\s+[^>]*?)?>/gi,
+                    ''
+                  )
+                  .replace(/<\|channel\|?>thought\s*|<channel\|?>|<\|channel\|?>/gi, '')
+                  .replace(/\[\/?(?:THINKING|REASONING)\]/gi, '');
               }
 
               if (now - lastUpdateTime > THROTTLE_MS) {
                 lastUpdateTime = now;
                 let currentThinkingTimeMs: number | undefined =
                   activeStreamRef.current.thinkingTimeMs;
-                if (extractedReasoning && isModelReasoningType) {
+                if (extractedReasoning && isReasoningActive) {
                   if (thinkEndIdx !== -1) {
                     currentThinkingTimeMs =
                       thinkingEndTime - (activeStreamRef.current.timestamp || Date.now());
@@ -969,17 +1086,26 @@ export function useChatPipeline({
                   }
                 }
 
-                const effectiveReasoning =
-                  extractedReasoning ||
-                  currentReasoning ||
-                  activeStreamRef.current?.reasoning ||
-                  undefined;
+                const effectiveReasoning = isReasoningActive
+                  ? extractedReasoning ||
+                    currentReasoning ||
+                    activeStreamRef.current?.reasoning ||
+                    undefined
+                  : undefined;
+
+                const fullDisplay = accumulatedTurnContent
+                  ? displayContent
+                    ? `${accumulatedTurnContent}\n\n${displayContent}`
+                    : accumulatedTurnContent
+                  : displayContent;
 
                 const updatedMsg = {
                   ...activeStreamRef.current,
-                  content: displayContent,
+                  content: fullDisplay,
                   reasoning: effectiveReasoning,
-                  thinkingTimeMs: currentThinkingTimeMs || activeStreamRef.current?.thinkingTimeMs,
+                  thinkingTimeMs: isReasoningActive
+                    ? currentThinkingTimeMs || activeStreamRef.current?.thinkingTimeMs
+                    : undefined,
                 };
                 activeStreamRef.current = updatedMsg;
                 setActiveStreamMessage(updatedMsg);
@@ -1034,8 +1160,13 @@ export function useChatPipeline({
                   (c) => c.function.name === toolName && c.status === 'running'
                 );
                 if (lastCallIdx >= 0) {
+                  const completeSig =
+                    (message.metadata as any)?.thoughtSignature ||
+                    (message.metadata as any)?.thought_signature ||
+                    calls[lastCallIdx].thoughtSignature;
                   calls[lastCallIdx] = {
                     ...calls[lastCallIdx],
+                    thoughtSignature: completeSig,
                     function: { name: toolName, arguments: toolArgsStr },
                     status: 'running' as const,
                   };
@@ -1043,100 +1174,6 @@ export function useChatPipeline({
                   activeStreamRef.current = updatedMsg;
                   setActiveStreamMessage(updatedMsg);
                 }
-
-                // Asynchronously execute the tool call via ToolExecutor
-                toolExecutor
-                  .executeSingle({
-                    id: toolId,
-                    name: toolName,
-                    arguments: parsedArgs,
-                    rawArguments: toolArgsStr,
-                  })
-                  .then((res) => {
-                    if (!activeStreamRef.current) return;
-
-                    // If media was returned, dynamically attach to the visual cards!
-                    if (toolName === 'search_images' && res.content?.images) {
-                      const currImgs = activeStreamRef.current.images || [];
-                      const newImgs = (res.content.images as any[]).map((img: any) => ({
-                        name: img.title || 'Image',
-                        url: img.url,
-                        engine: img.source || 'Web Search',
-                      }));
-                      const seen = new Set(currImgs.map((i: any) => i.url));
-                      const deduped = newImgs.filter((i: any) => !seen.has(i.url));
-                      activeStreamRef.current = {
-                        ...activeStreamRef.current,
-                        images: [...currImgs, ...deduped],
-                      };
-                    } else if (toolName === 'search_videos' && res.content?.videos) {
-                      const currVids = (activeStreamRef.current as any).videos || [];
-                      const newVids = (res.content.videos as any[]).map((vid: any) => ({
-                        url: vid.url,
-                        previewUrl: vid.previewUrl,
-                        title: vid.title,
-                        duration: vid.duration,
-                        author: vid.channel || vid.author,
-                        source: vid.source || 'YouTube',
-                      }));
-                      const seen = new Set(currVids.map((v: any) => v.url));
-                      const deduped = newVids.filter((v: any) => !seen.has(v.url));
-                      activeStreamRef.current = {
-                        ...activeStreamRef.current,
-                        videos: [...currVids, ...deduped],
-                      };
-                    } else if (toolName === 'generate_image' && res.content?.imageUrl) {
-                      const currImgs = activeStreamRef.current.images || [];
-                      activeStreamRef.current = {
-                        ...activeStreamRef.current,
-                        images: [
-                          ...currImgs,
-                          {
-                            name: res.content.prompt || 'Generated Image',
-                            url: res.content.imageUrl,
-                            engine: res.content.source || 'AI Generator',
-                          },
-                        ],
-                      };
-                    }
-
-                    // Update toolCall status in message
-                    if (activeStreamRef.current.toolCalls) {
-                      const updatedCalls = activeStreamRef.current.toolCalls.map((c) =>
-                        c.function.name === toolName && c.status === 'running'
-                          ? {
-                              ...c,
-                              status: (res.status === 'success' ? 'success' : 'error') as
-                                | 'success'
-                                | 'error',
-                              result:
-                                typeof res.content === 'string'
-                                  ? res.content
-                                  : JSON.stringify(res.content),
-                            }
-                          : c
-                      );
-                      activeStreamRef.current = {
-                        ...activeStreamRef.current,
-                        toolCalls: updatedCalls,
-                      };
-                      setActiveStreamMessage(activeStreamRef.current);
-                    }
-                  })
-                  .catch((err) => {
-                    if (activeStreamRef.current?.toolCalls) {
-                      const updatedCalls = activeStreamRef.current.toolCalls.map((c) =>
-                        c.function.name === toolName && c.status === 'running'
-                          ? { ...c, status: 'error' as const, result: String(err) }
-                          : c
-                      );
-                      activeStreamRef.current = {
-                        ...activeStreamRef.current,
-                        toolCalls: updatedCalls,
-                      };
-                      setActiveStreamMessage(activeStreamRef.current);
-                    }
-                  });
               }
 
               pendingToolName = undefined;
@@ -1182,13 +1219,29 @@ export function useChatPipeline({
                 currentContent += remaining;
               }
               if (activeStreamRef.current) {
-                const extracted = extractThinkingAndContent(currentContent, currentReasoning);
-                const finalReasoning = extracted.parsedReasoning || currentReasoning || undefined;
+                const reasoningEnabled = useAppStore.getState().reasoningEnabled;
+                const extracted = extractThinkingAndContent(currentContent, currentReasoning, {
+                  stripReasoning: !reasoningEnabled,
+                });
+                const finalReasoning = reasoningEnabled
+                  ? extracted.parsedReasoning || currentReasoning || undefined
+                  : undefined;
+
+                const fullContent = accumulatedTurnContent
+                  ? extracted.parsedContent
+                    ? `${accumulatedTurnContent}\n\n${extracted.parsedContent}`
+                    : accumulatedTurnContent
+                  : extracted.parsedContent;
+
+                const finalizedActs = (activeStreamRef.current.agentActivity || []).map((a) =>
+                  a.status === 'running' ? { ...a, status: 'completed' as const } : a
+                );
 
                 const updatedMsg = {
                   ...activeStreamRef.current,
-                  content: extracted.parsedContent,
+                  content: fullContent,
                   reasoning: finalReasoning,
+                  agentActivity: finalizedActs,
                 };
                 activeStreamRef.current = updatedMsg;
                 setActiveStreamMessage(updatedMsg);
@@ -1200,7 +1253,11 @@ export function useChatPipeline({
         };
 
         let onAbort = () => {
-          emit(`cancel_${eventName}`);
+          emit('cancel_chat_stream').catch(() => {});
+          emit(`cancel_${eventName}`).catch(() => {});
+          if (activeEventNameRef.current) {
+            emit(`cancel_${activeEventNameRef.current}`).catch(() => {});
+          }
         };
         const currentSignal = abortCtrlRef.current?.signal;
         currentSignal?.addEventListener('abort', onAbort);
@@ -1233,7 +1290,7 @@ export function useChatPipeline({
           }
 
           const backendMessages = filteredHistory.map((m, i) => {
-            const textContent = i === lastUserIdx ? promptResult.userPrompt : m.content;
+            const textContent = i === lastUserIdx ? assembledUserPrompt : m.content;
 
             let content: any = textContent;
             const msgSupportsVision = resolveSupportsVision(modelToUse, modelState);
@@ -1276,7 +1333,7 @@ export function useChatPipeline({
           });
 
           const resolvedProvider = detectProvider(modelToUse, currentProvider);
-          const finalSystemInstruction = promptResult.systemPrompt;
+          const finalSystemInstruction = modelSystemPrompts?.[modelToUse]?.trim() || undefined;
 
           if (abortCtrlRef.current?.signal.aborted) {
             throw new Error('Aborted');
@@ -1303,10 +1360,10 @@ export function useChatPipeline({
           const effectiveContextWindow = isLocalModel
             ? modelSettings?.contextSize && modelSettings.contextSize > 0
               ? modelSettings.contextSize
-              : 8192
-            : maxContextTokens > 0
-              ? maxContextTokens
-              : modelCaps.contextWindow || 128000;
+              : 32768
+            : modelSettings?.contextSize && modelSettings.contextSize > 0
+              ? modelSettings.contextSize
+              : modelCaps.contextWindow || (maxContextTokens > 0 ? maxContextTokens : 131072);
 
           const isReasoningUserActive = useAppStore.getState().reasoningEnabled ?? true;
           const geminiThinkingLevel = useAppStore.getState().geminiThinkingLevel || 'max';
@@ -1314,25 +1371,76 @@ export function useChatPipeline({
           const shouldEnableReasoning =
             isReasoningUserActive && modelCaps.supportsReasoning === true;
           const configuredMaxTokens = modelSettings?.maxTokens;
-          const finalMaxTokens = isLocalModel
-            ? configuredMaxTokens && configuredMaxTokens > 0
-              ? configuredMaxTokens
-              : Math.max(Math.min(4096, Math.floor(effectiveContextWindow * 0.5)), 2048)
-            : configuredMaxTokens && configuredMaxTokens > 0
-              ? configuredMaxTokens
-              : isPresentationReq
-                ? Math.max(modelCaps.maxOutputTokens || 16384, 16384)
-                : modelCaps.maxOutputTokens || 8192;
           const lowerModel = modelToUse.toLowerCase();
+          const isGemini = lowerModel.includes('gemini') || lowerModel.includes('gemma');
           const isGemma = lowerModel.includes('gemma');
           const isImageGen =
             lowerModel.includes('imagen') ||
             lowerModel.includes('flux') ||
             lowerModel.includes('diffusion');
-          // Pass tools whenever the model supports tools (both reasoning and non-reasoning models)
-          const shouldPassTools = modelCaps.supportsTools && !isImageGen && !isGreetingOrTrivial;
 
-          let enrichedSystemInstruction = finalSystemInstruction;
+          const finalMaxTokens = isLocalModel
+            ? configuredMaxTokens && configuredMaxTokens > 0
+              ? configuredMaxTokens
+              : Math.max(
+                  Math.min(32768, Math.floor(effectiveContextWindow - finalTotalInputTokens - 256)),
+                  4096
+                )
+            : configuredMaxTokens && configuredMaxTokens > 0
+              ? configuredMaxTokens
+              : modelCaps.maxOutputTokens || (isGemini ? 65536 : 16384);
+          // Pass tools only when coder mode is active and model supports tools
+          const shouldPassTools =
+            isCoderMode && modelCaps.supportsTools && !isImageGen && !isGreetingOrTrivial;
+
+          let enrichedSystemInstruction = finalSystemInstruction || '';
+          if (isCodeEditRequest || promptCat === 'code') {
+            const codeDirective = [
+              '\n[Code Generation & Delivery Guidelines]:',
+              '- When creating new code, applications, scripts, or components:',
+              '  * Provide the complete, functional, production-ready code directly within standard Markdown code blocks (e.g. ```html, ```javascript, ```typescript, ```python, etc.).',
+              '  * Never truncate code, omit sections with placeholder comments (e.g. "// rest of code here", "// implement later"), or stop mid-stream.',
+              '  * Always finalize all opening tags, functions, syntax, and closing brackets so the code runs immediately in the Live Preview and terminal.',
+              '- When modifying, editing, or fixing existing code provided in context:',
+              '  * NEVER rewrite the whole file or generate duplicate full code blocks.',
+              '  * You MUST output ONLY precise SEARCH/REPLACE blocks formatted as:',
+              '    <<<<<<< SEARCH',
+              '    // exact lines to replace from existing code',
+              '    =======',
+              '    // replacement lines',
+              '    >>>>>>>',
+              '  * Keep SEARCH blocks small and targeted to only the lines being modified.',
+              '  * Present your edits through <<<<<<< SEARCH / ======= / >>>>>>> blocks or complete code blocks.',
+            ].join('\n');
+            enrichedSystemInstruction = enrichedSystemInstruction
+              ? `${enrichedSystemInstruction}\n\n${codeDirective}`
+              : codeDirective.trim();
+          }
+
+          if (promptCat === 'diagram' || isDiagramReq) {
+            const diagramDirective = [
+              '\n[Diagram & Visual Graphic Generation]:',
+              '- The user is requesting a diagram, flowchart, sequence diagram, architecture map, or visual schematic.',
+              '- Output your diagram directly in a ```diagram-design code block containing clean, responsive SVG (e.g. ```diagram-design\\n<svg ...>...</svg>\\n```) or clean ```svg code block.',
+              '- Always ensure valid, well-structured SVG syntax that renders cleanly without error.',
+              '- Deliver the complete diagram directly within your response.',
+            ].join('\n');
+            enrichedSystemInstruction = enrichedSystemInstruction
+              ? `${enrichedSystemInstruction}\n\n${diagramDirective}`
+              : diagramDirective.trim();
+          }
+
+          if (webSearchResults) {
+            const researchDirective = [
+              '\n[Live Research & Web Context Guidelines]:',
+              '- Comprehensive web search and deep-scraped page content has already been retrieved and provided in the prompt context above.',
+              '- Ground your explanation, metrics, comparisons, and any diagrams directly in this retrieved research context.',
+              '- Deliver your complete findings and visual representations directly in this single streaming turn without making redundant web_search calls.',
+            ].join('\n');
+            enrichedSystemInstruction = enrichedSystemInstruction
+              ? `${enrichedSystemInstruction}\n\n${researchDirective}`
+              : researchDirective.trim();
+          }
 
           // ── Stream Directly from Selected Model ──
           // The selected model streams real thinking/reasoning tokens and output directly into chat without synthetic placeholder injection.
@@ -1342,10 +1450,20 @@ export function useChatPipeline({
           // streams the final output and code into the chat and Artifact Canvas.
           let toolIteration = 0;
           const maxToolIterations = 5;
+          let hasCreatedVisualInTurn = false;
 
           while (toolIteration < maxToolIterations) {
+            if (abortCtrlRef.current?.signal.aborted) break;
             toolIteration++;
             const currentIterationCalls = (activeStreamRef.current?.toolCalls || []).length;
+            const iterationEventName = `${eventName}_t${toolIteration}`;
+            activeEventNameRef.current = iterationEventName;
+            const iterationProgress = new Channel<any>();
+            iterationProgress.onmessage = (message) => {
+              if (onProgress.onmessage) {
+                onProgress.onmessage(message);
+              }
+            };
 
             const sharedReq = {
               provider: resolvedProvider,
@@ -1353,12 +1471,13 @@ export function useChatPipeline({
               api_key: getEffectiveApiKey(resolvedProvider, apiKeys) || '',
               endpoint_override: gatewayUrl || undefined,
               messages: backendMessages,
-              temperature: modelSettings?.temperature ?? 0.7,
+              temperature:
+                modelSettings?.temperature ?? (resolvedProvider === 'nyx-native' ? 0.2 : 0.7),
               top_p: modelSettings?.topP ?? 0.95,
               top_k: 40,
               repeat_penalty: 1.0,
               system_instruction: enrichedSystemInstruction || undefined,
-              event_name: eventName,
+              event_name: iterationEventName,
               max_tokens: finalMaxTokens,
               execution_mode: executionMode,
               reasoning_enabled: shouldEnableReasoning,
@@ -1368,18 +1487,18 @@ export function useChatPipeline({
                   : undefined,
               context_window: effectiveContextWindow,
               tools: shouldPassTools ? standardTools : undefined,
-              web_search_enabled: liveWebSearchEnabled && !isGemma,
+              web_search_enabled: liveWebSearchEnabled,
             };
 
             if (resolvedProvider === 'nyx-native') {
               await invoke('llm_local_stream_request', {
                 req: sharedReq,
-                onEvent: onProgress,
+                onEvent: iterationProgress,
               });
             } else {
               await invoke('llm_stream_request', {
                 req: sharedReq,
-                onEvent: onProgress,
+                onEvent: iterationProgress,
               });
             }
 
@@ -1394,14 +1513,30 @@ export function useChatPipeline({
 
             // Fallback: detect XML/prose tool calls emitted directly in text by open-weights models (e.g. Nemotron, Llama)
             if (newCalls.length === 0 && currentContent) {
-              const xmlToolMatch = currentContent.match(
-                /<(deep_research|calculate|web_search|search_images|read_file)>([\s\S]*?)<\/\1>/i
-              );
+              const knownToolNames = Array.from(
+                new Set([
+                  ...TOOL_REGISTRY.map((t) => t.name),
+                  'create_diagram',
+                  'diagram_design',
+                  'web_search',
+                  'search_images',
+                  'search_videos',
+                ])
+              ).join('|');
+              const xmlToolMatch =
+                currentContent.match(
+                  new RegExp(
+                    `<(?:tool_call>)?<(${knownToolNames})>([\\s\\S]*?)<\\/\\1>(?:<\\/tool_call>)?`,
+                    'i'
+                  )
+                ) ||
+                currentContent.match(new RegExp(`<(${knownToolNames})>([\\s\\S]*?)<\\/\\1>`, 'i'));
               if (xmlToolMatch) {
-                const toolName = xmlToolMatch[1].toLowerCase();
+                const rawName = xmlToolMatch[1].toLowerCase();
+                const toolName = rawName === 'diagram_design' ? 'create_diagram' : rawName;
                 const innerText = xmlToolMatch[2].trim();
                 let parsedArgs: Record<string, any> = { query: innerText };
-                if (toolName === 'calculate') parsedArgs = { expression: innerText };
+                if (toolName === 'create_diagram') parsedArgs = { prompt: innerText };
                 try {
                   if (innerText.startsWith('{')) parsedArgs = JSON.parse(innerText);
                 } catch {}
@@ -1426,19 +1561,39 @@ export function useChatPipeline({
             }
 
             if (newCalls.length > 0) {
+              // Loop breaker: if a visual artifact (diagram) has already been created in this turn,
+              // do not re-execute visual tools again in a redundant loop. Conclude tool calling.
+              const isRedundantVisualCall =
+                hasCreatedVisualInTurn &&
+                newCalls.some((c: any) =>
+                  ['create_diagram', 'diagram_design'].includes(c.function.name)
+                );
+              if (isRedundantVisualCall) {
+                break;
+              }
+
               // Execute all pending tool calls from this turn
               const results = await Promise.all(
                 newCalls.map(async (call: any) => {
+                  if (abortCtrlRef.current?.signal.aborted) {
+                    return {
+                      call,
+                      res: { status: 'error' as const, content: 'Aborted by user' },
+                    };
+                  }
                   let parsed = {};
                   try {
                     parsed = JSON.parse(call.function.arguments || '{}');
                   } catch {}
-                  const res = await toolExecutor.executeSingle({
-                    id: call.id,
-                    name: call.function.name,
-                    arguments: parsed,
-                    rawArguments: call.function.arguments,
-                  });
+                  const res = await toolExecutor.executeSingle(
+                    {
+                      id: call.id,
+                      name: call.function.name,
+                      arguments: parsed,
+                      rawArguments: call.function.arguments,
+                    },
+                    { signal: abortCtrlRef.current?.signal }
+                  );
                   return { call, res };
                 })
               );
@@ -1461,9 +1616,109 @@ export function useChatPipeline({
                   }
                   return c;
                 });
+
+                const newToolActivities: AgentActivityItem[] = results.map(({ call, res }) => {
+                  const isSearch = call.function.name.includes('search');
+                  const isSub = call.function.name === 'start_subagent';
+                  return {
+                    id: `act_${call.id || Date.now()}`,
+                    type: isSub ? 'subagent' : isSearch ? 'search' : 'tool',
+                    label: isSub
+                      ? `Subagent task executed`
+                      : isSearch
+                        ? `Live Web Search: ${call.function.name}`
+                        : `Executed Tool: ${call.function.name}`,
+                    status: res.status === 'success' ? 'completed' : 'error',
+                    timestamp: Date.now(),
+                    details: {
+                      args: call.function.arguments,
+                      output:
+                        typeof res.content === 'string'
+                          ? res.content.substring(0, 300)
+                          : res.content,
+                    },
+                  };
+                });
+
+                const currentActs = activeStreamRef.current.agentActivity || [];
+                const updatedActs = [...currentActs, ...newToolActivities];
+
+                let currImgs = activeStreamRef.current.images || [];
+                let currVids = (activeStreamRef.current as any).videos || [];
+                let currArts: ChatArtifact[] = activeStreamRef.current.artifacts || [];
+
+                for (const { call, res } of results) {
+                  const toolName = call.function.name;
+                  if (toolName === 'create_diagram' || toolName === 'diagram_design') {
+                    if (res.status === 'success') {
+                      hasCreatedVisualInTurn = true;
+                    }
+                    const contentObj =
+                      typeof res.content === 'object' && res.content !== null ? res.content : {};
+                    let diagramCode =
+                      contentObj.diagram || (typeof res.content === 'string' ? res.content : '');
+                    const diagramTitle = contentObj.title || 'Visual Diagram';
+
+                    // Strip markdown fences if the content is still wrapped
+                    // (defensive: tool now returns raw, but handle both paths)
+                    if (diagramCode) {
+                      const fenceMatch = diagramCode.match(
+                        /^```(?:diagram-design|diagram|svg|html)?\s*\n([\s\S]*?)\n```$/i
+                      );
+                      if (fenceMatch) diagramCode = fenceMatch[1].trim();
+                    }
+
+                    if (diagramCode) {
+                      currArts = [
+                        ...currArts.filter((a) => a.type !== 'diagram'),
+                        {
+                          id: `artifact-diagram-${Date.now()}`,
+                          type: 'diagram',
+                          title: diagramTitle,
+                          content: diagramCode,
+                          language: 'diagram-design',
+                        } as ChatArtifact,
+                      ];
+                    }
+                  } else if (toolName === 'search_images' && res.content?.images) {
+                    const newImgs = (res.content.images as any[]).map((img: any) => ({
+                      name: img.title || 'Image',
+                      url: img.url,
+                      engine: img.source || 'Web Search',
+                    }));
+                    const seen = new Set(currImgs.map((i: any) => i.url));
+                    const deduped = newImgs.filter((i: any) => !seen.has(i.url));
+                    currImgs = [...currImgs, ...deduped];
+                  } else if (toolName === 'search_videos' && res.content?.videos) {
+                    const newVids = (res.content.videos as any[]).map((vid: any) => ({
+                      url: vid.url,
+                      previewUrl: vid.previewUrl,
+                      title: vid.title,
+                      duration: vid.duration,
+                      author: vid.channel || vid.author,
+                      source: vid.source || 'YouTube',
+                    }));
+                    const seen = new Set(currVids.map((v: any) => v.url));
+                    const deduped = newVids.filter((v: any) => !seen.has(v.url));
+                    currVids = [...currVids, ...deduped];
+                  }
+                }
+
+                const diagramArt = currArts.find((a) => a.type === 'diagram');
+                const fallbackStreamContent =
+                  activeStreamRef.current.content ||
+                  (diagramArt
+                    ? `Here is the visual diagram for **${diagramArt.title}**:\n\n\`\`\`diagram-design\n${diagramArt.content}\n\`\`\``
+                    : '');
+
                 const updatedMsg: ChatMessage = {
                   ...activeStreamRef.current,
+                  content: fallbackStreamContent,
                   toolCalls: updatedCalls,
+                  agentActivity: updatedActs,
+                  artifacts: currArts.length > 0 ? currArts : activeStreamRef.current.artifacts,
+                  images: currImgs.length > 0 ? currImgs : activeStreamRef.current.images,
+                  videos: currVids.length > 0 ? currVids : (activeStreamRef.current as any).videos,
                 };
                 activeStreamRef.current = updatedMsg;
                 setActiveStreamMessage(updatedMsg);
@@ -1477,27 +1732,52 @@ export function useChatPipeline({
                   ...newCalls.map((c: any) => ({
                     type: 'tool_call',
                     id: c.id,
-                    thoughtSignature: c.thoughtSignature || c.thought_signature,
+                    ...(c.thoughtSignature || c.thought_signature
+                      ? { thoughtSignature: c.thoughtSignature || c.thought_signature }
+                      : {}),
                     function: { name: c.function.name, arguments: c.function.arguments },
                   })),
                 ] as any,
               });
 
               for (const { call, res } of results) {
+                let toolContentStr: string;
+                if (
+                  (call.function.name === 'create_diagram' ||
+                    call.function.name === 'diagram_design') &&
+                  res.status === 'success'
+                ) {
+                  const contentObj =
+                    typeof res.content === 'object' && res.content !== null ? res.content : {};
+                  const diagramTitle = contentObj.title || 'Visual Diagram';
+                  toolContentStr = JSON.stringify({
+                    status: 'success',
+                    title: diagramTitle,
+                    message: `Diagram "${diagramTitle}" was successfully generated and rendered directly in the visual viewer. Do not re-invoke create_diagram. Please provide a concise 1-2 sentence response summarizing the key insights.`,
+                  });
+                } else {
+                  toolContentStr =
+                    typeof res.content === 'string' ? res.content : JSON.stringify(res.content);
+                }
+
                 backendMessages.push({
                   role: 'tool' as any,
                   content: [
                     {
                       tool_call_id: call.id,
                       name: call.function.name,
-                      content:
-                        typeof res.content === 'string' ? res.content : JSON.stringify(res.content),
+                      content: toolContentStr,
                     },
                   ] as any,
                 });
               }
 
               // Reset tool parsing buffers and accumulators for the next model synthesis turn
+              if (currentContent.trim()) {
+                accumulatedTurnContent = accumulatedTurnContent
+                  ? `${accumulatedTurnContent}\n\n${currentContent}`
+                  : currentContent;
+              }
               pendingToolName = undefined;
               pendingToolId = undefined;
               pendingToolArgs = '';
@@ -1518,6 +1798,9 @@ export function useChatPipeline({
         const isAborted = abortCtrlRef.current?.signal.aborted;
 
         if (activeStreamRef.current) {
+          const reasoningEnabled = useAppStore.getState().reasoningEnabled ?? true;
+          const isReasoningActive =
+            reasoningEnabled && (isReasoningModel(modelToUse) || thinkStartIdx !== -1);
           let displayContent = currentContent;
           let extractedReasoning = '';
           if (thinkStartIdx !== -1) {
@@ -1529,117 +1812,127 @@ export function useChatPipeline({
                 currentContent.substring(0, thinkStartIdx) +
                 currentContent.substring(thinkEndIdx + thinkEndTagLen)
               ).trim();
-              displayContent = outsideText || extractedReasoning;
+              displayContent = outsideText;
             } else {
               extractedReasoning = currentContent.substring(thinkStartIdx + thinkTagLen).trim();
               const outsideText = currentContent.substring(0, thinkStartIdx).trim();
-              displayContent = outsideText || extractedReasoning;
+              displayContent = outsideText;
             }
           }
-          const combinedReasoning =
-            currentReasoning +
-            (extractedReasoning ? (currentReasoning ? '\n' : '') + extractedReasoning : '');
-          const parsedFinal = extractThinkingAndContent(currentContent, combinedReasoning);
-          const finalReasoning = parsedFinal.parsedReasoning || combinedReasoning;
-          const finalContent =
+          const combinedReasoning = isReasoningActive
+            ? currentReasoning +
+              (extractedReasoning ? (currentReasoning ? '\n' : '') + extractedReasoning : '')
+            : '';
+          const parsedFinal = extractThinkingAndContent(
+            currentContent,
+            isReasoningActive ? combinedReasoning : undefined,
+            { stripReasoning: !isReasoningActive }
+          );
+          const finalReasoning = isReasoningActive
+            ? parsedFinal.parsedReasoning || combinedReasoning
+            : undefined;
+          const rawFinalText =
             parsedFinal.parsedContent.trim() ||
             displayContent.trim() ||
             activeStreamRef.current.content;
+          let finalContent = accumulatedTurnContent
+            ? rawFinalText
+              ? `${accumulatedTurnContent}\n\n${rawFinalText}`
+              : accumulatedTurnContent
+            : rawFinalText;
 
-          const isPresentationReq = isPresentationPrompt(prompt);
           const isDiagramReq = isDiagramPrompt(prompt);
           let msgArtifacts = activeStreamRef.current.artifacts
             ? [...activeStreamRef.current.artifacts]
             : [];
 
-          if (isPresentationReq || isSlidevContent(finalContent)) {
-            const slidevDeck = isSlidevContent(finalContent)
-              ? finalContent
-              : compileResponseToSlidev(finalContent, prompt);
-
-            const cleanTitle = (prompt || 'Interactive Presentation')
-              .replace(
-                /(?:generate|create|make|build|write|give\s+me|show\s+me|a\s+ppt\s+for|a\s+ppt\s+of|ppt\s+for|ppt\s+of|presentation\s+for|presentation\s+of|presentation\s+on|slides\s+for|slides\s+on)/gi,
-                ''
-              )
-              .replace(/\b(?:ppt|presentation|powerpoint|slides|slide\s*deck)\b/gi, '')
-              .trim();
-            const deckTitle = cleanTitle
-              ? cleanTitle
-                  .split(/\s+/)
-                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                  .join(' ')
-              : 'Presentation Deck';
-
-            if (
-              !msgArtifacts.some(
-                (a) =>
-                  a.type === 'slidev' ||
-                  a.type === 'presentation' ||
-                  (a as any).language === 'slidev'
-              )
-            ) {
-              msgArtifacts.push({
-                id: `artifact-slidev-${Date.now()}`,
-                type: 'slidev',
-                title: deckTitle,
-                content: slidevDeck,
-                language: 'slidev',
-              } as ChatArtifact);
+          if (!finalContent.trim()) {
+            const diagramArt = msgArtifacts.find((a) => a.type === 'diagram');
+            if (diagramArt) {
+              finalContent = `Here is the visual diagram for **${diagramArt.title}**:\n\n\`\`\`diagram-design\n${diagramArt.content}\n\`\`\``;
             }
           }
 
-          // Diagram Artifact Extraction — mermaid only.
-          // HTML/SVG code fences render in the CodeBlock iframe and must NOT
-          // create a diagram artifact (which would auto-open the ArtifactCanvas).
-          // Only pure mermaid syntax — either an explicit ```mermaid fence or a
-          // bare unfenced mermaid block — becomes a diagram artifact.
-          const mermaidFenceMatch = finalContent.match(/```(?:mermaid|diagram)\s*\n([\s\S]*?)```/i);
-          const hasRawMermaid =
-            !finalContent.includes('<svg') &&
-            !finalContent.match(
-              /```(?:typescript|javascript|python|rust|go|java|c\+\+|cpp|sql|bash|sh|yaml|json|css|tsx|jsx|html|svg)\s*\n/
-            ) &&
-            /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|pie|mindmap|erDiagram|gitGraph|C4Context|C4Container|C4Component|gantt|quadrantChart|sankey(?:-beta)?|xychart(?:-beta)?|block(?:-beta)?|timeline|journey)\b/im.test(
-              finalContent
-            );
-
+          // Diagram Artifact Extraction — diagram-design / SVG
           let diagramCode = '';
-          let diagramLang = 'mermaid';
+          let diagramLang = 'diagram-design';
 
-          if (mermaidFenceMatch) {
-            diagramCode = mermaidFenceMatch[1].trim();
-            diagramLang = 'mermaid';
-          } else if (hasRawMermaid) {
-            diagramCode = finalContent.trim();
-            diagramLang = 'mermaid';
+          const diagramDesignMatch = finalContent.match(
+            /```(?:diagram-design|diagram)\s*\n([\s\S]*?)```/i
+          );
+          const svgMatch =
+            finalContent.match(/```svg\s*\n([\s\S]*?)```/i) ||
+            finalContent.match(/(<svg[\s\S]*?<\/svg>)/i);
+          if (diagramDesignMatch) {
+            diagramCode = diagramDesignMatch[1].trim();
+            diagramLang = 'diagram-design';
+          } else if (svgMatch) {
+            diagramCode = (svgMatch[1] || svgMatch[0]).trim();
+            diagramLang = 'diagram-design';
           }
 
-          if (
-            diagramCode &&
-            !msgArtifacts.some((a) => a.type === 'diagram' || a.language === 'mermaid')
-          ) {
-            const cleanTitle = (prompt || 'Architecture Diagram')
+          if (diagramCode && !msgArtifacts.some((a) => a.type === 'diagram')) {
+            const cleanTitle = (prompt || 'Visual Graphic')
               .replace(
-                /(?:generate|create|make|build|draw|show|give\s+me|a\s+diagram\s+for|diagram\s+of|diagram\s+for|mermaid\s+diagram\s+of|mermaid\s+for)/gi,
+                /(?:generate|create|make|build|draw|plot|show|give\s+me|a\s+diagram\s+for|diagram\s+of|diagram\s+for|a\s+graph\s+for|graph\s+of|graph\s+for|chart\s+for|chart\s+of)/gi,
                 ''
               )
-              .replace(/\b(?:diagram|mermaid|flowchart|architecture|system)\b/gi, '')
+              .replace(/\b(?:diagram|flowchart|architecture|system|graph|chart|plot)\b/gi, '')
               .trim();
             const diagramTitle = cleanTitle
               ? cleanTitle
                   .split(/\s+/)
                   .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                  .join(' ') + ' Diagram'
-              : 'Architecture Diagram';
+                  .join(' ')
+              : 'Visual Graphic';
+
+            const prevDiagramArt = historyRef.current
+              .slice()
+              .reverse()
+              .flatMap((m) => m.artifacts || [])
+              .find((a) => a.type === 'diagram');
+            const diagramArtifactId = prevDiagramArt
+              ? prevDiagramArt.id
+              : `artifact-diagram-${Date.now()}`;
 
             msgArtifacts.push({
-              id: `artifact-diagram-${Date.now()}`,
+              id: diagramArtifactId,
               type: 'diagram',
               title: diagramTitle,
               content: diagramCode,
               language: diagramLang,
             } as ChatArtifact);
+          }
+
+          // In-Place Search-Replace Code Artifact Resolution
+          if (options?.contextInjection) {
+            const baseCodeMatch = options.contextInjection.match(
+              /(?:\[EXISTING CODE FILE:[ \t]*"([^"]*)"\]|\[ACTIVE CODE BLOCK:[ \t]*"([^"]*)"\])\s*```([a-zA-Z0-9_-]*)\s*\n([\s\S]*?)\n```/i
+            );
+            if (baseCodeMatch) {
+              const baseTitle = baseCodeMatch[1] || baseCodeMatch[2] || 'Code Block';
+              const baseLang = baseCodeMatch[3] || 'text';
+              const baseCode = baseCodeMatch[4];
+
+              const patchResult = applySearchReplace(baseCode, finalContent);
+              if (patchResult.appliedCount > 0) {
+                const prevCodeArt = historyRef.current
+                  .slice()
+                  .reverse()
+                  .flatMap((m) => m.artifacts || [])
+                  .find((a) => a.type === 'code');
+                const codeArtifactId = prevCodeArt ? prevCodeArt.id : `artifact-code-${Date.now()}`;
+
+                msgArtifacts = msgArtifacts.filter((a) => a.type !== 'code');
+                msgArtifacts.push({
+                  id: codeArtifactId,
+                  type: 'code',
+                  title: baseTitle,
+                  content: patchResult.code,
+                  language: baseLang,
+                } as ChatArtifact);
+              }
+            }
           }
 
           const completedToolCalls = activeStreamRef.current.toolCalls?.map((c) =>
@@ -1661,13 +1954,24 @@ export function useChatPipeline({
 
           const extractedFinal = extractThinkingAndContent(
             finalContent,
-            finalReasoning || activeStreamRef.current.reasoning || ''
+            isReasoningActive
+              ? finalReasoning || activeStreamRef.current.reasoning || ''
+              : undefined,
+            { stripReasoning: !isReasoningActive }
           );
+          const finalizedAgentActs = (activeStreamRef.current.agentActivity || []).map((a) =>
+            a.status === 'running' ? { ...a, status: 'completed' as const } : a
+          );
+
           const finalMsg: ChatMessage = {
             ...activeStreamRef.current,
             content: extractedFinal.parsedContent,
-            reasoning: extractedFinal.parsedReasoning || undefined,
-            thinkingTimeMs: currentThinkingTimeMs,
+            reasoning: isReasoningActive ? extractedFinal.parsedReasoning || undefined : undefined,
+            thinkingTimeMs: isReasoningActive ? currentThinkingTimeMs : undefined,
+            agentActivity:
+              finalizedAgentActs.length > 0
+                ? finalizedAgentActs
+                : activeStreamRef.current.agentActivity,
             toolCalls: completedToolCalls?.length
               ? completedToolCalls
               : activeStreamRef.current.toolCalls,
@@ -1684,77 +1988,41 @@ export function useChatPipeline({
           const finalHistory = [...historyRef.current];
           const lastIdx = finalHistory.length - 1;
           if (lastIdx >= 0 && finalHistory[lastIdx]?.role === 'assistant') {
-            const isPresentationReq = isPresentationPrompt(prompt);
             const isDiagramReq = isDiagramPrompt(prompt);
             const existingContent = (finalHistory[lastIdx].content as string) || '';
             let existingArtifacts = finalHistory[lastIdx].artifacts
               ? [...finalHistory[lastIdx].artifacts]
               : [];
-            if (
-              (isPresentationReq || isSlidevContent(existingContent)) &&
-              !existingArtifacts.some((a) => a.type === 'slidev' || a.type === 'presentation')
-            ) {
-              const slidevDeck = isSlidevContent(existingContent)
-                ? existingContent
-                : compileResponseToSlidev(existingContent, prompt);
-              const cleanTitle = (prompt || 'Interactive Presentation')
-                .replace(
-                  /(?:generate|create|make|build|write|give\s+me|show\s+me|a\s+ppt\s+for|a\s+ppt\s+of|ppt\s+for|ppt\s+of|presentation\s+for|presentation\s+of|presentation\s+on|slides\s+for|slides\s+on)/gi,
-                  ''
-                )
-                .replace(/\b(?:ppt|presentation|powerpoint|slides|slide\s*deck)\b/gi, '')
-                .trim();
-              const deckTitle = cleanTitle
-                ? cleanTitle
-                    .split(/\s+/)
-                    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                    .join(' ')
-                : 'Presentation Deck';
-              existingArtifacts.push({
-                id: `artifact-slidev-${Date.now()}`,
-                type: 'slidev',
-                title: deckTitle,
-                content: slidevDeck,
-                language: 'slidev',
-              } as ChatArtifact);
-            }
 
-            // Diagram Artifact Extraction — mermaid only.
-            // HTML/SVG code fences render in the CodeBlock iframe and must NOT
-            // create a diagram artifact (which would auto-open the ArtifactCanvas).
-            const mermaidFenceMatch = existingContent.match(
-              /```(?:mermaid|diagram)\s*\n([\s\S]*?)```/i
+            // Diagram Artifact Extraction — diagram-design / SVG only.
+            const diagramFenceMatch = existingContent.match(
+              /```(?:diagram-design|diagram|svg)\s*\n([\s\S]*?)```/i
             );
-            const hasRawMermaid =
-              !existingContent.includes('<svg') &&
-              !existingContent.match(
-                /```(?:typescript|javascript|python|rust|go|java|c\+\+|cpp|sql|bash|sh|yaml|json|css|tsx|jsx|html|svg)\s*\n/
-              ) &&
-              /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|pie|mindmap|erDiagram|gitGraph|C4Context|C4Container|C4Component|gantt|quadrantChart|sankey(?:-beta)?|xychart(?:-beta)?|block(?:-beta)?|timeline|journey)\b/im.test(
-                existingContent
-              );
+            const rawSvgMatch =
+              !diagramFenceMatch &&
+              existingContent.includes('<svg') &&
+              existingContent.includes('</svg>')
+                ? existingContent.match(/<svg[\s\S]*?<\/svg>/i)
+                : null;
 
             let diagramCode = '';
-            let diagramLang = 'mermaid';
+            let diagramLang = 'diagram-design';
 
-            if (mermaidFenceMatch) {
-              diagramCode = mermaidFenceMatch[1].trim();
-              diagramLang = 'mermaid';
-            } else if (hasRawMermaid) {
-              diagramCode = existingContent.trim();
-              diagramLang = 'mermaid';
+            if (diagramFenceMatch) {
+              diagramCode = diagramFenceMatch[1].trim();
+              diagramLang = 'diagram-design';
+            } else if (rawSvgMatch) {
+              diagramCode = rawSvgMatch[0].trim();
+              diagramLang = 'svg';
             }
 
-            if (
-              diagramCode &&
-              !existingArtifacts.some((a) => a.type === 'diagram' || a.language === 'mermaid')
-            ) {
+            if (diagramCode && !existingArtifacts.some((a) => a.type === 'diagram')) {
               const cleanTitle = (prompt || 'Architecture Diagram')
                 .replace(
-                  /(?:generate|create|make|build|draw|show|give\s+me|a\s+diagram\s+for|diagram\s+of|diagram\s+for|mermaid\s+diagram\s+of|mermaid\s+for)/gi,
+                  /(?:generate|create|make|build|draw|show|give\s+me|a\s+diagram\s+for|diagram\s+of|diagram\s+for)/gi,
                   ''
                 )
-                .replace(/\b(?:diagram|mermaid|flowchart|architecture|system)\b/gi, '')
+                .replace(/\b(?:diagram|flowchart|architecture|system)\b/gi, '')
                 .trim();
               const diagramTitle = cleanTitle
                 ? cleanTitle
@@ -1763,13 +2031,55 @@ export function useChatPipeline({
                     .join(' ') + ' Diagram'
                 : 'Architecture Diagram';
 
+              const prevDiagramArt = finalHistory
+                .slice()
+                .reverse()
+                .flatMap((m) => m.artifacts || [])
+                .find((a) => a.type === 'diagram');
+              const diagramArtifactId = prevDiagramArt
+                ? prevDiagramArt.id
+                : `artifact-diagram-${Date.now()}`;
+
               existingArtifacts.push({
-                id: `artifact-diagram-${Date.now()}`,
+                id: diagramArtifactId,
                 type: 'diagram',
                 title: diagramTitle,
                 content: diagramCode,
                 language: diagramLang,
               } as ChatArtifact);
+            }
+
+            // In-Place Search-Replace Code Artifact Resolution
+            if (options?.contextInjection) {
+              const baseCodeMatch = options.contextInjection.match(
+                /(?:\[EXISTING CODE FILE:[ \t]*"([^"]*)"\]|\[ACTIVE CODE BLOCK:[ \t]*"([^"]*)"\])\s*```([a-zA-Z0-9_-]*)\s*\n([\s\S]*?)\n```/i
+              );
+              if (baseCodeMatch) {
+                const baseTitle = baseCodeMatch[1] || baseCodeMatch[2] || 'Code Block';
+                const baseLang = baseCodeMatch[3] || 'text';
+                const baseCode = baseCodeMatch[4];
+
+                const patchResult = applySearchReplace(baseCode, existingContent);
+                if (patchResult.appliedCount > 0) {
+                  const prevCodeArt = finalHistory
+                    .slice()
+                    .reverse()
+                    .flatMap((m) => m.artifacts || [])
+                    .find((a) => a.type === 'code');
+                  const codeArtifactId = prevCodeArt
+                    ? prevCodeArt.id
+                    : `artifact-code-${Date.now()}`;
+
+                  existingArtifacts = existingArtifacts.filter((a) => a.type !== 'code');
+                  existingArtifacts.push({
+                    id: codeArtifactId,
+                    type: 'code',
+                    title: baseTitle,
+                    content: patchResult.code,
+                    language: baseLang,
+                  } as ChatArtifact);
+                }
+              }
             }
 
             const updatedLast = await inlineOfflineImagesInMessage({
@@ -1784,26 +2094,6 @@ export function useChatPipeline({
           historyRef.current = finalHistory;
         }
         persistHistory(historyRef.current);
-
-        // ── Fire-and-forget episodic memory extraction (non-blocking) ──
-        // Extracts entities and summaries from the conversation turn and stores
-        // them in SQLite episodic_memories + memory_entities tables via Rust.
-        try {
-          const convoId =
-            historyRef.current[0]?.id ||
-            (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString());
-          const assistantTurn =
-            (historyRef.current[historyRef.current.length - 1]?.content as string) || '';
-          if (assistantTurn.trim().length > 20) {
-            invoke('extract_turn_memory', {
-              conversationId: convoId,
-              userTurn: prompt.substring(0, 4000),
-              assistantTurn: assistantTurn.substring(0, 8000),
-            }).catch(() => {}); // Non-critical — ignore errors silently
-          }
-        } catch {
-          /* non-critical */
-        }
 
         setTokensUsed((prev) => prev + estimatedInput);
 
@@ -1851,7 +2141,11 @@ export function useChatPipeline({
       } finally {
         setIsSupervising(false);
         abortCtrlRef.current = null;
+        activeEventNameRef.current = null;
         onProgress.onmessage = (): void => {};
+        if (isLocalModel && images && images.length > 0) {
+          invoke('unload_multimodal_support').catch(() => {});
+        }
       }
     },
     [

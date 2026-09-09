@@ -32,7 +32,7 @@ pub async fn fetch_page_content(url: &str, max_chars: usize) -> Option<String> {
     }
 
     let resp = match tokio::time::timeout(
-        Duration::from_millis(2500),
+        Duration::from_millis(5000),
         HTTP_CLIENT
             .get(url)
             .header("Accept", "text/html,application/xhtml+xml")
@@ -122,6 +122,19 @@ pub async fn fetch_page_html_command(url: String) -> Result<(String, bool), Stri
 
     let html = res.text().await.map_err(|e| e.to_string())?;
     Ok((html, is_raw))
+}
+
+/// Extracts clean text content from a URL, stripping boilerplate scripts/styles,
+/// up to `max_chars` (defaults to 30,000 chars for high-context agent synthesis).
+#[tauri::command]
+pub async fn fetch_page_content_command(
+    url: String,
+    max_chars: Option<usize>,
+) -> Result<String, String> {
+    let limit = max_chars.unwrap_or(30_000);
+    fetch_page_content(&url, limit)
+        .await
+        .ok_or_else(|| format!("Could not fetch readable text content from: {}", url))
 }
 
 pub fn extract_clean_text(html: &str, base_url: &str) -> String {
@@ -295,11 +308,10 @@ fn walk_and_clean_node(
 
 #[tauri::command]
 pub async fn fetch_multiple_pages_command(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     urls: Vec<String>,
     max_chars_per_page: Option<usize>,
 ) -> Result<Vec<(String, Option<String>)>, String> {
-    use tauri::Manager;
     let limit = max_chars_per_page.unwrap_or(100_000);
     let mut unique_urls = Vec::new();
     let mut domain_counts = std::collections::HashMap::new();
@@ -328,21 +340,5 @@ pub async fn fetch_multiple_pages_command(
         .collect();
 
     let results = futures_util::future::join_all(fetch_futs).await;
-
-    // Non-blocking background vector embedding & storage in TurboVec
-    if let Some(tv_store) = app.try_state::<std::sync::Arc<crate::rag::turbovec_store::TurbovecStore>>() {
-        let tv_store_clone = tv_store.inner().clone();
-        let items: Vec<(String, String)> = results.iter()
-            .filter_map(|(u, c)| c.as_ref().map(|text| (u.clone(), text.clone())))
-            .collect();
-
-        tokio::spawn(async move {
-            for (url, content) in items {
-                let meta = format!("web|{}", url);
-                tv_store_clone.add_document_chunks(&content, &meta).await;
-            }
-        });
-    }
-
     Ok(results)
 }

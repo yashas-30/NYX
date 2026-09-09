@@ -16,7 +16,6 @@
   "dependencies": {
     "@animateicons/react": "^0.3.3",
     "@base-ui/react": "^1.5.0",
-    "@codesandbox/sandpack-react": "^2.20.0",
     "@google/genai": "^2.19.0",
     "@langchain/core": "^1.2.9",
     "@langchain/google-genai": "^2.3.0",
@@ -48,9 +47,7 @@
     "katex": "^0.17.0",
     "localforage": "^1.10.0",
     "lucide-react": "^1.17.0",
-    "mermaid": "^11.15.0",
     "monaco-editor": "^0.55.1",
-    "pptxgenjs": "^4.0.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-hotkeys-hook": "^5.3.2",
@@ -74,12 +71,9 @@
   "devDependencies": {
     "@nyx/config": "workspace:*",
     "@playwright/test": "^1.60.0",
-    "@slidev/cli": "^52.19.1",
-    "@slidev/theme-default": "^0.25.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@types/babel__standalone": "^7.1.9",
     "@types/dompurify": "^3.2.0",
     "@types/katex": "^0.16.8",
     "@types/react": "^19.2.17",
@@ -99,8 +93,5 @@
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0",
     "vitest": "^4.1.8"
-  },
-  "optionalDependencies": {
-    "@xenova/transformers": "^2.17.2"
   }
 }

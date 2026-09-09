@@ -11,7 +11,7 @@ use tokio_util::io::StreamReader;
 use futures_util::TryStreamExt;
 use crate::llm::types::{UnifiedRequest, StreamChunkPayload, sanitize_messages_for_api};
 use super::common::{
-    build_fast_http_client, budget_messages, validate_key_format,
+    build_fast_http_client, budget_messages, validate_key_format, resolve_context_budget_chars,
     CONTEXT_BUDGET_CHARS, MAX_TOKENS_DEFAULT, QuotaResponse, KEY_VALIDATION_CACHE,
 };
 
@@ -22,16 +22,22 @@ static OPENROUTER_CLIENT: LazyLock<Client> = LazyLock::new(|| build_fast_http_cl
 pub fn normalize_openrouter_model(raw: &str) -> &str {
     match raw {
         "nemotron-3-super" | "nemotron-3-super:free" => "nvidia/nemotron-3-super-120b-a12b:free",
-        "gpt-oss-20b" | "gpt-oss-20b:free" => "openai/gpt-oss-20b:free",
+        "nemotron-3.5-lightning" | "nemotron-3.5-lightning:free" => "nvidia/nemotron-3.5-lightning:free",
+        "nemotron-3-ultra" | "nemotron-3-ultra:free" => "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "nemotron-3-nano-omni" | "nemotron-3-nano-omni:free" => "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        "nemotron-3.5-content-safety" | "nemotron-3.5-content-safety:free" => "nvidia/nemotron-3.5-content-safety:free",
         "north-mini-code" | "north-mini-code:free" => "cohere/north-mini-code:free",
         "gemma-4-26b" | "gemma-4-26b:free" => "google/gemma-4-26b-a4b-it:free",
         "gemma-4-31b" | "gemma-4-31b:free" => "google/gemma-4-31b-it:free",
-        "ling-3.0-flash" | "ling-3.0-flash:free" => "inclusionai/ling-3.0-flash:free",
-        "nemotron-3-nano" | "nemotron-3-nano:free" => "nvidia/nemotron-3-nano-30b-a3b:free",
-        "nemotron-nano-9b" | "nemotron-nano-9b:free" => "nvidia/nemotron-nano-9b-v2:free",
-        "nemotron-nano-12b-vl" | "nemotron-nano-12b-vl:free" => "nvidia/nemotron-nano-12b-v2-vl:free",
+        "ling-3.0-flash-sante" | "ling-3.0-flash-sante:free" => "inclusionai/ling-3.0-flash-sante:free",
+        "ling-3.0-flash-fin" | "ling-3.0-flash-fin:free" => "inclusionai/ling-3.0-flash-fin:free",
+        "dots-3-note-preview" | "dots-3-note-preview:free" => "dots-studio/dots-3-note-preview:free",
+        "lfm-2.5-2.6b" | "lfm-2.5-2.6b:free" => "liquid/lfm-2.5-2.6b:free",
+        "inkling-small" | "inkling-small:free" => "thinkingmachines/inkling-small:free",
+        "inkling" | "inkling:free" => "thinkingmachines/inkling:free",
         "laguna-s" | "laguna-s:free" => "poolside/laguna-s-2.1:free",
         "laguna-xs" | "laguna-xs:free" => "poolside/laguna-xs-2.1:free",
+        "free" | "openrouter/free" => "openrouter/free",
         other => other,
     }
 }
@@ -57,7 +63,8 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
     headers.insert("X-Title", HeaderValue::from_static("NYX Desktop"));
 
     let max_tokens = req.max_tokens.unwrap_or(MAX_TOKENS_DEFAULT);
-    let budgeted = budget_messages(&req.messages, CONTEXT_BUDGET_CHARS);
+    let budget_chars = resolve_context_budget_chars(req, CONTEXT_BUDGET_CHARS);
+    let budgeted = budget_messages(&req.messages, budget_chars);
     let sanitized_history = sanitize_messages_for_api(&budgeted);
 
     let normalized_model = normalize_openrouter_model(&req.model_id);
@@ -156,28 +163,57 @@ pub async fn execute_stream(
 ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunkPayload, String>>, String> {
     let (url, body, headers) = build_request(req)?;
 
-    let mut response = OPENROUTER_CLIENT.post(&url)
-        .headers(headers.clone())
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let response;
+    let mut attempts = 0;
+    let max_attempts = 4;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body_text = response.text().await.unwrap_or_default();
+    loop {
+        attempts += 1;
+        let resp = OPENROUTER_CLIENT
+            .post(&url)
+            .headers(headers.clone())
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
 
-        // 1. Handle short 429 rate limit backoff retry (2s sleep)
-        if status.as_u16() == 429 {
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            if let Ok(retry_resp) = OPENROUTER_CLIENT.post(&url)
+        if resp.status().is_success() {
+            response = resp;
+            break;
+        }
+
+        let status = resp.status();
+        let body_text = resp.text().await.unwrap_or_default();
+
+        // 1. Handle 429 rate limit with progressive exponential backoff (2s, 4s, 6s)
+        if status.as_u16() == 429 && attempts < max_attempts {
+            let wait_duration = tokio::time::Duration::from_secs(attempts * 2);
+            tokio::time::sleep(wait_duration).await;
+            continue;
+        }
+
+        // 2. Handle unsupported tools retry fallback
+        let is_tool_unsupported = (status.as_u16() == 400 || status.as_u16() == 422)
+            && (body_text.to_lowercase().contains("tool") 
+                || body_text.to_lowercase().contains("function") 
+                || body_text.to_lowercase().contains("not support")
+                || body_text.to_lowercase().contains("unsupported"));
+
+        if is_tool_unsupported && body.get("tools").is_some() {
+            let mut retry_body = body.clone();
+            if let Some(map) = retry_body.as_object_mut() {
+                map.remove("tools");
+            }
+            if let Ok(retry_resp) = OPENROUTER_CLIENT
+                .post(&url)
                 .headers(headers.clone())
-                .json(&body)
+                .json(&retry_body)
                 .send()
                 .await
             {
                 if retry_resp.status().is_success() {
                     response = retry_resp;
+                    break;
                 } else {
                     let r_status = retry_resp.status();
                     let r_text = retry_resp.text().await.unwrap_or_default();
@@ -188,42 +224,10 @@ pub async fn execute_stream(
                 let err_msg = extract_openrouter_error(&body_text).unwrap_or(body_text);
                 return Err(format!("Request failed ({}): {}", status, err_msg));
             }
-        } else {
-            // 2. Handle unsupported tools retry fallback
-            let is_tool_unsupported = (status.as_u16() == 400 || status.as_u16() == 422)
-                && (body_text.to_lowercase().contains("tool") 
-                    || body_text.to_lowercase().contains("function") 
-                    || body_text.to_lowercase().contains("not support")
-                    || body_text.to_lowercase().contains("unsupported"));
-
-            if is_tool_unsupported && body.get("tools").is_some() {
-                let mut retry_body = body.clone();
-                if let Some(map) = retry_body.as_object_mut() {
-                    map.remove("tools");
-                }
-                if let Ok(retry_resp) = OPENROUTER_CLIENT.post(&url)
-                    .headers(headers.clone())
-                    .json(&retry_body)
-                    .send()
-                    .await
-                {
-                    if retry_resp.status().is_success() {
-                        response = retry_resp;
-                    } else {
-                        let r_status = retry_resp.status();
-                        let r_text = retry_resp.text().await.unwrap_or_default();
-                        let err_msg = extract_openrouter_error(&r_text).unwrap_or(r_text);
-                        return Err(format!("Request failed ({}): {}", r_status, err_msg));
-                    }
-                } else {
-                    let err_msg = extract_openrouter_error(&body_text).unwrap_or(body_text);
-                    return Err(format!("Request failed ({}): {}", status, err_msg));
-                }
-            } else {
-                let err_msg = extract_openrouter_error(&body_text).unwrap_or(body_text);
-                return Err(format!("Request failed ({}): {}", status, err_msg));
-            }
         }
+
+        let err_msg = extract_openrouter_error(&body_text).unwrap_or(body_text);
+        return Err(format!("Request failed ({}): {}", status, err_msg));
     }
 
     let (tx, rx) = tokio::sync::mpsc::channel(256);
@@ -233,7 +237,7 @@ pub async fn execute_stream(
             std::io::Error::new(std::io::ErrorKind::Other, e)
         });
         let stream_reader = StreamReader::new(byte_stream);
-        let mut lines = BufReader::with_capacity(64 * 1024, stream_reader).lines();
+        let mut lines = BufReader::with_capacity(4 * 1024 * 1024, stream_reader).lines();
         let mut buffer = String::new();
 
         'outer: loop {
@@ -355,3 +359,44 @@ pub async fn check_quota(api_key: Option<String>) -> Result<QuotaResponse, Strin
         message: if valid { "OpenRouter API key is active.".into() } else { "OpenRouter API key appears invalid. Check openrouter.ai/keys.".into() },
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_openrouter_models() {
+        assert_eq!(
+            normalize_openrouter_model("nemotron-3-super"),
+            "nvidia/nemotron-3-super-120b-a12b:free"
+        );
+        assert_eq!(
+            normalize_openrouter_model("gemma-4-31b:free"),
+            "google/gemma-4-31b-it:free"
+        );
+        assert_eq!(
+            normalize_openrouter_model("dots-3-note-preview:free"),
+            "dots-studio/dots-3-note-preview:free"
+        );
+        assert_eq!(
+            normalize_openrouter_model("inkling-small:free"),
+            "thinkingmachines/inkling-small:free"
+        );
+        assert_eq!(
+            normalize_openrouter_model("free"),
+            "openrouter/free"
+        );
+    }
+
+    #[test]
+    fn test_parse_openrouter_sse() {
+        let chunk = r#"{"choices":[{"delta":{"reasoning":"thinking...","content":"Hello world!"}}]}"#;
+        let events = parse_sse_event(chunk);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].event_type, "thinking");
+        assert_eq!(events[0].content.as_deref(), Some("thinking..."));
+        assert_eq!(events[1].event_type, "text");
+        assert_eq!(events[1].content.as_deref(), Some("Hello world!"));
+    }
+}
+

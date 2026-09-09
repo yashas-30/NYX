@@ -27,11 +27,17 @@ import {
   formatSpeed,
   formatEta,
   parseQuantDetails,
+  extractQuantToken,
+  findMatchingSupportFile,
+  classifyHfFile,
+  type CompanionFileInfo,
   analyzeHardwareMatch,
   pickBestFile,
+  deriveModelFolderName,
 } from '../lib/utils';
 import { getCapabilityTags, getArchitectureName, extractParameterCount } from '../lib/capabilities';
 import { useDownloadActions } from '../hooks/useHfDownloads';
+import { useHfCompanionFiles } from '../hooks/useHfModels';
 import { useHfExplorerStore } from '../stores/useHfExplorerStore';
 import { HfAuthorAvatar } from './HfAuthorAvatar';
 import type { HfModelResult, HfModelFile, HardwareSpecs } from '../types';
@@ -58,8 +64,11 @@ interface ModelDetailProps {
 
 export interface GgufQuantOption {
   quantKey: string;
+  quantToken: string;
   primaryFilename: string;
   allFilenames: string[];
+  modelSize: number;
+  pairedCompanions: CompanionFileInfo[];
   totalSize: number;
   isMultiPart: boolean;
   partCount: number;
@@ -98,7 +107,11 @@ function CleanQuantSelector({
   const localName = selected.primaryFilename.split('/').pop() ?? selected.primaryFilename;
   const quantInfo = parseQuantDetails(localName);
   const isRecommended = selected.quantKey === bestKey && bestKey !== null;
-  const hwMatch = analyzeHardwareMatch(selected.totalSize, selected.primaryFilename, hw);
+  const hwMatch = analyzeHardwareMatch(
+    selected.modelSize,
+    selected.pairedCompanions.reduce((s, c) => s + c.file.size, 0),
+    hw
+  );
 
   return (
     <div ref={dropdownRef} style={{ position: 'relative', width: '100%' }}>
@@ -152,20 +165,22 @@ function CleanQuantSelector({
               fontFamily: 'monospace',
             }}
           >
-            {quantInfo.quant}
+            {selected.quantToken || quantInfo.quant}
           </span>
-          <span
-            style={{
-              fontSize: 11,
-              color: '#94a3b8',
-              fontFamily: 'monospace',
-            }}
-          >
-            ({quantInfo.bits})
-          </span>
+          {quantInfo.bits ? (
+            <span
+              style={{
+                fontSize: 11,
+                color: '#94a3b8',
+                fontFamily: 'monospace',
+              }}
+            >
+              ({quantInfo.bits})
+            </span>
+          ) : null}
         </div>
 
-        {/* Quality label & Multi-part info */}
+        {/* Quality label & Multi-part info & Live Filename */}
         <span
           style={{
             fontSize: 11,
@@ -177,6 +192,11 @@ function CleanQuantSelector({
           }}
         >
           {quantInfo.qualityLabel} {selected.isMultiPart && `• ${selected.partCount} parts`}
+          {selected.pairedCompanions.length > 0 &&
+            ` • +${selected.pairedCompanions.length} support file`}
+          <span style={{ color: '#52525b', marginLeft: 6, fontFamily: 'monospace' }}>
+            ({selected.primaryFilename.split('/').pop()})
+          </span>
         </span>
 
         {/* Total Aggregated File Size */}
@@ -221,7 +241,7 @@ function CleanQuantSelector({
               flexShrink: 0,
             }}
           >
-            ⚡ Fits VRAM
+            ⚡ Fits in device
           </span>
         ) : hwMatch.tier === 'partial_gpu' ? (
           <span
@@ -236,22 +256,7 @@ function CleanQuantSelector({
               flexShrink: 0,
             }}
           >
-            ⚡ Hybrid GPU
-          </span>
-        ) : hwMatch.tier === 'cpu_only' ? (
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              padding: '2px 8px',
-              borderRadius: 4,
-              background: 'rgba(148, 163, 184, 0.1)',
-              border: '1px solid rgba(148, 163, 184, 0.2)',
-              color: '#94a3b8',
-              flexShrink: 0,
-            }}
-          >
-            CPU / RAM
+            ⚡ Shared GPU Memory
           </span>
         ) : (
           <span
@@ -266,7 +271,7 @@ function CleanQuantSelector({
               flexShrink: 0,
             }}
           >
-            ⚠️ Out of Memory
+            ⚠️ Will not fit
           </span>
         )}
 
@@ -313,7 +318,8 @@ function CleanQuantSelector({
             const qDetails = parseQuantDetails(fn);
             const isSel = opt.quantKey === selected.quantKey;
             const isBestOpt = opt.quantKey === bestKey && bestKey !== null;
-            const match = analyzeHardwareMatch(opt.totalSize, opt.primaryFilename, hw);
+            const supportSize = opt.pairedCompanions.reduce((s, c) => s + c.file.size, 0);
+            const match = analyzeHardwareMatch(opt.modelSize, supportSize, hw);
 
             return (
               <div
@@ -345,7 +351,7 @@ function CleanQuantSelector({
                   {isSel ? '✓' : ''}
                 </span>
 
-                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 120 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 135 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span
                       style={{
@@ -355,14 +361,26 @@ function CleanQuantSelector({
                         fontSize: 12,
                       }}
                     >
-                      {qDetails.quant}
+                      {opt.quantToken || qDetails.quant}
                     </span>
-                    <span style={{ color: '#94a3b8', fontSize: 10, fontFamily: 'monospace' }}>
-                      ({qDetails.bits})
-                    </span>
+                    {qDetails.bits && (
+                      <span style={{ color: '#94a3b8', fontSize: 10, fontFamily: 'monospace' }}>
+                        ({qDetails.bits})
+                      </span>
+                    )}
                   </div>
                   <span style={{ color: '#64748b', fontSize: 10 }}>
                     {qDetails.qualityLabel} {opt.isMultiPart && `(${opt.partCount} parts)`}
+                  </span>
+                  <span
+                    style={{
+                      color: '#52525b',
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                      marginTop: 1,
+                    }}
+                  >
+                    {fn}
                   </span>
                 </div>
 
@@ -376,21 +394,36 @@ function CleanQuantSelector({
                       textOverflow: 'ellipsis',
                     }}
                   >
-                    {match.explanation}
+                    {opt.pairedCompanions.length > 0
+                      ? `${match.explanation} • Includes ${opt.pairedCompanions.map((c) => c.file.filename.split('/').pop()).join(', ')}`
+                      : match.explanation}
                   </span>
                 </div>
 
-                <span
+                <div
                   style={{
-                    color: '#cbd5e1',
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                    fontWeight: 600,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-end',
                     flexShrink: 0,
                   }}
                 >
-                  {formatSize(opt.totalSize)}
-                </span>
+                  <span
+                    style={{
+                      color: '#cbd5e1',
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {formatSize(opt.totalSize)}
+                  </span>
+                  {opt.pairedCompanions.length > 0 && (
+                    <span style={{ color: '#71717a', fontSize: 9, fontFamily: 'monospace' }}>
+                      ({formatSize(opt.modelSize)} model)
+                    </span>
+                  )}
+                </div>
 
                 {isBestOpt ? (
                   <span
@@ -419,7 +452,7 @@ function CleanQuantSelector({
                       flexShrink: 0,
                     }}
                   >
-                    ⚡ Full GPU
+                    ⚡ Fits in device
                   </span>
                 ) : match.tier === 'partial_gpu' ? (
                   <span
@@ -433,21 +466,7 @@ function CleanQuantSelector({
                       flexShrink: 0,
                     }}
                   >
-                    ⚡ Hybrid
-                  </span>
-                ) : match.tier === 'cpu_only' ? (
-                  <span
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 500,
-                      padding: '2px 7px',
-                      borderRadius: 4,
-                      background: '#222225',
-                      color: '#94a3b8',
-                      flexShrink: 0,
-                    }}
-                  >
-                    CPU
+                    ⚡ Shared GPU Memory
                   </span>
                 ) : (
                   <span
@@ -462,7 +481,7 @@ function CleanQuantSelector({
                       flexShrink: 0,
                     }}
                   >
-                    ⚠️ Too Large
+                    ⚠️ Will not fit
                   </span>
                 )}
               </div>
@@ -497,17 +516,13 @@ function HardwareStatusBanner({
             ? 'rgba(16, 185, 129, 0.1)'
             : match.tier === 'partial_gpu'
               ? 'rgba(59, 130, 246, 0.1)'
-              : match.tier === 'cpu_only'
-                ? 'rgba(255, 255, 255, 0.05)'
-                : 'rgba(239, 68, 68, 0.12)',
+              : 'rgba(239, 68, 68, 0.12)',
         border: `1px solid ${
           match.tier === 'full_gpu'
             ? 'rgba(16, 185, 129, 0.25)'
             : match.tier === 'partial_gpu'
               ? 'rgba(59, 130, 246, 0.25)'
-              : match.tier === 'cpu_only'
-                ? 'rgba(255, 255, 255, 0.1)'
-                : 'rgba(239, 68, 68, 0.3)'
+              : 'rgba(239, 68, 68, 0.3)'
         }`,
         fontSize: 11,
         color:
@@ -515,9 +530,7 @@ function HardwareStatusBanner({
             ? '#34d399'
             : match.tier === 'partial_gpu'
               ? '#60a5fa'
-              : match.tier === 'cpu_only'
-                ? '#cbd5e1'
-                : '#fca5a5',
+              : '#fca5a5',
       }}
     >
       <Globe size={14} weight="bold" />
@@ -677,64 +690,139 @@ export function ModelDetail({
   const isGated = Boolean(modelInfo?.gated) && modelInfo?.gated !== 'false';
 
   /* ── 1. Strictly Filter & Group GGUF Model Files ─────────────────────── */
-  const { ggufOptions, companions, mmprojFile } = useMemo(() => {
-    const ggufFiles: HfModelFile[] = [];
-    const companionList: {
-      file: HfModelFile;
-      type: 'vision' | 'audio' | 'draft';
-      label: string;
-    }[] = [];
+  const { ggufFiles, inRepoCompanions, mmprojFile } = useMemo(() => {
+    const modelFiles: HfModelFile[] = [];
+    const companionList: CompanionFileInfo[] = [];
     let mmproj: HfModelFile | undefined;
 
     for (const f of files) {
-      const fn = f.filename.toLowerCase();
-      if (!fn.endsWith('.gguf')) continue;
+      const { category, companionType, label } = classifyHfFile(f.filename);
+      if (category === 'ignored') continue;
 
-      if (
-        fn.includes('mmproj') ||
-        fn.includes('vision_projector') ||
-        fn.includes('vision-projector') ||
-        fn.includes('vision_encoder') ||
-        fn.includes('clip-vision')
-      ) {
-        if (!mmproj) mmproj = f;
+      if (companionType && label) {
+        if (companionType === 'vision' && !mmproj) mmproj = f;
         companionList.push({
           file: f,
-          type: 'vision',
-          label: `Vision Projector (${f.filename.split('/').pop() || f.filename})`,
+          type: companionType,
+          label,
         });
-      } else if (
-        fn.includes('audio-projector') ||
-        fn.includes('audio_projector') ||
-        fn.includes('audio-encoder') ||
-        fn.includes('audio_encoder') ||
-        fn.includes('whisper') ||
-        fn.includes('speech_encoder')
-      ) {
-        companionList.push({
-          file: f,
-          type: 'audio',
-          label: `Audio Projector (${f.filename.split('/').pop() || f.filename})`,
-        });
-      } else if (
-        fn.startsWith('draft-') ||
-        fn.includes('-draft') ||
-        fn.includes('_draft') ||
-        fn.startsWith('mtp-') ||
-        fn.includes('-mtp') ||
-        fn.includes('_mtp')
-      ) {
-        const isMtp = fn.includes('mtp');
-        companionList.push({
-          file: f,
-          type: 'draft',
-          label: `${isMtp ? 'MTP Speculative Model' : 'Draft Model'} (${f.filename.split('/').pop() || f.filename})`,
-        });
-      } else {
-        ggufFiles.push(f);
+      } else if (category === 'model') {
+        modelFiles.push(f);
       }
     }
 
+    return { ggufFiles: modelFiles, inRepoCompanions: companionList, mmprojFile: mmproj };
+  }, [files]);
+
+  // Extract baseModelId domain-agnostically from cardData, baseModels, or tags
+  const baseModelId = useMemo(() => {
+    if (modelInfo?.cardData?.base_model) {
+      if (typeof modelInfo.cardData.base_model === 'string') {
+        return modelInfo.cardData.base_model;
+      }
+      if (
+        Array.isArray(modelInfo.cardData.base_model) &&
+        modelInfo.cardData.base_model.length > 0
+      ) {
+        return modelInfo.cardData.base_model[0];
+      }
+    }
+    if (Array.isArray(modelInfo?.baseModels) && modelInfo.baseModels.length > 0) {
+      const first = modelInfo.baseModels[0];
+      if (typeof first === 'string') return first;
+      if (first && typeof first === 'object' && first.id) return first.id;
+    }
+    const baseModelTag = modelInfo?.tags?.find(
+      (t) => typeof t === 'string' && t.startsWith('base_model:')
+    );
+    if (baseModelTag) {
+      return baseModelTag.slice('base_model:'.length);
+    }
+    return null;
+  }, [modelInfo]);
+
+  // Identify missing companion types dynamically based on pipeline/tags/template
+  const neededCompanionTypes = useMemo(() => {
+    const needed: ('vision' | 'audio' | 'draft')[] = [];
+    const tags = (modelInfo?.tags || []).map((t) => t.toLowerCase());
+    const pipeline = (modelInfo?.pipeline_tag || '').toLowerCase();
+    const idLower = modelId.toLowerCase();
+    const chatTpl = (modelInfo?.gguf?.chat_template || '').toLowerCase();
+
+    const isVision =
+      pipeline === 'image-text-to-text' ||
+      pipeline === 'image-to-text' ||
+      pipeline === 'visual-question-answering' ||
+      pipeline === 'document-question-answering' ||
+      pipeline === 'any-to-any' ||
+      tags.some(
+        (t) => t.includes('vision') || t.includes('multimodal') || t.includes('image-to-text')
+      ) ||
+      chatTpl.includes('<|image|>') ||
+      chatTpl.includes('image_url') ||
+      /(?:^|[._-])(?:vl|vision|visual)(?:[._-]|$)/i.test(idLower) ||
+      Boolean(
+        baseModelId && /(?:^|[._-])(?:vl|vision|visual)(?:[._-]|$)/i.test(baseModelId.toLowerCase())
+      );
+
+    const hasInRepoVision = inRepoCompanions.some((c) => c.type === 'vision');
+    if (isVision && !hasInRepoVision) {
+      needed.push('vision');
+    }
+
+    const isAudio =
+      pipeline === 'text-to-speech' ||
+      pipeline === 'automatic-speech-recognition' ||
+      pipeline === 'audio-to-audio' ||
+      pipeline === 'audio-classification' ||
+      tags.some((t) => t.includes('audio') || t.includes('speech') || t.includes('whisper')) ||
+      chatTpl.includes('<|audio|>') ||
+      chatTpl.includes('input_audio');
+
+    const hasInRepoAudio = inRepoCompanions.some((c) => c.type === 'audio');
+    if (isAudio && !hasInRepoAudio) {
+      needed.push('audio');
+    }
+
+    const isDraft =
+      tags.some((t) => t.includes('mtp') || t.includes('speculative')) ||
+      idLower.includes('mtp') ||
+      idLower.includes('speculative');
+
+    const hasInRepoDraft = inRepoCompanions.some((c) => c.type === 'draft');
+    if (isDraft && !hasInRepoDraft) {
+      needed.push('draft');
+    }
+
+    return needed;
+  }, [modelId, modelInfo, inRepoCompanions, baseModelId]);
+
+  // Query companion files dynamically across Hugging Face
+  const { data: externalCompanions } = useHfCompanionFiles(
+    modelId,
+    baseModelId,
+    neededCompanionTypes
+  );
+
+  const allCompanions = useMemo<CompanionFileInfo[]>(() => {
+    const merged: CompanionFileInfo[] = [...inRepoCompanions];
+    if (externalCompanions && externalCompanions.length > 0) {
+      for (const ext of externalCompanions) {
+        if (!merged.some((c) => c.file.filename === ext.filename)) {
+          merged.push({
+            file: { filename: ext.filename, size: ext.size },
+            type: ext.companion_type,
+            label: ext.label,
+            repoId: ext.repo_id,
+            isExternal: true,
+          });
+        }
+      }
+    }
+    return merged;
+  }, [inRepoCompanions, externalCompanions]);
+
+  const ggufOptions = useMemo(() => {
     const groupMap = new Map<string, { primaryFilename: string; allFiles: HfModelFile[] }>();
 
     for (const f of ggufFiles) {
@@ -757,14 +845,28 @@ export function ModelDetail({
     const options: GgufQuantOption[] = [];
     for (const group of groupMap.values()) {
       group.allFiles.sort((a, b) => a.filename.localeCompare(b.filename));
-      const totalSize = group.allFiles.reduce((sum, item) => sum + item.size, 0);
+      const modelSize = group.allFiles.reduce((sum, item) => sum + item.size, 0);
       const primaryFilename = group.allFiles[0]?.filename ?? group.primaryFilename;
       const isMultiPart = group.allFiles.length > 1;
+      const quantToken = extractQuantToken(primaryFilename);
+
+      // Quant-aware pairing of companion/support files (e.g. Q4 model gets Q4 mmproj, F16 fallback)
+      const pairedVision = findMatchingSupportFile(allCompanions, quantToken, 'vision');
+      const pairedAudio = findMatchingSupportFile(allCompanions, quantToken, 'audio');
+      const pairedDraft = findMatchingSupportFile(allCompanions, quantToken, 'draft');
+      const pairedCompanions = [pairedVision, pairedAudio, pairedDraft].filter(
+        Boolean
+      ) as CompanionFileInfo[];
+      const supportSize = pairedCompanions.reduce((sum, c) => sum + c.file.size, 0);
+      const totalSize = modelSize + supportSize;
 
       options.push({
         quantKey: primaryFilename,
+        quantToken,
         primaryFilename,
         allFilenames: group.allFiles.map((x) => x.filename),
+        modelSize,
+        pairedCompanions,
         totalSize,
         isMultiPart,
         partCount: group.allFiles.length,
@@ -773,31 +875,19 @@ export function ModelDetail({
 
     options.sort((a, b) => a.totalSize - b.totalSize);
 
-    return { ggufOptions: options, companions: companionList, mmprojFile: mmproj };
-  }, [files]);
+    return options;
+  }, [ggufFiles, allCompanions]);
 
-  // Pick unique best companion file per category (vision, audio, draft)
-  const selectedCompanions = useMemo(() => {
-    const list: typeof companions = [];
-    const vision = companions.filter((c) => c.type === 'vision');
-    if (vision.length > 0) {
-      const f16 = vision.find((c) => c.file.filename.toLowerCase().includes('f16'));
-      list.push(f16 || vision[0]);
-    }
-    const audio = companions.filter((c) => c.type === 'audio');
-    if (audio.length > 0) {
-      list.push(audio[0]);
-    }
-    const draft = companions.filter((c) => c.type === 'draft');
-    if (draft.length > 0) {
-      list.push(draft[0]);
-    }
-    return list;
-  }, [companions]);
-
-  // Accurate recommendation based on real device RAM & GPU VRAM
+  // Accurate recommendation based on real device RAM & GPU VRAM (including support files)
   const bestKey = useMemo(() => {
-    const fileList = ggufOptions.map((o) => ({ filename: o.primaryFilename, size: o.totalSize }));
+    const fileList = ggufOptions.map((o) => {
+      const supportSize = o.pairedCompanions.reduce((s, c) => s + c.file.size, 0);
+      return {
+        filename: o.primaryFilename,
+        size: o.modelSize,
+        supportSize,
+      };
+    });
     return pickBestFile(fileList, hardware);
   }, [ggufOptions, hardware]);
 
@@ -811,24 +901,28 @@ export function ModelDetail({
   }, [ggufOptions, selectedKey, bestKey]);
 
   const activeMatch = useMemo(() => {
-    return analyzeHardwareMatch(
-      activeOption?.totalSize ?? 0,
-      activeOption?.primaryFilename ?? '',
-      hardware
-    );
+    const supportBytes =
+      activeOption?.pairedCompanions.reduce((sum, c) => sum + c.file.size, 0) ?? 0;
+    return analyzeHardwareMatch(activeOption?.modelSize ?? 0, supportBytes, hardware);
   }, [activeOption, hardware]);
 
   /* ── 2. Automatic Queuing Handler ── */
+  const targetFolderName = useMemo(() => {
+    return deriveModelFolderName(modelId, activeOption?.primaryFilename);
+  }, [modelId, activeOption]);
+
   const handleStartDownload = useCallback(
     (filenames: string[]) => {
       for (const fn of filenames) {
-        handleDownload(modelId, fn);
+        handleDownload(modelId, fn, modelId, targetFolderName);
       }
-      for (const comp of selectedCompanions) {
-        handleDownload(modelId, comp.file.filename);
+      if (activeOption?.pairedCompanions) {
+        for (const comp of activeOption.pairedCompanions) {
+          handleDownload(modelId, comp.file.filename, comp.repoId || modelId, targetFolderName);
+        }
       }
     },
-    [modelId, selectedCompanions, handleDownload]
+    [modelId, activeOption, handleDownload, targetFolderName]
   );
 
   // Dynamic parameters, architecture, and capabilities from live HF metadata
@@ -845,16 +939,18 @@ export function ModelDetail({
     return getArchitectureName(modelId, modelInfo?.tags, modelInfo?.config, modelInfo?.gguf);
   }, [modelId, modelInfo?.tags, modelInfo?.config, modelInfo?.gguf]);
 
+  const hasVisionCompanion = Boolean(mmprojFile || allCompanions.some((c) => c.type === 'vision'));
+
   const capabilities = useMemo(() => {
     return getCapabilityTags(
       modelId,
       modelInfo?.tags,
       modelInfo?.pipeline_tag,
-      Boolean(mmprojFile),
+      hasVisionCompanion,
       {
         gguf: modelInfo?.gguf,
         config: modelInfo?.config,
-        hasVisionProjector: Boolean(mmprojFile),
+        hasVisionProjector: hasVisionCompanion,
       }
     );
   }, [
@@ -863,7 +959,7 @@ export function ModelDetail({
     modelInfo?.pipeline_tag,
     modelInfo?.gguf,
     modelInfo?.config,
-    mmprojFile,
+    hasVisionCompanion,
   ]);
 
   return (
@@ -1143,9 +1239,9 @@ export function ModelDetail({
             <HardwareStatusBanner hw={hardware} match={activeMatch} />
 
             {/* Companion files (vision, audio, draft) auto-download indicators */}
-            {selectedCompanions.length > 0 && (
+            {activeOption && activeOption.pairedCompanions.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {selectedCompanions.map((comp) => (
+                {activeOption.pairedCompanions.map((comp) => (
                   <div
                     key={comp.file.filename}
                     style={{
@@ -1178,7 +1274,15 @@ export function ModelDetail({
                     }}
                   >
                     <Sparkle size={13} weight="bold" />
-                    {comp.label} will automatically download alongside this model
+                    <span>
+                      {comp.label} ({formatSize(comp.file.size)})
+                      {comp.isExternal && comp.repoId && (
+                        <span style={{ opacity: 0.8, fontWeight: 400, marginLeft: 4 }}>
+                          • from {comp.repoId}
+                        </span>
+                      )}{' '}
+                      will automatically download alongside this model
+                    </span>
                   </div>
                 ))}
               </div>

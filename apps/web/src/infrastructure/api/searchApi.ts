@@ -35,37 +35,36 @@ export interface WebSearchResult {
 
 export async function searchCodebase(
   query: string,
-  signal?: AbortSignal,
-  options?: { topK?: number; threshold?: number }
+  _signal?: AbortSignal,
+  _options?: { topK?: number; threshold?: number }
 ): Promise<SearchResult> {
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const result = await invoke<SearchResult>('codebase_search_command', {
-      query,
-      limit: options?.topK || 10,
-      threshold: options?.threshold,
-    });
-    return result;
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Codebase search failed', query };
-  }
+  return { success: false, error: 'Codebase search is disabled', query };
 }
 
 export async function searchWeb(
   query: string,
-  signal?: AbortSignal,
+  _signal?: AbortSignal,
   options?: { topK?: number; recency?: 'day' | 'week' | 'month' | 'year' }
 ): Promise<WebSearchResult> {
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    
+
     // We assume the rust backend handles reading the API keys from the secure store.
-    const result = await invoke<WebSearchResult>('search_web_command', {
+    const result = await invoke<string>('search_web_command', {
       query,
       numResults: options?.topK || 5,
     });
-    
-    return result;
+
+    return {
+      success: true,
+      query,
+      results: [
+        {
+          title: 'Web Search Result',
+          snippet: result,
+        },
+      ],
+    };
   } catch (err: any) {
     return { success: false, error: err.message || 'Search failed', query };
   }

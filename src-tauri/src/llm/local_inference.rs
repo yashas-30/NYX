@@ -33,7 +33,8 @@ static LOCAL_HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
     Client::builder()
         .connect_timeout(std::time::Duration::from_secs(30))
         .tcp_nodelay(true)
-        .tcp_keepalive(std::time::Duration::from_secs(600))
+        .tcp_keepalive(std::time::Duration::from_secs(15))
+        .pool_idle_timeout(std::time::Duration::from_secs(86400))
         .pool_max_idle_per_host(32)
         .no_proxy()
         .build()
@@ -335,10 +336,6 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
     let max_tokens = req.max_tokens.filter(|&v| v > 0);
     let mut system_text = req.system_instruction.clone().unwrap_or_default();
 
-    if !system_text.contains("FORMATTING DIRECTIVE") {
-        system_text.push_str("\n\n[FORMATTING DIRECTIVE]\nFormat responses using clean Markdown with headers, tables, and bullet points where appropriate. For code, always use fenced code blocks with the correct language tag. Keep responses concise and direct.");
-    }
-
     let (thinking_budget, reasoning_effort) = match req.thinking_level.as_deref() {
         Some("low") => (1024u32, "low"),
         Some("medium") | Some("med") => (4096u32, "medium"),
@@ -346,15 +343,16 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         _ => (4096u32, "medium"),
     };
 
-    if req.reasoning_enabled == Some(true) {
-        if !system_text.contains("<think>") {
-            system_text.push_str(&format!(
-                "\n\n[REASONING DIRECTIVE]\nYou MUST perform deep, step-by-step reasoning inside <think>...</think> tags before providing your final answer. Allocate approximately {} tokens to your reasoning process, thoroughly verifying facts and logic before writing the final response.",
-                thinking_budget
-            ));
-        }
-    } else {
-        system_text.push_str("\n\n[CRITICAL DIRECTIVE: NO REASONING]\nDo NOT include any <think> tags, scratchpad, reasoning chain, or internal monologue. Answer the user's prompt DIRECTLY and immediately without any preamble or thinking block.");
+    let is_reasoning_active = req.reasoning_enabled == Some(true)
+        || (req.reasoning_enabled.is_none()
+            && req.capabilities.as_ref().map(|c| c.reasoning).unwrap_or(false));
+
+    // Only inject reasoning directives if reasoning is explicitly enabled and instructions are already present or requested
+    if is_reasoning_active && !system_text.is_empty() && !system_text.contains("<think>") {
+        system_text.push_str(&format!(
+            "\n\n[REASONING DIRECTIVE]\nYou MUST perform step-by-step reasoning inside <think>...</think> tags before providing your final answer. Allocate approximately {} tokens to your reasoning process.",
+            thinking_budget
+        ));
     }
 
     let active_server_ctx = crate::llm::local_orchestrator::ACTIVE_SERVER_CTX_SIZE.load(std::sync::atomic::Ordering::Relaxed);
@@ -365,7 +363,7 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
     } else if let Some(req_ctx) = req.context_window.filter(|&v| v > 0) {
         req_ctx as usize
     } else {
-        4096
+        32768
     };
 
     if context_window < 512 {
@@ -376,11 +374,11 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
     }
 
     // Reserve space for response dynamically based on available context
-    let is_reasoning_model = req.reasoning_enabled == Some(true)
+    let is_reasoning_model = is_reasoning_active
         || req.capabilities.as_ref().map(|c| c.reasoning).unwrap_or(false);
     
-    let requested_max = max_tokens.unwrap_or(2048) as usize;
-    let max_output_allowed = (context_window / 3).max(256).min(requested_max);
+    let requested_max = max_tokens.unwrap_or(16384) as usize;
+    let max_output_allowed = requested_max.min(context_window.saturating_sub(512)).max(256);
     let response_reserve = max_output_allowed;
 
     // Budget calculation with safety margin
@@ -388,12 +386,12 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
     let budget = context_window
         .saturating_sub(response_reserve)
         .saturating_sub(safety_margin)
-        .max(256);
+        .max(512);
 
-    // Validate and truncate system prompt size gracefully
+    // Validate system prompt size: allow full system prompt unless it exceeds available budget headroom
     if !system_text.is_empty() {
         let system_tokens = count_tokens(&system_text, &req.model_id);
-        let max_system_allowed = (budget * 4) / 10;
+        let max_system_allowed = budget.saturating_sub(64);
         if system_tokens > max_system_allowed && max_system_allowed > 50 {
             system_text = truncate_text_to_token_budget(&system_text, max_system_allowed, &req.model_id);
         }
@@ -426,7 +424,7 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
     let mut body = json!({
         "model": effective_model_id,
         "messages": sanitized,
-        "temperature": req.temperature.unwrap_or(0.7),
+        "temperature": req.temperature.unwrap_or(0.2),
         "stream": true,
         // Enable KV prompt caching for lightning-fast TTFT (<50ms) across conversation turns.
         "cache_prompt": true,
@@ -437,15 +435,10 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
 
     let default_stop = vec![
         "<end_of_turn>".to_string(),
-        "<start_of_turn>".to_string(),
         "<eos>".to_string(),
         "<|eot_id|>".to_string(),
         "<|eom_id|>".to_string(),
         "<|im_end|>".to_string(),
-        "\nUser:".to_string(),
-        "\nUser ".to_string(),
-        "\nHuman:".to_string(),
-        "\nAssistant:".to_string(),
     ];
     if let Some(ref stop_seqs) = req.stop {
         let mut combined = stop_seqs.clone();
@@ -473,7 +466,7 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         let effective_max = tokens.min(max_allowed).max(1);
         body["max_tokens"] = json!(effective_max);
     } else {
-        let default_max = 4096.min(max_allowed).max(1);
+        let default_max = 16384.min(max_allowed).max(1);
         body["max_tokens"] = json!(default_max);
     }
 
@@ -506,14 +499,14 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         }
     }
 
-    if req.reasoning_enabled == Some(true) {
+    if is_reasoning_active {
         body["reasoning_effort"] = json!(reasoning_effort);
         body["enable_thinking"] = json!(true);
         body["chat_template_kwargs"] = json!({ "thinking": true });
         // Expand max_tokens to accommodate reasoning budget on top of output tokens
         let current_max = body["max_tokens"].as_u64().unwrap_or(4096) as u32;
         body["max_tokens"] = json!(current_max + thinking_budget);
-    } else {
+    } else if req.reasoning_enabled == Some(false) {
         // Disable thinking overhead on local GGUF models for instant response generation
         body["reasoning_effort"] = json!("none");
         body["enable_thinking"] = json!(false);
@@ -522,6 +515,10 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
 
     let mut headers = HeaderMap::new();
     headers.insert("Content-Type", HeaderValue::from_static("application/json"));
+    headers.insert("Accept", HeaderValue::from_static("text/event-stream"));
+    headers.insert("Accept-Encoding", HeaderValue::from_static("identity"));
+    headers.insert("Cache-Control", HeaderValue::from_static("no-cache"));
+    headers.insert("Connection", HeaderValue::from_static("keep-alive"));
 
     let active_port = SERVER_PORT.load(std::sync::atomic::Ordering::Relaxed);
     let endpoint = req.endpoint_override.clone()
@@ -534,6 +531,43 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         estimated_input_tokens,
         effective_context: context_window as u32,
     })
+}
+
+pub fn request_has_attachments(req: &UnifiedRequest) -> (bool, bool) {
+    let mut has_image = false;
+    let mut has_audio = false;
+
+    for msg in &req.messages {
+        match &msg.content {
+            Value::Array(parts) => {
+                for p in parts {
+                    if let Some(t) = p.get("type").and_then(|v| v.as_str()) {
+                        if t == "image_url" || t == "image" {
+                            has_image = true;
+                        } else if t == "input_audio" || t == "audio" {
+                            has_audio = true;
+                        }
+                    }
+                    if p.get("image_url").is_some() || p.get("image").is_some() {
+                        has_image = true;
+                    }
+                    if p.get("audio").is_some() {
+                        has_audio = true;
+                    }
+                }
+            }
+            Value::Object(obj) => {
+                if obj.get("image_url").is_some() || obj.get("image").is_some() {
+                    has_image = true;
+                }
+                if obj.get("audio").is_some() {
+                    has_audio = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    (has_image, has_audio)
 }
 
 // ── Streaming Events ────────────────────────────────────────────────────────
@@ -675,7 +709,7 @@ fn process_text_tokens(
     let mut current_text = t;
     while !current_text.is_empty() {
         if *in_think_block {
-            let end_tags = ["</think>", "</thought>", "</thinking>"];
+            let end_tags = ["</think>", "</thought>", "</thinking>", "<channel|>", "<|channel|>"];
             let mut earliest_end: Option<(usize, usize)> = None;
             for tag in &end_tags {
                 if let Some(idx) = current_text.find(tag) {
@@ -696,7 +730,10 @@ fn process_text_tokens(
                 break;
             }
         } else {
-            let start_tags = ["<think>", "<thought>", "<thinking>"];
+            let start_tags = [
+                "<think>", "<thought>", "<thinking>",
+                "<|channel>thought", "<|channel|>thought",
+            ];
             let mut earliest_start: Option<(usize, usize)> = None;
             for tag in &start_tags {
                 if let Some(idx) = current_text.find(tag) {
@@ -847,6 +884,11 @@ pub async fn execute_local_stream(
                         None,
                         None,
                         None,
+                        req.reasoning_enabled,
+                        None,
+                        None, // load_vision_projector (default false)
+                        None, // load_audio_projector (default false)
+                        Some(true), // load_draft_model (enable speculative decoding if draft model is present)
                     ).await {
                         error!("[Inference] Failed to start local server for {}: {}", target_model, e);
                         return Err(format!("Failed to auto-start local inference server for {}: {}", target_model, e));
@@ -864,6 +906,14 @@ pub async fn execute_local_stream(
                     }
                     waited += 1;
                 }
+            }
+        }
+
+        let (has_image, has_audio) = request_has_attachments(req);
+        if has_image || has_audio {
+            if let Some(manager) = app.try_state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>() {
+                info!("[Inference] Request contains attachment (image={}, audio={}) - ensuring multimodal support loaded", has_image, has_audio);
+                let _ = crate::llm::local_orchestrator::load_multimodal_support(app.clone(), manager, Some(has_audio)).await;
             }
         }
 
@@ -885,13 +935,44 @@ pub async fn execute_local_stream(
         req.model_id, config.endpoint, config.estimated_input_tokens, config.effective_context
     );
 
-    let response = LOCAL_HTTP_CLIENT.post(&config.endpoint)
-        .headers(config.headers)
+    let send_res = LOCAL_HTTP_CLIENT.post(&config.endpoint)
+        .headers(config.headers.clone())
         .json(&config.body)
-        .timeout(std::time::Duration::from_secs(3600))
+        .timeout(std::time::Duration::from_secs(86400))
         .send()
-        .await
-        .map_err(|e| format!("Connection failed: {}", e))?;
+        .await;
+
+    let response = match send_res {
+        Ok(resp) => resp,
+        Err(orig_err) => {
+            warn!("[Inference] Connection failed on {}: {}. Scanning local ports for active engine...", config.endpoint, orig_err);
+            let mut alternate_found = None;
+            for candidate_port in 8080..8095 {
+                let health_url = format!("http://127.0.0.1:{}/health", candidate_port);
+                if let Ok(resp) = LOCAL_HTTP_CLIENT.get(&health_url).timeout(std::time::Duration::from_millis(400)).send().await {
+                    if resp.status().is_success() {
+                        alternate_found = Some(candidate_port);
+                        break;
+                    }
+                }
+            }
+
+            if let Some(new_port) = alternate_found {
+                info!("[Inference] Found live local server on port {}. Updating SERVER_PORT and retrying request...", new_port);
+                SERVER_PORT.store(new_port, std::sync::atomic::Ordering::Relaxed);
+                let new_endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", new_port);
+                LOCAL_HTTP_CLIENT.post(&new_endpoint)
+                    .headers(config.headers)
+                    .json(&config.body)
+                    .timeout(std::time::Duration::from_secs(86400))
+                    .send()
+                    .await
+                    .map_err(|e| format!("Connection failed on active port {}: {}", new_port, e))?
+            } else {
+                return Err(format!("Connection failed: {}", orig_err));
+            }
+        }
+    };
 
     let response = if !response.status().is_success() {
         let status = response.status();
@@ -928,7 +1009,7 @@ pub async fn execute_local_stream(
             let retry_response = LOCAL_HTTP_CLIENT.post(&retry_config.endpoint)
                 .headers(retry_config.headers)
                 .json(&retry_config.body)
-                .timeout(std::time::Duration::from_secs(3600))
+                .timeout(std::time::Duration::from_secs(86400))
                 .send()
                 .await
                 .map_err(|e| format!("Auto-context retry connection failed: {}", e))?;
@@ -953,10 +1034,13 @@ pub async fn execute_local_stream(
         });
         
         let stream_reader = StreamReader::new(byte_stream);
-        let mut lines = BufReader::with_capacity(64 * 1024, stream_reader).lines();
+        let mut lines = BufReader::with_capacity(4 * 1024 * 1024, stream_reader).lines();
         let mut buffer = String::with_capacity(4096);
         let mut active_tool_call_id: Option<String> = None;
         let mut total_text_chars = 0usize;
+        let mut total_thinking_chars = 0usize;
+        let mut total_tool_calls = 0usize;
+        let mut total_yielded_chunks = 0usize;
         let max_output_chars = 2_000_000; // ~500K tokens safety limit
         
         // 2026: Track if we are inside a <think> block for models that emit it as text
@@ -967,8 +1051,74 @@ pub async fn execute_local_stream(
                 Ok(Some(l)) => l,
                 Ok(None) => break,
                 Err(e) => {
-                    error!("[Inference] Stream read error: {}", e);
-                    Err(format!("Stream interrupted: {}", e))?;
+                    let err_msg = e.to_string();
+                    warn!("[Inference] Stream socket read event / peer disconnect: {}", err_msg);
+
+                    // Eagerly parse any partial JSON sitting in buffer before deciding outcome
+                    if !buffer.is_empty() {
+                        let raw = buffer.trim().to_string();
+                        buffer.clear();
+                        let data = if let Some(stripped) = raw.strip_prefix("data: ") {
+                            stripped.trim()
+                        } else if let Some(stripped) = raw.strip_prefix("data:") {
+                            stripped.trim()
+                        } else {
+                            raw.as_str()
+                        };
+
+                        if data != "[DONE]" && !data.is_empty() {
+                            if let Ok(v) = serde_json::from_str::<Value>(data) {
+                                for ev in parse_local_sse_event_value(&v, &mut active_tool_call_id) {
+                                    match ev {
+                                        LocalStreamEvent::Text(t) => {
+                                            total_yielded_chunks += 1;
+                                            for payload in process_text_tokens(&t, &mut in_think_block, &mut total_text_chars, max_output_chars) {
+                                                let is_done = payload.done.unwrap_or(false);
+                                                yield payload;
+                                                if is_done { return; }
+                                            }
+                                        }
+                                        LocalStreamEvent::Reasoning(r) => {
+                                            total_yielded_chunks += 1;
+                                            total_thinking_chars += r.len();
+                                            yield StreamChunkPayload::thinking(r);
+                                        }
+                                        LocalStreamEvent::ToolStart { id, name } => {
+                                            total_yielded_chunks += 1;
+                                            total_tool_calls += 1;
+                                            yield StreamChunkPayload::tool_start(id, name);
+                                        }
+                                        LocalStreamEvent::ToolArgs(a) => {
+                                            total_yielded_chunks += 1;
+                                            yield StreamChunkPayload::tool_args(a);
+                                        }
+                                        LocalStreamEvent::ToolComplete => {
+                                            total_yielded_chunks += 1;
+                                            yield StreamChunkPayload::tool_complete();
+                                        }
+                                        LocalStreamEvent::Usage { prompt_tokens, completion_tokens, total_tokens } => {
+                                            total_yielded_chunks += 1;
+                                            yield StreamChunkPayload::usage(prompt_tokens, completion_tokens, total_tokens);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let has_yielded_any = total_yielded_chunks > 0 || total_text_chars > 0 || total_thinking_chars > 0 || total_tool_calls > 0;
+                    if has_yielded_any {
+                        warn!(
+                            "[Inference] Stream closed or truncated by server after emitting output (yielded {} chunks, {} text chars, {} thinking chars, {} tool calls): {}. Gracefully finalizing response.",
+                            total_yielded_chunks, total_text_chars, total_thinking_chars, total_tool_calls, err_msg
+                        );
+                        yield StreamChunkPayload::done();
+                        break;
+                    }
+
+                    error!("[Inference] Stream interrupted before emitting any payload: {}", err_msg);
+                    Err(format!("Stream interrupted: {}", err_msg))?;
                     unreachable!();
                 }
             };
@@ -993,18 +1143,34 @@ pub async fn execute_local_stream(
                         for ev in parse_local_sse_event_value(&v, &mut active_tool_call_id) {
                             match ev {
                                 LocalStreamEvent::Text(t) => {
+                                    total_yielded_chunks += 1;
                                     for payload in process_text_tokens(&t, &mut in_think_block, &mut total_text_chars, max_output_chars) {
                                         let is_done = payload.done.unwrap_or(false);
                                         yield payload;
                                         if is_done { return; }
                                     }
                                 }
-                                LocalStreamEvent::Reasoning(r) => yield StreamChunkPayload::thinking(r),
-                                LocalStreamEvent::ToolStart { id, name } => yield StreamChunkPayload::tool_start(id, name),
-                                LocalStreamEvent::ToolArgs(a) => yield StreamChunkPayload::tool_args(a),
-                                LocalStreamEvent::ToolComplete => yield StreamChunkPayload::tool_complete(),
+                                LocalStreamEvent::Reasoning(r) => {
+                                    total_yielded_chunks += 1;
+                                    total_thinking_chars += r.len();
+                                    yield StreamChunkPayload::thinking(r);
+                                }
+                                LocalStreamEvent::ToolStart { id, name } => {
+                                    total_yielded_chunks += 1;
+                                    total_tool_calls += 1;
+                                    yield StreamChunkPayload::tool_start(id, name);
+                                }
+                                LocalStreamEvent::ToolArgs(a) => {
+                                    total_yielded_chunks += 1;
+                                    yield StreamChunkPayload::tool_args(a);
+                                }
+                                LocalStreamEvent::ToolComplete => {
+                                    total_yielded_chunks += 1;
+                                    yield StreamChunkPayload::tool_complete();
+                                }
                                 LocalStreamEvent::Usage { prompt_tokens, completion_tokens, total_tokens } => {
-                                    yield StreamChunkPayload::usage(prompt_tokens, completion_tokens, total_tokens)
+                                    total_yielded_chunks += 1;
+                                    yield StreamChunkPayload::usage(prompt_tokens, completion_tokens, total_tokens);
                                 }
                                 LocalStreamEvent::FinishError(msg) => {
                                     Err(msg)?;
@@ -1038,18 +1204,34 @@ pub async fn execute_local_stream(
                     for ev in parse_local_sse_event_value(&v, &mut active_tool_call_id) {
                         match ev {
                             LocalStreamEvent::Text(t) => {
+                                total_yielded_chunks += 1;
                                 for payload in process_text_tokens(&t, &mut in_think_block, &mut total_text_chars, max_output_chars) {
                                     let is_done = payload.done.unwrap_or(false);
                                     yield payload;
                                     if is_done { return; }
                                 }
                             }
-                            LocalStreamEvent::Reasoning(r) => yield StreamChunkPayload::thinking(r),
-                            LocalStreamEvent::ToolStart { id, name } => yield StreamChunkPayload::tool_start(id, name),
-                            LocalStreamEvent::ToolArgs(a) => yield StreamChunkPayload::tool_args(a),
-                            LocalStreamEvent::ToolComplete => yield StreamChunkPayload::tool_complete(),
+                            LocalStreamEvent::Reasoning(r) => {
+                                total_yielded_chunks += 1;
+                                total_thinking_chars += r.len();
+                                yield StreamChunkPayload::thinking(r);
+                            }
+                            LocalStreamEvent::ToolStart { id, name } => {
+                                total_yielded_chunks += 1;
+                                total_tool_calls += 1;
+                                yield StreamChunkPayload::tool_start(id, name);
+                            }
+                            LocalStreamEvent::ToolArgs(a) => {
+                                total_yielded_chunks += 1;
+                                yield StreamChunkPayload::tool_args(a);
+                            }
+                            LocalStreamEvent::ToolComplete => {
+                                total_yielded_chunks += 1;
+                                yield StreamChunkPayload::tool_complete();
+                            }
                             LocalStreamEvent::Usage { prompt_tokens, completion_tokens, total_tokens } => {
-                                yield StreamChunkPayload::usage(prompt_tokens, completion_tokens, total_tokens)
+                                total_yielded_chunks += 1;
+                                yield StreamChunkPayload::usage(prompt_tokens, completion_tokens, total_tokens);
                             }
                             LocalStreamEvent::FinishError(msg) => {
                                 Err(msg)?;
@@ -1113,9 +1295,13 @@ pub async fn llm_local_stream_request(
 
     let cancel_name = format!("cancel_{}", event_name.unwrap_or_default());
     let (cancel_tx, mut cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let cancel_tx_global = cancel_tx.clone();
     
     let cancel_id = app.listen(cancel_name.clone(), move |_| {
         let _ = cancel_tx.try_send(());
+    });
+    let cancel_global_id = app.listen("cancel_chat_stream", move |_| {
+        let _ = cancel_tx_global.try_send(());
     });
 
     tokio::pin!(stream);
@@ -1158,7 +1344,9 @@ pub async fn llm_local_stream_request(
     }
     
     app.unlisten(cancel_id);
+    app.unlisten(cancel_global_id);
     info!("[Inference] Session complete | items={}", item_count);
+    crate::llm::local::server::trim_current_process_working_set();
 
     Ok(())
 }

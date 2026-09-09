@@ -7,13 +7,7 @@
 
 import type { ChatMessage } from '@src/infrastructure/types';
 
-export type PromptCategory =
-  | 'presentation'
-  | 'websearch'
-  | 'research'
-  | 'diagram'
-  | 'code'
-  | 'general';
+export type PromptCategory = 'websearch' | 'diagram' | 'code' | 'general';
 
 export type SafetyLevel = 'standard' | 'enhanced' | 'strict';
 
@@ -61,7 +55,6 @@ export interface ChatContext {
   localModel?: boolean;
   customSystemPrompt?: string;
   hasWebSearch?: boolean;
-  hasDeepResearch?: boolean;
   promptCategory?: PromptCategory;
   activeProjectId?: string;
   workspacePath?: string;

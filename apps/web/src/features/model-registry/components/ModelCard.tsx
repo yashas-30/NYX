@@ -96,7 +96,11 @@ export const ModelCard: React.FC<ModelCardProps> = ({
       ? modelSizeBytes / (1024 * 1024)
       : 0;
   const totalVramMb = hardwareEst
-    ? hardwareEst.vram_total_mb
+    ? hardwareEst.strategy === 'SharedGpuMemory' || hardwareEst.uses_shared_memory
+      ? hardwareEst.total_gpu_memory_mb ||
+        (hardwareEst.dedicated_vram_available_mb || hardwareEst.vram_total_mb) +
+          (hardwareEst.shared_gpu_memory_mb || 0)
+      : hardwareEst.vram_total_mb
     : systemVramBytes
       ? systemVramBytes / (1024 * 1024)
       : 0;
@@ -104,33 +108,39 @@ export const ModelCard: React.FC<ModelCardProps> = ({
   const vramPercent =
     modelVramMb && totalVramMb ? Math.min(100, Math.round((modelVramMb / totalVramMb) * 100)) : 0;
 
-  const strategyLabel =
-    hardwareEst?.strategy === 'FullDedicatedGpu'
-      ? '✅ FULL GPU'
-      : hardwareEst?.strategy === 'SharedGpuMemory'
-        ? '⚡ SHARED MEM'
-        : hardwareEst?.strategy === 'IntegratedGpu'
-          ? '🔄 iGPU RAM'
-          : hardwareEst?.strategy === 'CpuOnly'
-            ? '🖥️ CPU ONLY'
+  const isSharedMem =
+    hardwareEst?.strategy === 'SharedGpuMemory' ||
+    (hardwareEst?.uses_shared_memory && hardwareEst?.has_dedicated_gpu);
+  const isFullGpu =
+    (hardwareEst?.strategy === 'FullDedicatedGpu' || hardwareEst?.fully_gpu) && !isSharedMem;
+
+  const strategyLabel = isFullGpu
+    ? '✅ FULL GPU'
+    : isSharedMem
+      ? '⚡ SHARED MEM'
+      : hardwareEst?.strategy === 'IntegratedGpu' || hardwareEst?.is_igpu
+        ? '🔄 iGPU RAM'
+        : hardwareEst?.strategy === 'CpuOnly'
+          ? '🖥️ CPU ONLY'
+          : hardwareEst?.hybrid
+            ? '⚡ HYBRID'
             : 'UNKNOWN';
 
-  const strategyColor =
-    hardwareEst?.strategy === 'FullDedicatedGpu'
-      ? 'text-emerald-500'
-      : hardwareEst?.strategy === 'SharedGpuMemory'
-        ? 'text-blue-500'
-        : hardwareEst?.strategy === 'IntegratedGpu'
-          ? 'text-amber-500'
-          : 'text-muted-foreground';
-  const barColor =
-    hardwareEst?.strategy === 'FullDedicatedGpu'
-      ? 'bg-emerald-500'
-      : hardwareEst?.strategy === 'SharedGpuMemory'
-        ? 'bg-blue-500'
-        : hardwareEst?.strategy === 'IntegratedGpu'
-          ? 'bg-amber-500'
-          : 'bg-muted-foreground';
+  const strategyColor = isFullGpu
+    ? 'text-emerald-500'
+    : isSharedMem
+      ? 'text-blue-500'
+      : hardwareEst?.strategy === 'IntegratedGpu' || hardwareEst?.is_igpu
+        ? 'text-amber-500'
+        : 'text-muted-foreground';
+
+  const barColor = isFullGpu
+    ? 'bg-emerald-500'
+    : isSharedMem
+      ? 'bg-blue-500'
+      : hardwareEst?.strategy === 'IntegratedGpu' || hardwareEst?.is_igpu
+        ? 'bg-amber-500'
+        : 'bg-muted-foreground';
 
   return (
     <motion.div

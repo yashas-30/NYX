@@ -9,8 +9,6 @@ pub static NvOptimusEnablement: u32 = 1;
 #[no_mangle]
 pub static AmdPowerXpressRequestHighPerformance: i32 = 1;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use tokio::sync::Mutex;
 use tauri::{
     Manager, WebviewUrl, WebviewWindowBuilder,
 };
@@ -19,10 +17,7 @@ mod commands;
 mod tray;
 mod db;
 pub mod llm;
-pub mod agents;
-pub mod rag;
 pub mod guardrails;
-pub mod research;
 
 use commands::*;
 use crate::commands::db::{
@@ -37,20 +32,6 @@ use crate::commands::db::{
 /// Global application state managed by Tauri.
 pub struct AppState {
     pub mcp_manager: Arc<commands::mcp::McpManager>,
-    /// Set to `true` to cancel the currently running agent loop.
-    /// The orchestrator checks this flag at the start of every ReAct iteration.
-    /// Reset to `false` automatically at the start of each new run.
-    pub agent_cancel: Arc<AtomicBool>,
-
-    // All pending-action maps use tokio::sync::Mutex for consistency in async
-    // commands — std::sync::Mutex held across .await points risks deadlocking
-    // the Tokio thread pool.
-    pub pending_approvals: Arc<Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
-    pub pending_plugin_tools: Arc<Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
-    pub pending_browser_actions: Arc<Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
-
-    /// Per-session conductor tx handles — reuse the same actor across multi-turn conversations.
-    pub conductor_channels: Arc<Mutex<std::collections::HashMap<String, tokio::sync::mpsc::Sender<agents::protocol::ConductorMessage>>>>,
     pub search_provider: Arc<tokio::sync::RwLock<String>>,
     pub search_api_key: Arc<tokio::sync::RwLock<String>>,
     pub quota_ledger: Arc<llm::LiveQuotaLedger>,
@@ -64,11 +45,6 @@ impl Default for AppState {
         let model_registry = Arc::new(llm::DynamicModelRegistry::new());
         Self {
             mcp_manager,
-            agent_cancel: Arc::new(AtomicBool::new(false)),
-            pending_approvals: Arc::new(Mutex::new(std::collections::HashMap::new())),
-            pending_plugin_tools: Arc::new(Mutex::new(std::collections::HashMap::new())),
-            pending_browser_actions: Arc::new(Mutex::new(std::collections::HashMap::new())),
-            conductor_channels: Arc::new(Mutex::new(std::collections::HashMap::new())),
             search_provider: Arc::new(tokio::sync::RwLock::new("duckduckgo".to_string())),
             search_api_key: Arc::new(tokio::sync::RwLock::new("".to_string())),
             quota_ledger,
@@ -134,36 +110,15 @@ pub fn run() {
             // Restore persistent API keys into environment variables from safeStorage/Keyring + encrypted vault
             commands::vault::restore_all_vault_keys_to_env();
 
+            // Automatically configure & enrich environment PATH for terminal & system tools
+            commands::system::ensure_and_apply_environment_paths();
+
             // Configure main window and tray safely on the main thread
             setup_app(&app_handle);
 
             // ── Spawn background workers asynchronously (detached from UI thread) ─
             let handle = app_handle.clone();
-            let rag_db_path = data_dir.join("rag.db");
-            let turbovec_data_dir = data_dir.clone();
             tauri::async_runtime::spawn(async move {
-                let handle_rag = handle.clone();
-                let rag_path = rag_db_path.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Ok(scanner) = crate::rag::scanner::CodebaseScanner::new(rag_path).await {
-                        let scanner = std::sync::Arc::new(scanner);
-                        handle_rag.manage(scanner.clone());
-                        tracing::info!("[RAG] CodebaseScanner initialized (on-demand indexing ready)");
-                    } else {
-                        tracing::error!("Failed to initialize CodebaseScanner");
-                    }
-                });
-
-                // Initialize TurbovecStore (LanceDB-backed vector memory) and register as app state.
-                let handle_tv = handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    let store = crate::rag::turbovec_store::TurbovecStore::new(&turbovec_data_dir, "chat").await;
-                    // Compact any residual small fragment files & prune old versions on startup
-                    let _ = store.inner.optimize().await;
-                    handle_tv.manage(std::sync::Arc::new(store));
-                    tracing::info!("[TurboVec] Chat memory store initialized and optimized");
-                });
-
                 // Auto-check and update local binaries on app startup / restart
                 let handle_startup = handle.clone();
                 tauri::async_runtime::spawn(async move {
@@ -178,20 +133,6 @@ pub fn run() {
                         }
                     }
                 });
-
-                let handle_skills = handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    let default_ws = std::env::current_dir()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|_| ".".to_string());
-                    let _ = commands::opencode::ensure_opencode_skills_connected(&handle_skills, &default_ws);
-                });
-
-                // Pre-load the ONNX embedding model in the background so the 
-                // first web search or codebase scan doesn't hang.
-                tauri::async_runtime::spawn_blocking(|| {
-                    crate::rag::embeddings::warm_up();
-                });
             });
 
             Ok(())
@@ -201,12 +142,9 @@ pub fn run() {
             window_minimize, window_maximize, window_close, window_show, window_hide,
             system_gpu_info, system_info, system_get_userdata, execute_command,
             app_get_version, app_open_external,
-            execute_computer_action,
             mcp_start_server, mcp_send_request, mcp_call_tool, mcp_stop_server, mcp_list_servers,
             llm::providers::llm_stream_request,
             llm::local_inference::llm_local_stream_request,
-            commands::agent_pipeline::run_antigravity_python_agent,
-            commands::agent_pipeline::run_langgraph_python_agent,
             commands::system::cleanup_session_state,
             commands::system::set_search_settings,
             pty_spawn, pty_write, pty_resize, pty_close,
@@ -239,7 +177,7 @@ pub fn run() {
             db_update_model_preset,
             db_update_model_metadata,
             db_delete_local_model,
-            search_web_command,
+            commands::tools::search_web_command,
             commands::tools::search_images_command,
             commands::tools::search_videos_command,
             commands::tools::fetch_image_base64,
@@ -250,12 +188,8 @@ pub fn run() {
             commands::tools::save_prompt_cache_command,
             commands::tools::clear_prompt_cache_command,
             commands::tools::fetch_page_html_command,
+            commands::tools::fetch_page_content_command,
             commands::tools::fetch_multiple_pages_command,
-            commands::tools::run_agent_tool,
-            commands::tools::approve_tool,
-            commands::tools::reject_tool,
-            commands::tools::resolve_plugin_tool,
-            commands::tools::resolve_browser_action,
             // Vault Secure Storage Commands
             commands::vault::vault_store_key,
             commands::vault::vault_get_key,
@@ -269,6 +203,8 @@ pub fn run() {
             llm::local_orchestrator::open_external_installer_cli,
             llm::local_orchestrator::list_local_models,
             llm::local_orchestrator::start_local_server,
+            llm::local_orchestrator::load_multimodal_support,
+            llm::local_orchestrator::unload_multimodal_support,
             llm::local_orchestrator::estimate_hardware_usage,
             llm::local_orchestrator::stop_local_server,
             llm::local_orchestrator::check_local_server_status,
@@ -283,6 +219,7 @@ pub fn run() {
             llm::local_orchestrator::hf_get_model_details,
             llm::local_orchestrator::hf_get_model_files,
             llm::local_orchestrator::hf_get_model_readme,
+            llm::local_orchestrator::hf_find_companion_files,
             llm::local_orchestrator::hf_get_restored_downloads,
             llm::local_orchestrator::get_llamacpp_version,
             llm::local_orchestrator::check_and_update_binaries,
@@ -294,25 +231,9 @@ pub fn run() {
             llm::providers::clear_provider_cache,
             commands::system::get_hardware_specs,
             commands::system::get_system_diagnostics,
-            research::start_deep_research,
             commands::observability::get_llm_traces,
             commands::observability::get_observability_summary,
             commands::observability::prune_llm_traces,
-            commands::memory::get_episodic_memories,
-            commands::memory::get_memory_entities,
-            commands::memory::delete_entity,
-            commands::memory::extract_session_memory,
-            commands::memory::extract_turn_memory,
-            commands::memory::turbovec_add_memory,
-            commands::memory::turbovec_search_memory,
-            commands::memory::turbovec_search_chat_history,
-            commands::memory::turbovec_sync_chat_session,
-            commands::tools::codebase_search_command,
-            commands::nyx_run_agent_pipeline,
-            commands::nyx_classify_intent,
-            commands::nyx_get_live_quota_states,
-            commands::nyx_sync_dynamic_models,
-            commands::nyx_cancel_agent,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

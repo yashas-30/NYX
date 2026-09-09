@@ -153,21 +153,27 @@ function normalizeAgent(name: string): string {
 }
 
 function parseThinking(raw: string): Segment[] {
+  const cleanRaw = raw
+    .replace(/<\|channel\|?>thought\s*/gi, '')
+    .replace(/<channel\|?>|<\|channel\|?>/gi, '')
+    .replace(/<\/?(?:think|thought|thinking)>/gi, '')
+    .trim();
+
   // Fast path for massive strings without our custom agent markers to avoid freezing the UI
   if (
-    raw.length > 10000 &&
-    !raw.includes('━━━') &&
-    !raw.includes('┌─') &&
-    !raw.includes('⚡') &&
-    !raw.includes('📋') &&
-    !raw.includes('Plan:') &&
-    !raw.includes('Agent turn') &&
-    !raw.includes('Executing tool')
+    cleanRaw.length > 10000 &&
+    !cleanRaw.includes('━━━') &&
+    !cleanRaw.includes('┌─') &&
+    !cleanRaw.includes('⚡') &&
+    !cleanRaw.includes('📋') &&
+    !cleanRaw.includes('Plan:') &&
+    !cleanRaw.includes('Agent turn') &&
+    !cleanRaw.includes('Executing tool')
   ) {
-    return [{ type: 'text', content: raw }];
+    return [{ type: 'text', content: cleanRaw }];
   }
 
-  const lines = raw.split('\n');
+  const lines = cleanRaw.split('\n');
   const segments: Segment[] = [];
   for (const line of lines) {
     const t = line.trim();
@@ -878,7 +884,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
                         transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
                       />
                       <span className="text-[12px] font-mono text-muted-foreground/60">
-                        Waiting for reasoning tokens...
+                        Analyzing prompt and context...
                       </span>
                     </div>
                   )}

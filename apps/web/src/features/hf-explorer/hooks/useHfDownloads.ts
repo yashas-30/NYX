@@ -130,12 +130,18 @@ export function useDownloadActions() {
   const { setDownloadState, removeDownload } = useDownloadStore();
   const queryClient = useQueryClient();
 
-  const handleDownload = async (selectedModel: string, filename: string) => {
-    const cleanRepo = selectedModel.trim().replace(/^\/+|\/+$/g, '');
+  const handleDownload = async (
+    selectedModel: string,
+    filename: string,
+    sourceRepo?: string,
+    modelFolder?: string
+  ) => {
+    const targetRepo = selectedModel.trim().replace(/^\/+|\/+$/g, '');
+    const sourceRepoClean = (sourceRepo || selectedModel).trim().replace(/^\/+|\/+$/g, '');
     const cleanFn = filename.trim().replace(/^\/+/g, '');
-    const key = `${cleanRepo}/${cleanFn}`;
+    const key = `${targetRepo}/${cleanFn}`;
     const encodedFn = cleanFn.split('/').map(encodeURIComponent).join('/');
-    const url = `https://huggingface.co/${cleanRepo}/resolve/main/${encodedFn}`;
+    const url = `https://huggingface.co/${sourceRepoClean}/resolve/main/${encodedFn}`;
 
     setDownloadState(key, {
       progress: 0,
@@ -149,7 +155,8 @@ export function useDownloadActions() {
         url,
         modelId: key,
         filename: cleanFn,
-        repoId: cleanRepo,
+        repoId: sourceRepoClean,
+        modelFolder: modelFolder || undefined,
       });
     } catch (err) {
       setDownloadState(key, { status: 'error', error: String(err) });

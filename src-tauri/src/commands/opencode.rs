@@ -236,9 +236,10 @@ static CACHED_SKILLS_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::
 /// 2. Creating directory junctions into `~/.config/opencode/skills/nyx-skills` and `~/.agents/skills`.
 /// 3. If a custom workspace is opened, linking `<workspace>/.agents/skills` to the central skills catalog.
 pub fn ensure_opencode_skills_connected(app: &AppHandle, workspace_dir: &str) -> Result<PathBuf, String> {
-    let skills_path = resolve_skills_directory(app).ok_or_else(|| {
-        "Skills directory (.agents/skills) not found in dev or bundled resources".to_string()
-    })?;
+    let skills_path = match resolve_skills_directory(app) {
+        Some(p) => p,
+        None => return Ok(PathBuf::new()),
+    };
 
     // Return in microseconds if already initialized and provisioned
     if SKILLS_INITIALIZED.load(std::sync::atomic::Ordering::Acquire) {

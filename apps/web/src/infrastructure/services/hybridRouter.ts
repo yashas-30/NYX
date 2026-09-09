@@ -120,10 +120,12 @@ export class HybridModelRouter {
       return;
     }
     try {
-
       let models: any[] = [];
       let activeModelId: string | null = null;
-      if (typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)) {
+      if (
+        typeof window !== 'undefined' &&
+        ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)
+      ) {
         const { invoke } = await import('@tauri-apps/api/core');
         models = await invoke('list_local_models');
         try {
@@ -323,7 +325,10 @@ export class HybridModelRouter {
         return false;
       }),
       ...Array.from(this.localModelPool.values())
-        .filter((lm) => localEnabled && !AVAILABLE_MODELS.some((am) => am.id === ((lm as any).id || lm.modelId)))
+        .filter(
+          (lm) =>
+            localEnabled && !AVAILABLE_MODELS.some((am) => am.id === ((lm as any).id || lm.modelId))
+        )
         .map((lm) => {
           const m = lm as any;
           return {
@@ -374,7 +379,7 @@ export class HybridModelRouter {
       }`,
       estimatedLatency:
         warmth.timeToWarmMs + (this.performanceLog.get(best.model.id)?.avgLatencyMs || 500),
-      estimatedCost: (best.model.provider === 'nyx-native') ? 'free' : 'low',
+      estimatedCost: best.model.provider === 'nyx-native' ? 'free' : 'low',
     };
   }
 
@@ -430,7 +435,12 @@ export class HybridModelRouter {
     task: SubagentTask,
     apiKeys: Record<string, string>,
     checkStatusFn: (provider: string) => Promise<'online' | 'offline' | 'no-key'>,
-    options?: { requiresTools?: boolean; requiresVision?: boolean; maxLatencyMs?: number; preferredProviders?: string[] }
+    options?: {
+      requiresTools?: boolean;
+      requiresVision?: boolean;
+      maxLatencyMs?: number;
+      preferredProviders?: string[];
+    }
   ): Promise<RoutingDecision> {
     return this.selectModel({
       task,
@@ -574,13 +584,15 @@ export class HybridModelRouter {
     if (this.warmingPromises.has(modelId)) {
       return this.warmingPromises.get(modelId);
     }
-    
+
     const promise = (async () => {
       let gpuLayers: number | null = null;
       let cpuThreads: number | null = null;
       let contextSize: number = 8192;
       let draftModelId: string | null = null;
       let disableKvOffload: boolean | null = null;
+      let loadVisionProjector = true;
+      let loadDraftModel = true;
       try {
         const saved = localStorage.getItem('nyx-global-state');
         if (saved) {
@@ -592,27 +604,39 @@ export class HybridModelRouter {
             if (typeof settings.threads === 'number') cpuThreads = settings.threads;
             if (typeof settings.contextSize === 'number') contextSize = settings.contextSize;
             if (typeof settings.draftModelId === 'string') draftModelId = settings.draftModelId;
-            if (typeof settings.disableKvOffload === 'boolean') disableKvOffload = settings.disableKvOffload;
+            if (typeof settings.disableKvOffload === 'boolean')
+              disableKvOffload = settings.disableKvOffload;
+            if (typeof settings.loadVisionProjector === 'boolean')
+              loadVisionProjector = settings.loadVisionProjector;
+            if (typeof settings.enableSpeculative === 'boolean')
+              loadDraftModel = settings.enableSpeculative;
+            if (typeof settings.loadDraftModel === 'boolean')
+              loadDraftModel = settings.loadDraftModel;
           }
         }
       } catch {}
 
-      const validGpuLayers = (typeof gpuLayers === 'number' && gpuLayers >= 0) ? Math.floor(gpuLayers) : 99;
-      const validCpuThreads = (typeof cpuThreads === 'number' && cpuThreads > 0) ? Math.floor(cpuThreads) : null;
-      const validContextSize = (typeof contextSize === 'number' && contextSize >= 512) ? Math.floor(contextSize) : null;
+      const validGpuLayers =
+        typeof gpuLayers === 'number' && gpuLayers >= 0 ? Math.floor(gpuLayers) : 99;
+      const validCpuThreads =
+        typeof cpuThreads === 'number' && cpuThreads > 0 ? Math.floor(cpuThreads) : null;
+      const validContextSize =
+        typeof contextSize === 'number' && contextSize >= 512 ? Math.floor(contextSize) : null;
 
       try {
-        await invoke('start_local_server', { 
-          modelId, 
-          contextSize: validContextSize, 
-          gpuLayers: validGpuLayers, 
-          cpuThreads: validCpuThreads, 
-          flashAttention: null, 
-          kvCacheType: null, 
-          useMlock: null, 
+        await invoke('start_local_server', {
+          modelId,
+          contextSize: validContextSize,
+          gpuLayers: validGpuLayers,
+          cpuThreads: validCpuThreads,
+          flashAttention: null,
+          kvCacheType: null,
+          useMlock: null,
           batchSize: null,
           draftModelId,
-          disableKvOffload
+          disableKvOffload,
+          loadVisionProjector,
+          loadDraftModel,
         });
       } catch (err) {
         console.warn('Failed to warm model:', err);
@@ -620,7 +644,7 @@ export class HybridModelRouter {
         this.warmingPromises.delete(modelId);
       }
     })();
-    
+
     this.warmingPromises.set(modelId, promise);
     return promise;
   }

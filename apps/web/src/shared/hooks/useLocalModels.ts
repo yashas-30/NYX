@@ -71,6 +71,27 @@ export function formatContextWindow(
   return inferModelSpecs(nameFallback).contextWindow;
 }
 
+export function findLocalModelDef(modelId?: string | null, localModels?: any[]): any {
+  if (!modelId || !localModels || !localModels.length) return null;
+  const cleanId = modelId.replace(/\\/g, '/');
+  const leafId = cleanId.split('/').pop() || cleanId;
+  const stripExt = (s: string) => s.replace(/\.(gguf|bin|safetensors|pt|pth|onnx|ckpt)$/i, '');
+  const baseId = stripExt(leafId).toLowerCase();
+
+  return (
+    localModels.find((m: any) => {
+      if (!m) return false;
+      if (m.id === modelId || m.name === modelId) return true;
+      const mClean = (m.id || '').replace(/\\/g, '/');
+      const mLeaf = mClean.split('/').pop() || mClean;
+      if (mClean === cleanId || mLeaf === leafId) return true;
+      if (stripExt(mLeaf).toLowerCase() === baseId) return true;
+      if (m.name && stripExt(m.name).toLowerCase() === baseId) return true;
+      return false;
+    }) || null
+  );
+}
+
 export function inferModelSpecs(idOrName: string) {
   const name = idOrName.toLowerCase();
   let contextWindow = '';
@@ -78,7 +99,6 @@ export function inferModelSpecs(idOrName: string) {
   let modality = 'Text';
 
   // 1. Check for explicit context annotations in filename (e.g. -1M-, -128k-, -32k-, -16k-)
-  // Avoid matching quantization patterns like q4_k_m or q5_k
   const cleanName = name.replace(/_q\d+_[a-z0-9_]+/i, '').replace(/_k_[a-z0-9]+/i, '');
   const mMatch = cleanName.match(/(?:[\-_.]|^)(\d+)m(?:[\-_.]|$)/i);
   const kMatch = cleanName.match(/(?:[\-_.]|^)(\d+)k(?:[\-_.]|$)/i);
@@ -94,103 +114,15 @@ export function inferModelSpecs(idOrName: string) {
     }
   }
 
-  // 2. Model family inference if context not explicitly in filename
+  // 2. Default clean context window if not indicated in filename
   if (!contextWindow) {
-    if (name.includes('mythos') || name.includes('qwythos')) {
-      contextWindow = '1M';
-      maxOutput = '32K';
-    } else if (name.includes('gemma-4') || name.includes('gemma4')) {
-      contextWindow = '256K';
-      maxOutput = '8K';
-    } else if (name.includes('gemma-3') || name.includes('gemma3')) {
-      contextWindow = '128K';
-      maxOutput = '8K';
-    } else if (name.includes('llama-3.3') || name.includes('llama3.3')) {
-      contextWindow = '128K';
-      maxOutput = '8K';
-    } else if (name.includes('llama-3.2') || name.includes('llama3.2')) {
-      contextWindow = '128K';
-      maxOutput = '4K';
-    } else if (name.includes('llama-3.1') || name.includes('llama3.1')) {
-      contextWindow = '128K';
-      maxOutput = '4K';
-    } else if (
-      name.includes('llama-3') ||
-      name.includes('llama3') ||
-      name.includes('qwen2.5') ||
-      name.includes('qwen-2.5') ||
-      name.includes('deepseek-r1') ||
-      name.includes('deepseek-v3') ||
-      name.includes('mistral-nemo') ||
-      name.includes('command-r')
-    ) {
-      contextWindow = '128K';
-      maxOutput = '4K';
-    } else if (
-      name.includes('hyperclovax') ||
-      name.includes('hyperclova') ||
-      name.includes('llama-2') ||
-      name.includes('llama2') ||
-      name.includes('qwen2') ||
-      name.includes('qwen-2') ||
-      name.includes('mistral-7b-v0.3') ||
-      name.includes('yi-')
-    ) {
-      contextWindow = '32K';
-      maxOutput = '4K';
-    } else if (name.includes('phi-4')) {
-      contextWindow = '16K';
-      maxOutput = '4K';
-    } else if (name.includes('phi-3.5')) {
-      contextWindow = '128K';
-      maxOutput = '4K';
-    } else if (name.includes('phi-3')) {
-      contextWindow = '8K';
-      maxOutput = '4K';
-    } else if (name.includes('gemma-2') || name.includes('gemma2')) {
-      contextWindow = '8K';
-      maxOutput = '4K';
-    } else if (name.includes('smollm2')) {
-      contextWindow = '8K';
-      maxOutput = '4K';
-    } else if (name.includes('smollm')) {
-      contextWindow = '2K';
-      maxOutput = '2K';
-    } else {
-      contextWindow = '32K';
-    }
-  }
-
-  // Modality & Capabilities inference
-  const isVision =
-    name.includes('vl') ||
-    name.includes('vision') ||
-    name.includes('multimodal') ||
-    name.includes('pixtral') ||
-    name.includes('llava') ||
-    name.includes('minicpm-v') ||
-    name.includes('idefics') ||
-    name.includes('deepseek-vl') ||
-    name.includes('internvl') ||
-    name.includes('moondream');
-  const isReasoning =
-    name.includes('r1') ||
-    name.includes('reasoning') ||
-    name.includes('thinking') ||
-    name.includes('thinker') ||
-    name.includes('qwq') ||
-    name.includes('skywork-o') ||
-    name.includes('o1') ||
-    name.includes('o3');
-
-  if (isVision) {
-    modality = 'Text + Vision';
+    contextWindow = '32K';
+    maxOutput = '4K';
   }
 
   // Extract quantization (e.g. Q4_K_M, Q8_0, f16, safetensors, pt, onnx)
   const quantMatch =
-    name.match(/-(q[0-9a-z_]+|f16|f32)\.gguf$/i) ||
-    name.match(/_(q[0-9a-z_]+|f16|f32)\.gguf$/i) ||
+    name.match(/[-_.](q[0-9a-z_]+|f16|f32)\.gguf$/i) ||
     name.match(/\.(safetensors|bin|ckpt|pt|pth|onnx)$/i);
 
   let quantization = quantMatch ? quantMatch[1].toUpperCase() : 'Unknown';
@@ -218,10 +150,10 @@ export function inferModelSpecs(idOrName: string) {
     maxOutput,
     modality,
     capabilities: {
-      vision: isVision,
-      reasoning: isReasoning,
+      vision: false,
+      reasoning: false,
       audio: false,
-      tools: true,
+      tools: false,
     },
   };
 }
@@ -244,13 +176,73 @@ const COMPANION_FILE_PREFIXES = [
 ];
 const COMPANION_FILE_EXACT = ['ae.safetensors', 'vae.safetensors'];
 
-function isCompanionSupportFile(name: string): boolean {
-  const lower = name.toLowerCase();
-  if (lower.includes('mmproj') || lower.includes('projector')) return true;
-  if (COMPANION_FILE_EXACT.includes(lower)) return true;
-  if (COMPANION_FILE_PREFIXES.some((p) => lower.startsWith(p))) return true;
+export function isCompanionSupportFile(name?: string | null): boolean {
+  if (!name) return false;
+  const normalized = name.toLowerCase().replace(/\\/g, '/');
+  const basename = normalized.split('/').pop() || normalized;
+  const dir = normalized.includes('/') ? normalized.slice(0, normalized.lastIndexOf('/')) : '';
+  const dirSegments = dir.split('/');
+
+  // 1. Directory-level companion detection (e.g. MTP/, draft/, mmproj/, projector/, etc.)
+  if (
+    dirSegments.some((seg) =>
+      ['mtp', 'draft', 'drafts', 'mmproj', 'projector', 'projectors', 'vae', 'clip'].includes(seg)
+    )
+  ) {
+    return true;
+  }
+
+  // 2. Vision projector support files
+  if (
+    basename.includes('mmproj') ||
+    basename.includes('projector') ||
+    basename.includes('vision_encoder') ||
+    basename.includes('vision-encoder') ||
+    basename.includes('clip-vision') ||
+    basename.includes('clip_vision')
+  ) {
+    return true;
+  }
+
+  // 3. Audio projector support files
+  if (
+    basename.includes('audio-projector') ||
+    basename.includes('audio_projector') ||
+    basename.includes('audio-encoder') ||
+    basename.includes('audio_encoder') ||
+    basename.includes('whisper') ||
+    basename.includes('speech_encoder')
+  ) {
+    return true;
+  }
+
+  // 4. Draft & MTP speculative decoding files
+  if (
+    basename.startsWith('draft-') ||
+    basename.startsWith('draft_') ||
+    basename.startsWith('mtp-') ||
+    basename.startsWith('mtp_') ||
+    basename.includes('-draft') ||
+    basename.includes('_draft') ||
+    basename.includes('-mtp') ||
+    basename.includes('_mtp') ||
+    basename.endsWith('.mtp') ||
+    basename.includes('.mtp.')
+  ) {
+    return true;
+  }
+
+  // 5. Importance matrices and metadata utilities
+  if (basename.includes('imatrix')) {
+    return true;
+  }
+
+  // 6. Diffusion support files
+  if (COMPANION_FILE_EXACT.includes(basename)) return true;
+  if (COMPANION_FILE_PREFIXES.some((p) => basename.startsWith(p))) return true;
   // e.g. "flux1-vae.safetensors"
-  if (lower.endsWith('-vae.safetensors') && !lower.includes('text')) return true;
+  if (basename.endsWith('-vae.safetensors') && !basename.includes('text')) return true;
+
   return false;
 }
 
@@ -270,10 +262,26 @@ export function useLocalModels(enabled: boolean = true) {
             const contextWindow = formatContextWindow(rawCtx, m.name);
             const specs = inferModelSpecs(m.name);
 
+            const isVision = m.supports_vision === true || specs.capabilities?.vision === true;
+            const isAudio = m.supports_audio === true || specs.capabilities?.audio === true;
+            const isTools = m.supports_tools === true || specs.capabilities?.tools === true;
+            const isReasoning = m.supports_reasoning === true;
+            const modality =
+              m.model_type === 'text-to-image'
+                ? 'Text-to-Image'
+                : isVision && isAudio
+                  ? 'Omni (Text + Vision + Audio)'
+                  : isVision
+                    ? 'Text + Vision'
+                    : isAudio
+                      ? 'Text + Audio'
+                      : specs.modality || 'Text';
+
             return {
               ...m,
               specs: {
                 ...specs,
+                modality,
                 contextWindow,
                 size: (m.size_bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB',
               },
@@ -281,10 +289,11 @@ export function useLocalModels(enabled: boolean = true) {
               // imageGen / onnx / pytorch which are not yet surfaced by the backend.
               capabilities: {
                 ...specs.capabilities,
-                reasoning: m.supports_reasoning === true,
-                vision: m.supports_vision === true || specs.capabilities?.vision === true,
-                audio: m.supports_audio === true || specs.capabilities?.audio === true,
-                tools: m.supports_tools === true || specs.capabilities?.tools === true,
+                reasoning: isReasoning,
+                vision: isVision,
+                audio: isAudio,
+                tools: isTools,
+                toolCalling: isTools,
               },
               status: m.status || 'completed',
               features: [

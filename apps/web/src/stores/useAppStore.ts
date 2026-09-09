@@ -15,7 +15,10 @@ interface AppState {
   updateSettings: (settings: Partial<AISettings>) => void;
 
   sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+  codeBlockPanelOpen: boolean;
+  setCodeBlockPanelOpen: (open: boolean) => void;
 
   activeTab: 'chat' | 'compare' | 'registry' | 'settings';
   setActiveTab: (tab: 'chat' | 'compare' | 'registry' | 'settings') => void;
@@ -33,7 +36,7 @@ interface AppState {
 }
 
 const defaultSettings: AISettings = {
-  temperature: 0.7,
+  temperature: 0.3,
   maxTokens: 4096,
   topP: 1.0,
 };
@@ -94,7 +97,24 @@ export const useAppStore = create<AppState>()(
       },
 
       sidebarOpen: true,
-      toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      codeBlockPanelOpen: false,
+      setSidebarOpen: (open: boolean) =>
+        set((state) => {
+          if (open && state.codeBlockPanelOpen) return state;
+          return { sidebarOpen: open };
+        }),
+      toggleSidebar: () =>
+        set((state) => {
+          if (!state.sidebarOpen && state.codeBlockPanelOpen) return state;
+          return { sidebarOpen: !state.sidebarOpen };
+        }),
+      setCodeBlockPanelOpen: (open: boolean) =>
+        set((state) => {
+          if (open) {
+            return { codeBlockPanelOpen: true, sidebarOpen: false };
+          }
+          return { codeBlockPanelOpen: false };
+        }),
 
       activeTab: 'chat',
       setActiveTab: (tab) => set({ activeTab: tab }),

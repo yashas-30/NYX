@@ -118,6 +118,7 @@ export const ChatMessageSchema = z.object({
   toolCalls: z.array(z.any()).optional(),
   citations: z.array(z.any()).optional(),
   artifacts: z.array(z.any()).optional(),
+  agentActivity: z.array(z.any()).optional(),
   metadata: z.any().optional(),
   pendingApproval: z.any().optional(),
   siblingCount: z.number().optional(),
@@ -168,6 +169,7 @@ export const ModelOptionSchema = z.object({
       toolCalling: z.boolean().optional(),
       audio: z.boolean().optional(),
       tools: z.boolean().optional(),
+      structuredOutput: z.boolean().optional(),
     })
     .optional(),
   features: z.array(z.string()).optional(),

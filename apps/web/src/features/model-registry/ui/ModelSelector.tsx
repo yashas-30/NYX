@@ -18,6 +18,7 @@ import { ProviderIcon, getProviderLabel } from '@src/shared/components/ui/Provid
 import { useNyxStore, DEFAULT_SETTINGS } from '@src/shared/store/useNyxStore';
 import { ModelStatusBadge } from '@src/features/model-registry/ModelStatusBadge';
 import { useModelStore } from '@src/core/stores/useModelStore';
+import { useAppStore } from '@src/stores/useAppStore';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
@@ -25,6 +26,7 @@ import {
   formatContextWindow,
   useLocalServerStatus,
   isModelLoaded,
+  isCompanionSupportFile,
 } from '@shared/hooks/useLocalModels';
 
 interface Props {
@@ -128,157 +130,130 @@ export const ModelSelector: React.FC<Props> = ({
 
   const handleLoadModel = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const mBaseMatch = (a: string, b: string) => {
+      const aClean = a.replace(/\\/g, '/').split('/').pop()?.toLowerCase();
+      const bClean = b.replace(/\\/g, '/').split('/').pop()?.toLowerCase();
+      return !!aClean && !!bClean && aClean === bClean;
+    };
+
+    const isDownloaded = localLibraryModels.some(
+      (m) =>
+        isModelLoaded(m.id, id) ||
+        m.id === id ||
+        m.id?.replace(/\\/g, '/') === id.replace(/\\/g, '/') ||
+        (m as any).name === id ||
+        (m as any).filePath === id ||
+        ((m as any).filePath &&
+          (m as any).filePath.replace(/\\/g, '/') === id.replace(/\\/g, '/')) ||
+        mBaseMatch(m.id || '', id)
+    );
+    const isLocalExt = ['.gguf', '.safetensors', '.bin', '.pt', '.pth', '.onnx', '.ckpt'].some(
+      (ext) => id.toLowerCase().endsWith(ext)
+    );
+    const isNativeModel = allModels.some(
+      (m) => (m.id === id || m.name === id) && m.provider === 'nyx-native'
+    );
+    if (!isDownloaded && !isLocalExt && !isNativeModel) {
+      toast.error(`Model '${id}' is not downloaded locally. Please download it first.`);
+      return;
+    }
+
+    setTogglingModelId(id);
+    setLoadingStatus('Starting...');
+
+    const state = useNyxStore.getState();
+    const targetConfig = state.modelConfigs?.[id] || DEFAULT_SETTINGS;
+    const {
+      contextSize,
+      gpuLayers,
+      threads: cpuThreads,
+      flashAttention,
+      kvCacheType,
+      useMlock,
+      batchSize,
+      draftModelId,
+      disableKvOffload,
+    } = targetConfig;
+
+    // Pass kvCacheType directly (defaults to 'auto' so the backend derives it dynamically from the GGUF file)
+    const resolvedKvCacheType = kvCacheType || 'auto';
+
+    let unlistenFns: Array<() => void> = [];
+    const cleanup = () => {
+      for (const fn of unlistenFns) {
+        try {
+          fn();
+        } catch {}
+      }
+      unlistenFns = [];
+    };
+
     try {
-      const isDownloaded = localLibraryModels.some(
-        (m) =>
-          isModelLoaded(m.id, id) ||
-          m.id === id ||
-          (m as any).name === id ||
-          (m as any).filePath === id
-      );
-      const isLocalExt = ['.gguf', '.safetensors', '.bin', '.pt', '.pth', '.onnx', '.ckpt'].some(
-        (ext) => id.endsWith(ext)
-      );
-      if (!isDownloaded && !isLocalExt) {
-        toast.error(`Model '${id}' is not downloaded locally. Please download it first.`);
-        return;
-      }
+      let readyPayload: any = null;
+      const [unlistenLoading, unlistenDownload, unlistenVram, unlistenReady] = await Promise.all([
+        listen<{ elapsed_secs?: number; status?: string }>('llm-server-loading', (event) => {
+          const { elapsed_secs, status } = event.payload;
+          if (status) {
+            setLoadingStatus(status);
+          } else if (elapsed_secs !== undefined) {
+            const timeStr =
+              elapsed_secs > 60
+                ? `${Math.floor(elapsed_secs / 60)}m ${elapsed_secs % 60}s`
+                : `${elapsed_secs}s`;
+            setLoadingStatus(`Loading model tensors (${timeStr})...`);
+          }
+        }),
+        listen<{ progress: number; status: string }>('llm-download-progress', (event) => {
+          const { progress, status } = event.payload;
+          setLoadingStatus(`${status} (${Math.round(progress)}%)`);
+        }),
+        listen<{
+          ngl: number;
+          fully_gpu: boolean;
+          suggest_cloud_fallback: boolean;
+          message: string;
+        }>('vram-decision', (event) => {
+          if (event.payload.suggest_cloud_fallback) {
+            toast.warning(event.payload.message, { duration: 10000, id: 'vram-decision' });
+          } else {
+            toast.info(event.payload.message, { id: 'vram-decision' });
+          }
+        }),
+        listen<any>('llm-server-ready', (event) => {
+          readyPayload = event.payload;
+        }),
+      ]);
 
-      setTogglingModelId(id);
-      setLoadingStatus('Starting...');
+      unlistenFns = [unlistenLoading, unlistenDownload, unlistenVram, unlistenReady];
 
-      const state = useNyxStore.getState();
-      const targetConfig = state.modelConfigs?.[id] || DEFAULT_SETTINGS;
-      const {
-        contextSize,
-        gpuLayers,
-        threads: cpuThreads,
-        flashAttention,
-        kvCacheType,
-        useMlock,
-        batchSize,
-        draftModelId,
-        disableKvOffload,
-      } = targetConfig;
-
-      let resolvedKvCacheType = kvCacheType;
-      if (kvCacheType === 'auto') {
-        const model = allModels.find((m) => m.id === id);
-        const quantization = (model?.specs as any)?.quantization?.toLowerCase() || '';
-        if (
-          quantization.includes('q4') ||
-          quantization.includes('q5') ||
-          quantization.includes('q6') ||
-          quantization.includes('q2') ||
-          quantization.includes('q3')
-        ) {
-          resolvedKvCacheType = 'q4_0';
-        } else if (quantization.includes('f16') || quantization.includes('f32')) {
-          resolvedKvCacheType = 'f16';
-        } else {
-          resolvedKvCacheType = 'q8_0';
-        }
-      }
-
-      // Use a deferred pattern so we can:
-      // 1. Capture resolve/reject before creating listeners
-      // 2. Await all listeners (guarantees they're registered) before invoke()
-      // This eliminates the race condition where llm-server-ready fires
-      // before the handler is attached.
-      let deferredResolve!: () => void;
-      let deferredReject!: (err: Error) => void;
-
-      const readyPromise = new Promise<void>((res, rej) => {
-        deferredResolve = res;
-        deferredReject = rej;
-      });
-
-      // Declare cleanup/timeout before Promise.all so listener callbacks can call them.
-      // (const is block-scoped and the callbacks close over these refs)
-      let unlistenFns: Array<() => void> = [];
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-      const cleanup = () => {
-        if (timeoutId !== undefined) clearTimeout(timeoutId);
-        for (const fn of unlistenFns) fn();
-        unlistenFns = [];
-      };
-
-      // Now that resolve/reject exist, register all listeners and AWAIT them
-      const [unlistenLoading, unlistenReady, unlistenError, unlistenVram, unlistenDownload] =
-        await Promise.all([
-          listen<{ elapsed_secs?: number; status?: string }>('llm-server-loading', (event) => {
-            const { elapsed_secs, status } = event.payload;
-            if (status) {
-              setLoadingStatus(status);
-            } else if (elapsed_secs !== undefined) {
-              const timeStr =
-                elapsed_secs > 60
-                  ? `${Math.floor(elapsed_secs / 60)}m ${Math.floor(elapsed_secs % 60)}s`
-                  : `${elapsed_secs}s`;
-              setLoadingStatus(`Loading model... ${timeStr}`);
-            }
-          }),
-          listen<{ progress: number; status: string }>('llm-download-progress', (event) => {
-            const { progress, status } = event.payload;
-            setLoadingStatus(`${status} (${Math.round(progress)}%)`);
-          }),
-          listen<{ status: string }>('llm-server-ready', () => {
-            cleanup();
-            deferredResolve();
-          }),
-          listen<{ error: string }>('llm-server-error', (event) => {
-            cleanup();
-            deferredReject(new Error(event.payload.error));
-          }),
-          listen<{
-            ngl: number;
-            fully_gpu: boolean;
-            suggest_cloud_fallback: boolean;
-            message: string;
-          }>('vram-decision', (event) => {
-            if (event.payload.suggest_cloud_fallback) {
-              toast.warning(event.payload.message, { duration: 10000, id: 'vram-decision' });
-            } else {
-              toast.info(event.payload.message, { id: 'vram-decision' });
-            }
-          }),
-        ]);
-
-      unlistenFns = [unlistenLoading, unlistenReady, unlistenError, unlistenVram, unlistenDownload];
-
-      timeoutId = setTimeout(() => {
-        cleanup();
-        deferredReject(new Error('Model load timed out after 300 seconds.'));
-      }, 300_000);
-
-      // Listeners are fully registered — safe to invoke now
-      invoke('start_local_server', {
+      await invoke('start_local_server', {
         modelId: id,
-        contextSize: contextSize ?? 8192,
+        contextSize: contextSize && contextSize > 0 ? contextSize : 32768,
         gpuLayers,
         cpuThreads,
         flashAttention,
         kvCacheType: resolvedKvCacheType,
-        useMlock,
+        useMlock: useMlock ?? false,
         batchSize,
         draftModelId,
-        disableKvOffload,
-      }).catch((err) => {
-        cleanup();
-        deferredReject(new Error(String(err)));
+        disableKvOffload: disableKvOffload ?? false,
+        reasoning: useAppStore.getState().reasoningEnabled,
+        loadDraftModel: modelConfigs?.[id]?.enableSpeculative ?? true,
+        loadVisionProjector: true,
       });
 
-      await readyPromise;
-
       setLoadedLocalModel(id);
-      setTogglingModelId(null);
-      setLoadingStatus(null);
-      toast.success('Model loaded!');
+      const extras: string[] = [];
+      if (readyPayload?.has_mtp) extras.push('⚡ MTP Draft');
+      if (readyPayload?.has_mmproj) extras.push('👁️ Multimodal');
+      const extraMsg = extras.length > 0 ? ` (${extras.join(' + ')})` : '';
+      toast.success(`Model loaded${extraMsg}!`);
       onSelect(id);
     } catch (err: any) {
-      console.error(err);
+      console.error('Failed to load local model:', err);
       toast.error(String(err?.message || err || 'Failed to load model'));
+    } finally {
+      cleanup();
       setTogglingModelId(null);
       setLoadingStatus(null);
     }
@@ -330,31 +305,29 @@ export const ModelSelector: React.FC<Props> = ({
     const allSources = [...nativeSource, ...cloudOnlyModels];
     return allSources
       .filter((m) => {
+        if (!m || !m.id) return false;
+        if (isCompanionSupportFile(m.name) || isCompanionSupportFile(m.id)) return false;
         if (seenIds.has(m.id)) return false;
         seenIds.add(m.id);
         return true;
       })
       .map((m) => {
-        const idLower = m.id.toLowerCase();
+        const caps = (m as any).capabilities || {};
         const isVision =
-          idLower.includes('vl') ||
-          idLower.includes('vision') ||
-          idLower.includes('multimodal') ||
-          idLower.includes('pixtral') ||
-          idLower.includes('llava') ||
-          idLower.includes('gemini');
-        const isReasoning =
-          idLower.includes('r1') ||
-          idLower.includes('reasoning') ||
-          idLower.includes('thinking') ||
-          idLower.includes('o1') ||
-          idLower.includes('o3');
+          caps.vision ?? (m as any).supports_vision ?? (m as any).has_mmproj ?? false;
+        const isReasoning = caps.reasoning ?? (m as any).supports_reasoning ?? false;
+        const isTools = caps.toolCalling ?? caps.tools ?? (m as any).supports_tools ?? false;
+        const isAudio = caps.audio ?? (m as any).supports_audio ?? false;
 
         return {
           ...m,
-          capabilities: (m as any).capabilities || {
+          capabilities: {
+            ...caps,
             vision: isVision,
             reasoning: isReasoning,
+            toolCalling: isTools,
+            tools: isTools,
+            audio: isAudio,
           },
         };
       });
@@ -719,6 +692,12 @@ export const ModelSelector: React.FC<Props> = ({
                                     compact
                                   />
                                 )}
+
+                                {(model as any).has_mtp && (
+                                  <span className="px-1.5 py-0.5 rounded text-[7px] font-mono font-bold bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 shrink-0">
+                                    ⚡ MTP
+                                  </span>
+                                )}
                               </div>
 
                               <p className="text-[7.5px] font-mono text-muted-foreground/60 truncate uppercase tracking-tight mt-0.5 leading-none">
@@ -834,7 +813,7 @@ export const ModelSelector: React.FC<Props> = ({
                                     <span className="text-[7px] font-mono font-black uppercase tracking-widest text-muted-foreground">
                                       Real Capabilities & Maximum Potential
                                     </span>
-                                    <div className="grid grid-cols-3 gap-1 mt-1">
+                                    <div className="grid grid-cols-4 gap-1 mt-1">
                                       <div
                                         className={`p-1 rounded border text-[7px] font-mono flex flex-col gap-0.5 ${
                                           (model as any).capabilities?.vision
@@ -845,8 +824,23 @@ export const ModelSelector: React.FC<Props> = ({
                                         <span className="font-bold">👁️ Vision</span>
                                         <span className="text-[6.5px] opacity-80 leading-tight">
                                           {(model as any).capabilities?.vision
-                                            ? 'Multimodal Image/Doc Analysis'
+                                            ? 'Multimodal Image/Doc'
                                             : 'Text-Only'}
+                                        </span>
+                                      </div>
+
+                                      <div
+                                        className={`p-1 rounded border text-[7px] font-mono flex flex-col gap-0.5 ${
+                                          (model as any).capabilities?.audio
+                                            ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
+                                            : 'bg-muted/30 border-border text-muted-foreground'
+                                        }`}
+                                      >
+                                        <span className="font-bold">🎧 Audio</span>
+                                        <span className="text-[6.5px] opacity-80 leading-tight">
+                                          {(model as any).capabilities?.audio
+                                            ? 'Native Audio/Speech'
+                                            : 'No Audio'}
                                         </span>
                                       </div>
 
@@ -862,7 +856,7 @@ export const ModelSelector: React.FC<Props> = ({
                                         <span className="text-[6.5px] opacity-80 leading-tight">
                                           {(model as any).capabilities?.reasoning ||
                                           (model as any).supportsThinking
-                                            ? 'Deep Thinking & Logic'
+                                            ? 'Deep Thinking'
                                             : 'Direct Inference'}
                                         </span>
                                       </div>
@@ -874,10 +868,10 @@ export const ModelSelector: React.FC<Props> = ({
                                             : 'bg-muted/30 border-border text-muted-foreground'
                                         }`}
                                       >
-                                        <span className="font-bold">🛠️ Tool Calling</span>
+                                        <span className="font-bold">🛠️ Tools</span>
                                         <span className="text-[6.5px] opacity-80 leading-tight">
                                           {(model as any).capabilities?.toolCalling
-                                            ? 'Native Function & Tools'
+                                            ? 'Native Functions'
                                             : 'Standard Text'}
                                         </span>
                                       </div>

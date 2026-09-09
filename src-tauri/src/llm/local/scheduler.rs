@@ -25,8 +25,12 @@ pub struct GgufMetadata {
     pub embedding_length: Option<u32>,
     pub architecture: Option<String>,
     pub chat_template: Option<String>,
+    pub file_type: Option<u32>,
     pub tags: Vec<String>,
     pub supports_reasoning: bool,
+    pub supports_vision: bool,
+    pub supports_audio: bool,
+    pub supports_tools: bool,
 }
 
 fn read_u32(r: &mut impl std::io::Read) -> std::io::Result<u32> {
@@ -69,9 +73,23 @@ pub fn parse_gguf_metadata(path: &std::path::Path) -> std::io::Result<GgufMetada
         let key = read_string(&mut file)?;
         let val_type = read_u32(&mut file)?;
 
+        let key_lower = key.to_lowercase();
+        if key_lower.contains(".vision.") || key_lower.starts_with("clip.") || key_lower.contains(".image_size") {
+            meta.supports_vision = true;
+        }
+        if key_lower.contains(".audio.") || key_lower.starts_with("whisper.") {
+            meta.supports_audio = true;
+        }
+
         if key == "general.architecture" {
             if val_type == 8 {
                 let arch = read_string(&mut file)?;
+                let arch_lower = arch.to_lowercase();
+                if arch_lower.contains("clip") || arch_lower.contains("vision") || arch_lower.contains("vlm") {
+                    meta.supports_vision = true;
+                } else if arch_lower.contains("whisper") || arch_lower.contains("audio") || arch_lower.contains("speech") {
+                    meta.supports_audio = true;
+                }
                 meta.architecture = Some(arch);
                 continue;
             }
@@ -88,6 +106,13 @@ pub fn parse_gguf_metadata(path: &std::path::Path) -> std::io::Result<GgufMetada
                     || tmpl_lower.contains("enable_thinking")
                 {
                     meta.supports_reasoning = true;
+                }
+                if tmpl_lower.contains("tool_call")
+                    || tmpl_lower.contains("<|tool_")
+                    || tmpl_lower.contains("tools")
+                    || tmpl_lower.contains("function_call")
+                {
+                    meta.supports_tools = true;
                 }
                 meta.chat_template = Some(tmpl);
             }
@@ -114,6 +139,25 @@ pub fn parse_gguf_metadata(path: &std::path::Path) -> std::io::Result<GgufMetada
                                         || s_lower.contains("deepseek-r1")
                                     {
                                         meta.supports_reasoning = true;
+                                    }
+                                    if s_lower.contains("vision")
+                                        || s_lower.contains("multimodal")
+                                        || s_lower.contains("image-to-text")
+                                        || s_lower.contains("image-text-to-text")
+                                    {
+                                        meta.supports_vision = true;
+                                    }
+                                    if s_lower.contains("audio")
+                                        || s_lower.contains("speech")
+                                        || s_lower.contains("whisper")
+                                    {
+                                        meta.supports_audio = true;
+                                    }
+                                    if s_lower.contains("tool")
+                                        || s_lower.contains("agent")
+                                        || s_lower.contains("function-calling")
+                                    {
+                                        meta.supports_tools = true;
                                     }
                                     meta.tags.push(s);
                                 }
@@ -163,6 +207,8 @@ pub fn parse_gguf_metadata(path: &std::path::Path) -> std::io::Result<GgufMetada
                 k if k.ends_with(".context_length") || k.ends_with(".context_size") || k.ends_with(".max_position_embeddings") || k == "context_length" || k == "general.context_length" => meta.context_length = Some(v),
                 // embedding_length
                 k if k.ends_with(".embedding_length") => meta.embedding_length = Some(v),
+                // general.file_type (llama_ftype quantization code)
+                k if k == "general.file_type" => meta.file_type = Some(v),
                 _ => {}
             }
         }
@@ -254,6 +300,9 @@ pub struct NglDecision {
     /// True when the model exceeds dedicated VRAM and is utilizing Shared GPU Memory.
     #[serde(default)]
     pub uses_shared_memory: bool,
+    /// Execution strategy for UI and telemetry ("FullDedicatedGpu", "SharedGpuMemory", "IntegratedGpu", "Hybrid")
+    #[serde(default)]
+    pub strategy: String,
 }
 
 /// Describes how transformer layers are distributed across compute units.
@@ -314,33 +363,157 @@ pub struct HybridInferenceConfig {
 }
 
 
-/// Look for a draft model in the same directory as the main model for speculative decoding.
-/// Draft models should be named with a "draft-" prefix (e.g. "draft-qwen2.5-0.5b-Q4_K_M.gguf").
-/// Speculative decoding ~2x generation speed with minimal quality loss.
-pub fn find_draft_model(main_model_path: &Path) -> Option<PathBuf> {
+/// Check if a model file is an MTP (Multi-Token Prediction) companion head.
+/// MTP models (e.g. *-mtp.gguf, mtp-*.gguf, *.mtp.gguf, *.mtp) are auxiliary prediction
+/// modules trained alongside the parent model (such as DeepSeek-V3 and DeepSeek-R1)
+/// that predict consecutive future tokens simultaneously with high acceptance rate.
+pub fn is_mtp_model(path: &Path) -> bool {
+    let filename = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let ext = path
+        .extension()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    if ext == "mtp" {
+        return true;
+    }
+    stem.starts_with("mtp-")
+        || stem.starts_with("mtp_")
+        || stem.ends_with("-mtp")
+        || stem.ends_with("_mtp")
+        || stem.contains("-mtp-")
+        || stem.contains("_mtp_")
+        || filename.contains(".mtp.")
+}
+
+/// Look for an MTP (Multi-Token Prediction) companion model in the same directory as the main model.
+/// MTP companion models are auxiliary prediction heads that enable multi-token speculative
+/// decoding in llama-server using `--spec-type draft-mtp`.
+pub fn normalize_path_buf(p: &Path) -> PathBuf {
+    let s = p.to_string_lossy().replace('/', std::path::MAIN_SEPARATOR_STR);
+    PathBuf::from(s)
+}
+
+pub fn find_mtp_model(main_model_path: &Path) -> Option<PathBuf> {
     let dir = main_model_path.parent()?;
-    let dir_entries = std::fs::read_dir(dir).ok()?;
-    for entry in dir_entries.flatten() {
+    let dir_entries: Vec<_> = std::fs::read_dir(dir).ok()?.flatten().collect();
+    let main_stem = main_model_path.file_stem()?.to_string_lossy().to_lowercase();
+    let dir_name = dir.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let is_dedicated_folder = !dir_name.is_empty()
+        && dir_name != "models"
+        && dir_name != "unorganized"
+        && dir_name != "projectors"
+        && dir_name != "llm";
+
+    let norm_main = normalize_path_buf(main_model_path);
+    let mut candidate_mtp = None;
+
+    for entry in &dir_entries {
         let path = entry.path();
-        if path == main_model_path {
+        if normalize_path_buf(&path) == norm_main {
             continue;
         }
-        if path.extension()?.to_string_lossy().to_lowercase() != "gguf" {
+        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+        if ext != "gguf" && ext != "mtp" {
             continue;
         }
+        if !is_mtp_model(&path) {
+            continue;
+        }
+
         let name = path.file_stem()?.to_string_lossy().to_lowercase();
-        // A draft or MTP model starts with draft- or mtp-, or has -draft/-mtp in its stem.
-        if name.starts_with("draft-")
-            || name.starts_with("mtp-")
-            || name.contains("-draft")
-            || name.contains("_draft")
-            || name.contains("-mtp")
-            || name.contains("_mtp")
+        // Clean MTP affixes to see if it matches the main model stem
+        let clean_mtp = name
+            .replace("mtp-", "")
+            .replace("mtp_", "")
+            .replace("-mtp", "")
+            .replace("_mtp", "")
+            .replace(".mtp", "");
+
+        let clean_prefix: String = clean_mtp.chars().take(8).collect();
+        if main_stem.contains(&clean_mtp)
+            || (!clean_prefix.is_empty() && main_stem.contains(&clean_prefix))
+            || (!clean_mtp.is_empty() && clean_mtp.contains(&main_stem))
+            || (is_dedicated_folder && dir_name.contains(&clean_mtp))
         {
             return Some(path);
         }
+
+        if candidate_mtp.is_none() && is_dedicated_folder {
+            candidate_mtp = Some(path);
+        }
     }
-    None
+
+    candidate_mtp
+}
+
+/// Look for a standalone draft model in the same directory as the main model for speculative decoding.
+/// Draft models are named with a "draft-" prefix (e.g. "draft-qwen2.5-0.5b-Q4_K_M.gguf").
+/// Standalone draft models run via `--spec-type draft-simple`.
+pub fn find_draft_model(main_model_path: &Path) -> Option<PathBuf> {
+    let dir = main_model_path.parent()?;
+    let dir_entries: Vec<_> = std::fs::read_dir(dir).ok()?.flatten().collect();
+    let main_stem = main_model_path.file_stem()?.to_string_lossy().to_lowercase();
+    let dir_name = dir.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let is_dedicated_folder = !dir_name.is_empty()
+        && dir_name != "models"
+        && dir_name != "unorganized"
+        && dir_name != "projectors"
+        && dir_name != "llm";
+
+    let norm_main = normalize_path_buf(main_model_path);
+    let mut candidate_draft = None;
+
+    for entry in &dir_entries {
+        let path = entry.path();
+        if normalize_path_buf(&path) == norm_main {
+            continue;
+        }
+        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+        if ext != "gguf" {
+            continue;
+        }
+        let name = path.file_stem()?.to_string_lossy().to_lowercase();
+        // Standalone draft model starts with draft- or has -draft in its stem, excluding MTP heads.
+        let is_draft = (name.starts_with("draft-")
+            || name.starts_with("draft_")
+            || name.contains("-draft")
+            || name.contains("_draft"))
+            && !is_mtp_model(&path);
+
+        if !is_draft {
+            continue;
+        }
+
+        // Clean draft affixes to see if it matches the main model stem
+        let clean_draft = name
+            .replace("draft-", "")
+            .replace("draft_", "")
+            .replace("-draft", "")
+            .replace("_draft", "");
+
+        let clean_prefix: String = clean_draft.chars().take(8).collect();
+        if main_stem.contains(&clean_draft)
+            || (!clean_prefix.is_empty() && main_stem.contains(&clean_prefix))
+            || (!clean_draft.is_empty() && clean_draft.contains(&main_stem))
+            || (is_dedicated_folder && dir_name.contains(&clean_draft))
+        {
+            return Some(path);
+        }
+
+        if candidate_draft.is_none() && is_dedicated_folder {
+            candidate_draft = Some(path);
+        }
+    }
+
+    candidate_draft
 }
 
 /// Compute a capacity-aware GPU layer count and context size for a model launch.
@@ -360,13 +533,6 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
     let shared_avail = hw.shared_gpu_memory_mb;
     let total_gpu_budget = dedicated_avail.saturating_add(shared_avail);
 
-    let mut actual_ctx_size = ctx_size;
-    if actual_ctx_size == 0 {
-        // Auto mode: use model's max context metadata, defaulting to 32768.
-        let max_ctx = meta.and_then(|m| m.context_length).unwrap_or(32768);
-        actual_ctx_size = max_ctx.min(131072);
-    }
-
     if total_gpu_budget == 0 {
         return Err(format!(
             "No GPU or iGPU detected on this system.\n\n\
@@ -379,48 +545,120 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
         ));
     }
 
-    // ── PASS 1: Dedicated GPU VRAM Priority ───────────────────────────────────
-    // If the model can fit 100% inside dedicated GPU VRAM at ANY viable context
-    // size (tested from largest to smallest), keep it 100% inside dedicated VRAM.
-    // This eliminates shared-memory spilling and guarantees native GPU speed.
-    let mut dedicated_fit = None;
-    if dedicated_avail > 0 {
-        for &candidate_ctx in &[actual_ctx_size, 32768, 16384, 8192, 4096, 2048, 1024] {
-            if candidate_ctx > actual_ctx_size { continue; }
-            let needed_all = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, candidate_ctx);
-            if needed_all <= dedicated_avail {
-                dedicated_fit = Some((candidate_ctx, needed_all));
-                break;
-            }
-        }
-    }
+    let model_max_ctx = meta.and_then(|m| m.context_length);
 
-    let (selected_ctx, selected_ngl, uses_shared_memory) = if let Some((ctx, _needed)) = dedicated_fit {
-        (ctx, total_layers, false)
-    } else {
-        // ── PASS 2: Shared GPU Memory Fallback (All Layers On Dedicated GPU) ────
-        // The model exceeds dedicated VRAM, so it must borrow Windows WDDM Shared
-        // GPU Memory. All compute MUST still be executed 100% on the dedicated GPU.
-        let mut shared_fit = None;
-        for &candidate_ctx in &[actual_ctx_size, 32768, 16384, 8192, 4096, 2048, 1024] {
-            if candidate_ctx > actual_ctx_size { continue; }
-            let needed_all = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, candidate_ctx);
-            if needed_all <= total_gpu_budget {
-                shared_fit = Some((candidate_ctx, needed_all));
-                break;
-            }
-        }
-
-        if let Some((ctx, _needed)) = shared_fit {
-            (ctx, total_layers, true)
+    // If user specified an explicit context length (ctx_size > 0), strictly respect it.
+    // We do NOT clamp by an artificial VRAM cap. Windows WDDM Shared GPU Memory
+    // provides host RAM directly to the dedicated GPU when physical VRAM is exceeded.
+    let (selected_ctx, selected_ngl, uses_shared_memory) = if ctx_size > 0 {
+        let requested_ctx = if let Some(m_ctx) = model_max_ctx {
+            ctx_size.min(m_ctx).max(512)
         } else {
-            // ── PASS 3: Partial Offload (Hybrid Fallback) ────────────────────────
-            let candidate_ngl = (0..=total_layers)
-                .rev()
-                .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, 1024) <= total_gpu_budget)
-                .unwrap_or(0);
-            let uses_shmem = vram_for_ngl(model_size_gb, meta, total_layers, candidate_ngl, 1024) > dedicated_avail;
-            (1024, candidate_ngl, uses_shmem)
+            ctx_size.max(512)
+        };
+
+        // 1. Check if model + requested_ctx fits 100% in dedicated VRAM
+        let needed_dedicated = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, requested_ctx);
+        if dedicated_avail > 0 && needed_dedicated <= dedicated_avail {
+            (requested_ctx, total_layers, false)
+        } else if hw.has_dedicated_gpu {
+            // 2. Dedicated GPU with Shared GPU Memory:
+            // If it fits within total GPU budget (dedicated + shared), preserve the exact requested context!
+            if needed_dedicated <= total_gpu_budget {
+                (requested_ctx, total_layers, true)
+            } else {
+                // If requested_ctx exceeds even total_gpu_budget, step down to find the largest candidate that fits
+                let mut best_ctx = 1024;
+                for &candidate in &[requested_ctx, 65536, 32768, 16384, 8192, 4096, 2048, 1024] {
+                    if candidate > requested_ctx { continue; }
+                    let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, candidate);
+                    if req <= total_gpu_budget {
+                        best_ctx = candidate;
+                        break;
+                    }
+                }
+                (best_ctx, total_layers, true)
+            }
+        } else {
+            // Non-dedicated systems (iGPU fallback)
+            if needed_dedicated <= total_gpu_budget {
+                (requested_ctx, total_layers, true)
+            } else {
+                let mut fit = None;
+                for &candidate in &[requested_ctx, 32768, 16384, 8192, 4096, 2048, 1024] {
+                    if candidate > requested_ctx { continue; }
+                    let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, candidate);
+                    if req <= total_gpu_budget {
+                        fit = Some(candidate);
+                        break;
+                    }
+                }
+                if let Some(c) = fit {
+                    (c, total_layers, true)
+                } else {
+                    let candidate_ngl = (0..=total_layers)
+                        .rev()
+                        .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, 1024) <= total_gpu_budget)
+                        .unwrap_or(0);
+                    let uses_shmem = vram_for_ngl(model_size_gb, meta, total_layers, candidate_ngl, 1024) > dedicated_avail;
+                    (1024, candidate_ngl, uses_shmem)
+                }
+            }
+        }
+    } else {
+        // Auto (ctx_size == 0):
+        // Automatically determine largest viable context size up to model max (or 32768)
+        let base_candidates = [32768, 16384, 8192, 4096, 2048, 1024];
+        let max_ctx = model_max_ctx.unwrap_or(32768);
+
+        // First attempt: fit in dedicated VRAM
+        let mut dedicated_fit = None;
+        if dedicated_avail > 0 {
+            for &c in &base_candidates {
+                if c > max_ctx { continue; }
+                let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, c);
+                if req <= dedicated_avail {
+                    dedicated_fit = Some(c);
+                    break;
+                }
+            }
+        }
+
+        if let Some(c) = dedicated_fit {
+            (c, total_layers, false)
+        } else if hw.has_dedicated_gpu {
+            // Dedicated GPU with Shared Memory
+            let mut shared_fit = None;
+            for &c in &base_candidates {
+                if c > max_ctx { continue; }
+                let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, c);
+                if req <= total_gpu_budget {
+                    shared_fit = Some(c);
+                    break;
+                }
+            }
+            (shared_fit.unwrap_or(1024), total_layers, true)
+        } else {
+            // iGPU fallback
+            let mut shared_fit = None;
+            for &c in &base_candidates {
+                if c > max_ctx { continue; }
+                let req = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, c);
+                if req <= total_gpu_budget {
+                    shared_fit = Some(c);
+                    break;
+                }
+            }
+            if let Some(c) = shared_fit {
+                (c, total_layers, true)
+            } else {
+                let candidate_ngl = (0..=total_layers)
+                    .rev()
+                    .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, 1024) <= total_gpu_budget)
+                    .unwrap_or(0);
+                let uses_shmem = vram_for_ngl(model_size_gb, meta, total_layers, candidate_ngl, 1024) > dedicated_avail;
+                (1024, candidate_ngl, uses_shmem)
+            }
         }
     };
 
@@ -431,9 +669,23 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
     let message = if fully_gpu && !uses_shared_memory {
         format!("GPU (Dedicated VRAM) — all {}/{} layers offloaded to {}. Context: {}.", total_layers, total_layers, hw.gpu_name, selected_ctx)
     } else if fully_gpu && uses_shared_memory {
-        format!("GPU (Shared GPU Memory: {}MB VRAM + shared system memory) — all {}/{} layers offloaded to {}. Context: {}.", dedicated_avail, total_layers, total_layers, hw.gpu_name, selected_ctx)
+        format!("Dedicated GPU (Shared GPU Memory: {}MB VRAM + shared system memory) — all {}/{} layers offloaded solely to {}. Context: {}.", dedicated_avail, total_layers, total_layers, hw.gpu_name, selected_ctx)
     } else {
         format!("Hybrid — {}/{} layers on GPU ({}MB VRAM/shared) and {} layers in system RAM. Context: {}.", selected_ngl, total_layers, needed.min(total_gpu_budget), total_layers.saturating_sub(selected_ngl), selected_ctx)
+    };
+
+    let strategy = if hw.has_dedicated_gpu {
+        if uses_shared_memory {
+            "SharedGpuMemory".to_string()
+        } else {
+            "FullDedicatedGpu".to_string()
+        }
+    } else if hw.is_igpu {
+        "IntegratedGpu".to_string()
+    } else if fully_gpu {
+        "FullDedicatedGpu".to_string()
+    } else {
+        "Hybrid".to_string()
     };
 
     let cpu_threads = if hybrid {
@@ -443,8 +695,8 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
     };
 
     info!(
-        "[NglScheduler] model={:.1}GB ctx={} ngl={}/{} needed={}MB (dedicated={}MB, shared={}MB, uses_shared={})",
-        model_size_gb, selected_ctx, selected_ngl, total_layers, needed, dedicated_avail, shared_avail, uses_shared_memory
+        "[NglScheduler] model={:.1}GB ctx={} ngl={}/{} needed={}MB (dedicated={}MB, shared={}MB, uses_shared={}, strategy={})",
+        model_size_gb, selected_ctx, selected_ngl, total_layers, needed, dedicated_avail, shared_avail, uses_shared_memory, strategy
     );
 
     Ok(NglDecision {
@@ -456,12 +708,70 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
         recommended_cpu_threads: cpu_threads,
         effective_context_size: selected_ctx,
         uses_shared_memory,
+        strategy,
     })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// § 3b — DEDICATED GPU SCHEDULER
+// § 3b — DEDICATED GPU SCHEDULER & KV QUANTIZATION MATCHING
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Derives the matching KV cache quantization type (-ctk and -ctv) from the
+/// selected model's own quantization type and metadata, ensuring zero hardcoding.
+///
+/// Llama.cpp supported KV types: "f32", "f16", "bf16", "q8_0", "q5_0", "q5_1", "q4_0", "q4_1".
+pub fn derive_matching_kv_cache_type(model_identifier: &str, meta: Option<&GgufMetadata>) -> String {
+    // 1. Check GGUF internal header file_type (llama_ftype enum) first if parsed
+    if let Some(m) = meta {
+        if let Some(ft) = m.file_type {
+            match ft {
+                0 => return "f32".to_string(),
+                1 | 28 => return "f16".to_string(),
+                7 | 18 => return "q8_0".to_string(),
+                8 | 9 | 16 | 17 => return "q5_0".to_string(),
+                2 | 3 | 10..=15 | 19..=27 | 29..=33 => return "q4_0".to_string(),
+                _ => {}
+            }
+        }
+
+        // 2. Check GGUF metadata tags if available
+        for tag in &m.tags {
+            let t = tag.to_lowercase();
+            if t.contains("q4") || t.contains("iq4") || t.contains("q3") || t.contains("q2") {
+                return "q4_0".to_string();
+            } else if t.contains("q8") {
+                return "q8_0".to_string();
+            } else if t.contains("q5") || t.contains("iq5") {
+                return "q5_0".to_string();
+            } else if t.contains("q6") {
+                return "q8_0".to_string();
+            } else if t.contains("bf16") || t.contains("f16") {
+                return "f16".to_string();
+            } else if t.contains("f32") {
+                return "f32".to_string();
+            }
+        }
+    }
+
+    // 3. Match quantization syntax in filename or model identifier
+    let lower = model_identifier.to_lowercase();
+    if lower.contains("q4_") || lower.contains("q4-") || lower.contains("q4.") || lower.contains("q4k") || lower.contains("q40") || lower.contains("q41") || lower.contains("iq4") || lower.contains("q3") || lower.contains("q2") || lower.contains("q4") {
+        "q4_0".to_string()
+    } else if lower.contains("q8_") || lower.contains("q8-") || lower.contains("q8.") || lower.contains("q80") || lower.contains("q81") || lower.contains("q8k") || lower.contains("q8") {
+        "q8_0".to_string()
+    } else if lower.contains("q5_") || lower.contains("q5-") || lower.contains("q5.") || lower.contains("q5k") || lower.contains("q50") || lower.contains("q51") || lower.contains("iq5") || lower.contains("q5") {
+        "q5_0".to_string()
+    } else if lower.contains("q6_") || lower.contains("q6-") || lower.contains("q6.") || lower.contains("q6k") || lower.contains("q6") {
+        "q8_0".to_string()
+    } else if lower.contains("bf16") || lower.contains("f16") || lower.contains("fp16") {
+        "f16".to_string()
+    } else if lower.contains("f32") || lower.contains("fp32") {
+        "f32".to_string()
+    } else {
+        // Fallback default: optimal 4-bit KV cache matching modern quantized models
+        "q4_0".to_string()
+    }
+}
 
 /// Compute the complete set of llama-server parameters for pure GPU inference.
 pub fn compute_gpu_inference_config(
@@ -471,23 +781,14 @@ pub fn compute_gpu_inference_config(
     ctx_size: u32,
     draft_model_path: Option<PathBuf>,
     _is_auto_ctx: bool,
+    model_name_or_id: Option<&str>,
 ) -> Result<HybridInferenceConfig, String> {
     let ngl_decision = compute_ngl_decision(hw, meta, model_size_gb, ctx_size)?;
     let total_layers = estimate_total_layers(meta, model_size_gb);
 
     let mode = if ngl_decision.hybrid { InferenceMode::Hybrid } else { InferenceMode::FullGpu };
 
-    let total_gpu_budget = if hw.has_dedicated_gpu {
-        hw.dedicated_vram_available_mb.saturating_add(hw.shared_gpu_memory_mb)
-    } else {
-        hw.vram_available_mb.max(hw.shared_gpu_memory_mb)
-    };
-    let memory_headroom_mb = total_gpu_budget.saturating_sub(ngl_decision.estimated_vram_mb);
-    let kv_cache_type = if memory_headroom_mb >= 2048 && !ngl_decision.uses_shared_memory {
-        "q8_0".to_string()
-    } else {
-        "q4_0".to_string()
-    };
+    let kv_cache_type = derive_matching_kv_cache_type(model_name_or_id.unwrap_or(""), meta);
 
     let (batch_size, ubatch_size) = if ngl_decision.uses_shared_memory {
         (1024u32, 256u32)
@@ -497,13 +798,18 @@ pub fn compute_gpu_inference_config(
         (2048u32, 512u32)
     };
 
+    // For GPU-only inference, the CPU still handles KV management, sampling, and memory ops.
+    // Capping at min(2) was starving the CPU side on machines with 4+ cores, causing
+    // extra token generation latency. Use min(physical_cores, 4) which gives the right
+    // balance across 4-core, 6-core, and higher consumer laptops.
     let threads_gen = if ngl_decision.hybrid {
         hw.cpu_physical_cores.max(1)
     } else {
-        hw.cpu_physical_cores.min(2).max(1)
+        hw.cpu_physical_cores.min(4).max(1)
     };
 
-    let threads_batch = hw.cpu_physical_cores.min(4).max(1);
+    // For batch/prompt-processing, use all physical cores for maximum prefill throughput.
+    let threads_batch = hw.cpu_physical_cores.max(1);
 
     let extra_args: Vec<String> = Vec::new();
     let disable_kv_offload = false;
@@ -543,6 +849,100 @@ pub fn compute_gpu_inference_config(
     })
 }
 
+/// Domain-agnostic helper to derive a clean, dedicated folder name for a model and its support files.
+/// Strips quantization tags, file extensions, and support prefixes/suffixes (mtp, mmproj, draft)
+/// so both the base weights and its companions naturally map to the exact same folder.
+pub fn derive_model_folder_name(filename_or_id: &str, repo_id: Option<&str>) -> String {
+    if let Some(rid) = repo_id.filter(|r| !r.trim().is_empty()) {
+        let repo_leaf = rid.split('/').last().unwrap_or(rid);
+        let cleaned = repo_leaf
+            .trim_end_matches("-GGUF")
+            .trim_end_matches(".GGUF")
+            .trim_end_matches("-gguf")
+            .trim_end_matches(".gguf");
+        if !cleaned.is_empty() {
+            return cleaned.to_string();
+        }
+    }
+
+    let path = Path::new(filename_or_id);
+    let mut stem = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(filename_or_id)
+        .to_string();
+
+    loop {
+        let lower = stem.to_lowercase();
+        if lower.ends_with(".meta.json") {
+            stem = stem[..stem.len() - ".meta.json".len()].to_string();
+        } else if lower.ends_with(".meta") {
+            stem = stem[..stem.len() - ".meta".len()].to_string();
+        } else if lower.ends_with(".json") {
+            stem = stem[..stem.len() - ".json".len()].to_string();
+        } else if lower.ends_with(".gguf") {
+            stem = stem[..stem.len() - ".gguf".len()].to_string();
+        } else if lower.ends_with(".part") {
+            stem = stem[..stem.len() - ".part".len()].to_string();
+        } else {
+            break;
+        }
+    }
+
+    // Strip support prefixes
+    let lower_stem = stem.to_lowercase();
+    let prefix_to_strip = [
+        "mmproj-", "mmproj_", "mmproj.", "mtp-", "mtp_", "mtp.", "draft-", "draft_", "draft.",
+        "vision-", "vision_", "visual-", "visual_", "projector-", "projector_",
+    ];
+    for p in prefix_to_strip {
+        if lower_stem.starts_with(p) {
+            stem = stem[p.len()..].to_string();
+            break;
+        }
+    }
+
+    // Strip quantization markers from the end (e.g. -Q4_K_M or .Q4_K_M, -BF16, -UD-Q4_K_XL, etc.)
+    for _ in 0..2 {
+        if let Some((base, last)) = stem.rsplit_once(|c| c == '-' || c == '.') {
+            let last_upper = last.to_uppercase();
+            let is_quant = last_upper.starts_with('Q')
+                || last_upper == "BF16"
+                || last_upper == "F16"
+                || last_upper == "F32"
+                || last_upper.starts_with("IQ")
+                || last_upper.starts_with("UD");
+            if is_quant && !base.is_empty() {
+                stem = base.to_string();
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    // Strip support suffixes
+    let lower_stem_2 = stem.to_lowercase();
+    let suffix_to_strip = [
+        "-mmproj", "_mmproj", ".mmproj", "-mtp", "_mtp", ".mtp", "-draft", "_draft", ".draft",
+        "-vision", "_vision", ".vision", "-visual", "_visual", ".visual", "-projector",
+        "_projector", ".projector", "-vit", "_vit", ".vit", "-clip", "_clip", ".clip",
+    ];
+    for s in suffix_to_strip {
+        if lower_stem_2.ends_with(s) {
+            stem = stem[..stem.len() - s.len()].to_string();
+            break;
+        }
+    }
+
+    if stem.is_empty() {
+        "unorganized".to_string()
+    } else {
+        stem
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,9 +959,20 @@ mod tests {
         hw
     }
 
+    fn igpu_hardware(vram_mb: u64, shared_mb: u64) -> HardwareSnapshot {
+        let mut hw = HardwareSnapshot::default();
+        hw.gpu_backend = GpuBackend::Vulkan;
+        hw.has_dedicated_gpu = false;
+        hw.is_igpu = true;
+        hw.vram_available_mb = vram_mb;
+        hw.shared_gpu_memory_mb = shared_mb;
+        hw.cpu_physical_cores = 8;
+        hw
+    }
+
     #[test]
-    fn uses_partial_offload_when_model_exceeds_device_budget() {
-        let decision = compute_ngl_decision(&hardware(4096, 0), None, 8.0, 8192).unwrap();
+    fn igpu_uses_partial_offload_when_budget_exceeded() {
+        let decision = compute_ngl_decision(&igpu_hardware(4096, 0), None, 8.0, 8192).unwrap();
         assert!(decision.hybrid);
         assert!(decision.ngl > 0);
         assert!(decision.ngl < estimate_total_layers(None, 8.0));
@@ -569,9 +980,10 @@ mod tests {
     }
 
     #[test]
-    fn uses_shared_memory_as_fallback_budget() {
+    fn dedicated_gpu_uses_shared_memory_for_large_model() {
         let decision = compute_ngl_decision(&hardware(4096, 6144), None, 8.0, 8192).unwrap();
         assert!(decision.fully_gpu);
+        assert!(!decision.hybrid);
         assert!(decision.uses_shared_memory);
         assert_eq!(decision.ngl, estimate_total_layers(None, 8.0));
     }
@@ -582,6 +994,97 @@ mod tests {
         assert!(decision.fully_gpu);
         assert!(!decision.hybrid);
         assert!(!decision.uses_shared_memory);
+    }
+
+    #[test]
+    fn test_is_mtp_model() {
+        assert!(is_mtp_model(Path::new("model-alpha-mtp.gguf")));
+        assert!(is_mtp_model(Path::new("mtp-model-beta.gguf")));
+        assert!(is_mtp_model(Path::new("mtp_model_gamma.gguf")));
+        assert!(is_mtp_model(Path::new("model_delta_mtp_q4_k_m.gguf")));
+        assert!(is_mtp_model(Path::new("model.mtp.gguf")));
+        assert!(is_mtp_model(Path::new("model.mtp")));
+        assert!(!is_mtp_model(Path::new("model-alpha.gguf")));
+        assert!(!is_mtp_model(Path::new("draft-model-beta.gguf")));
+        assert!(!is_mtp_model(Path::new("sample-model-7b.gguf")));
+    }
+
+    #[test]
+    fn test_derive_model_folder_name() {
+        assert_eq!(derive_model_folder_name("model-alpha-Q4_K_M.gguf", None), "model-alpha");
+        assert_eq!(derive_model_folder_name("Ornith-1.5-9B.Q4_K_M.gguf", None), "Ornith-1.5-9B");
+        assert_eq!(derive_model_folder_name("Ornith-1.5-9B.mmproj-bf16.gguf", None), "Ornith-1.5-9B");
+        assert_eq!(derive_model_folder_name("mtp-model-alpha.gguf", None), "model-alpha");
+        assert_eq!(derive_model_folder_name("mmproj-model-alpha-BF16.gguf", None), "model-alpha");
+        assert_eq!(derive_model_folder_name("draft-model-alpha.gguf", None), "model-alpha");
+        assert_eq!(derive_model_folder_name("model-alpha-Q4_K_M.gguf.meta.json", None), "model-alpha");
+        assert_eq!(derive_model_folder_name("arbitrary.gguf", Some("author/custom-model-GGUF")), "custom-model");
+        assert_eq!(derive_model_folder_name("gemma-4-E2B-it-Q4_K_M.gguf", Some("unsloth/gemma-4-E2B-it-GGUF")), "gemma-4-E2B-it");
+        assert_eq!(derive_model_folder_name("gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf", Some("unsloth/gemma-4-E4B-it-qat-GGUF")), "gemma-4-E4B-it-qat");
+        assert_eq!(derive_model_folder_name("Qwen3.5-3B-Q4_K_M.gguf", Some("Qwen/Qwen3.5-3B-GGUF")), "Qwen3.5-3B");
+        assert_eq!(derive_model_folder_name("Qwen3.5-9B-Q4_K_M.gguf", Some("unsloth/Qwen3.5-9B-GGUF")), "Qwen3.5-9B");
+        assert_eq!(derive_model_folder_name("mmproj-F16.gguf", Some("unsloth/Qwen3.5-9B-GGUF")), "Qwen3.5-9B");
+        assert_eq!(derive_model_folder_name("mtp-gemma-4-E2B-it.gguf", Some("unsloth/gemma-4-E2B-it-GGUF")), "gemma-4-E2B-it");
+    }
+
+    #[test]
+    fn test_find_mtp_and_draft_models() {
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!("nyx_mtp_test_{}", unique_id));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_model = temp_dir.join("test-model-q4_k_m.gguf");
+        let mtp_model = temp_dir.join("test-model-mtp.gguf");
+        let draft_model = temp_dir.join("draft-test-model.gguf");
+
+        std::fs::write(&main_model, b"base_model").unwrap();
+        std::fs::write(&mtp_model, b"mtp_heads").unwrap();
+        std::fs::write(&draft_model, b"draft_weights").unwrap();
+
+        let found_mtp = find_mtp_model(&main_model);
+        assert_eq!(found_mtp, Some(mtp_model));
+
+        let found_draft = find_draft_model(&main_model);
+        assert_eq!(found_draft, Some(draft_model));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_derive_matching_kv_cache_type() {
+        assert_eq!(derive_matching_kv_cache_type("Qwen3.5-9B-Q4_K_M.gguf", None), "q4_0");
+        assert_eq!(derive_matching_kv_cache_type("gemma-4-12B-it-qat-UD-Q4_K_XL.gguf", None), "q4_0");
+        assert_eq!(derive_matching_kv_cache_type("model-Q8_0.gguf", None), "q8_0");
+        assert_eq!(derive_matching_kv_cache_type("Ornith-1.5-9B.BF16.gguf", None), "f16");
+        assert_eq!(derive_matching_kv_cache_type("model-q5_k_m.gguf", None), "q5_0");
+        assert_eq!(derive_matching_kv_cache_type("model-f32.gguf", None), "f32");
+
+        // GGUF internal header file_type verification
+        let mut meta_q4 = GgufMetadata::default();
+        meta_q4.file_type = Some(15); // Q4_K_M
+        assert_eq!(derive_matching_kv_cache_type("unlabeled_model.gguf", Some(&meta_q4)), "q4_0");
+
+        let mut meta_q8 = GgufMetadata::default();
+        meta_q8.file_type = Some(7); // Q8_0
+        assert_eq!(derive_matching_kv_cache_type("unlabeled_model.gguf", Some(&meta_q8)), "q8_0");
+
+        // Unlabeled model without metadata defaults to optimal q4_0
+        assert_eq!(derive_matching_kv_cache_type("unknown-model", None), "q4_0");
+    }
+
+    #[test]
+    fn test_explicit_context_size_uses_shared_memory_on_dedicated_gpu() {
+        // Dedicated GPU with 4096MB VRAM and 8192MB Shared GPU Memory
+        let hw = hardware(4096, 8192);
+        // User explicitly sets context size to 16384 for a 5.0GB model
+        let decision = compute_ngl_decision(&hw, None, 5.0, 16384).unwrap();
+        assert_eq!(decision.effective_context_size, 16384);
+        assert!(decision.fully_gpu);
+        assert!(decision.uses_shared_memory);
+        assert_eq!(decision.strategy, "SharedGpuMemory");
     }
 }
 

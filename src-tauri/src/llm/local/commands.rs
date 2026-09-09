@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use super::hardware::*;
 use super::scheduler::*;
@@ -28,6 +28,10 @@ pub struct HardwareAnalysisResult {
     pub gpu_backend: String,
     pub vram_total_mb: u64,
     pub vram_available_mb: u64,
+    pub dedicated_vram_available_mb: u64,
+    pub shared_gpu_memory_mb: u64,
+    pub total_gpu_memory_mb: u64,
+    pub strategy: String,
     pub has_dedicated_gpu: bool,
     /// True when an integrated GPU (APU / Intel iGPU) was detected.
     /// The frontend uses this to show a stability warning.
@@ -66,6 +70,54 @@ static HW_SNAPSHOT_CACHE: std::sync::LazyLock<tokio::sync::Mutex<Option<Hardware
     tokio::sync::Mutex::new(None)
 });
 
+pub fn is_vision_projector_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    if !lower.ends_with(".gguf") {
+        return false;
+    }
+    if lower.contains("whisper") || lower.contains("audio") || lower.contains("imatrix") {
+        return false;
+    }
+    if lower.contains("mmproj") || lower.contains("projector") {
+        return true;
+    }
+    if lower.contains("vision_tower")
+        || lower.contains("vision-tower")
+        || lower.contains("vision_encoder")
+        || lower.contains("vision-encoder")
+        || lower.contains("image_encoder")
+        || lower.contains("image-encoder")
+        || lower.contains("image_adapter")
+        || lower.contains("image-adapter")
+        || lower.contains("resampler")
+        || lower.contains("siglip")
+        || lower.contains("clip-vision")
+        || lower.contains("clip_vision")
+        || lower.contains("clip-vit")
+        || lower.contains("clip_vit")
+    {
+        return true;
+    }
+    let stem = lower.trim_end_matches(".gguf");
+    if stem == "vit" || stem == "visual" || stem == "vision" || stem == "clip" {
+        return true;
+    }
+    let precision_suffixes = [
+        "-f16", "_f16", ".f16", "-f32", "_f32", ".f32", "-bf16", "_bf16", ".bf16",
+        "-fp16", "_fp16", ".fp16", "-fp32", "_fp32", ".fp32", "-q8_0", "_q8_0", ".q8_0",
+        "-q4_0", "_q4_0", ".q4_0", "-q4_k_m", "_q4_k_m", ".q4_k_m",
+    ];
+    for p in precision_suffixes {
+        if stem.ends_with(p) {
+            let base = &stem[..stem.len() - p.len()];
+            if base.ends_with("vision") || base.ends_with("visual") || base.ends_with("vit") || base.ends_with("clip") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn classify_model_namespace(
     filename: &str,
     repo_id: Option<&str>,
@@ -100,7 +152,8 @@ fn classify_model_namespace(
     }
 
     // 3. Projector
-    let is_projector = lname.contains("mmproj")
+    let is_projector = is_vision_projector_name(&lname)
+        || lname.contains("mmproj")
         || search_str.contains("projector");
     if is_projector {
         return "projectors";
@@ -148,17 +201,8 @@ pub async fn run_migration_worker(app: &AppHandle) {
         Err(_) => return,
     };
     let models_dir = app_dir.join("models");
-
-    // Make sure name-spaced folders exist
-    let namespaces = &["llm", "diffusion", "vae", "text_encoders", "projectors"];
-    for ns in namespaces {
-        let ns_dir = models_dir.join(ns).join("unorganized");
-        if !ns_dir.exists() {
-            let _ = tokio::fs::create_dir_all(&ns_dir).await;
-        }
-    }
-
     if !models_dir.exists() {
+        let _ = tokio::fs::create_dir_all(&models_dir).await;
         return;
     }
 
@@ -177,24 +221,17 @@ pub async fn run_migration_worker(app: &AppHandle) {
             continue;
         }
 
-        // Skip the namespaced directories themselves
-        if path.is_dir() && namespaces.contains(&name.as_str()) {
+        // Only loose files directly in models_dir need to be organized into dedicated folders.
+        // Directories inside models_dir are already dedicated per-model folders and must not be nested.
+        if path.is_dir() {
             continue;
         }
 
-        // Determine if it is a legacy model file/folder that needs to be moved
         let mut is_model = false;
         let mut size_bytes = 0;
         let mut ext = String::new();
 
-        if path.is_dir() {
-            let (dir_size, primary_ext, has_weights, _) = scan_folder_fast(&path, 0).await;
-            if has_weights {
-                is_model = true;
-                size_bytes = dir_size;
-                ext = primary_ext;
-            }
-        } else if path.is_file() {
+        if path.is_file() {
             let file_ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
             if SUPPORTED_EXTENSIONS.contains(&file_ext.as_str()) {
                 is_model = true;
@@ -244,11 +281,13 @@ pub async fn run_migration_worker(app: &AppHandle) {
         // 3. Classify namespace
         let namespace = classify_model_namespace(&name, repo_id_opt.as_deref(), &ext);
 
-        // 4. Move file/folder to models/{namespace}/unorganized/{filename}
-        let dest_dir = models_dir.join(namespace).join("unorganized");
+        // 4. Move file/folder to dedicated model folder: models/<folder_name>/<filename>
+        let folder_name = derive_model_folder_name(&name, repo_id_opt.as_deref());
+        let dest_dir = models_dir.join(&folder_name);
+        let _ = tokio::fs::create_dir_all(&dest_dir).await;
         let dest_path = dest_dir.join(&name);
 
-        info!("[NYX Organizer] Migrating legacy model '{}' from root models/ to {:?}", name, dest_path);
+        info!("[NYX Organizer] Migrating legacy model '{}' to dedicated folder {:?}", name, dest_path);
 
         let move_ok = if path.is_dir() {
             tokio::fs::rename(&path, &dest_path).await.is_ok()
@@ -306,7 +345,7 @@ pub async fn run_migration_worker(app: &AppHandle) {
                     .unwrap_or_default()
                     .as_secs() as i64;
 
-                let id = format!("{}/unorganized/{}", namespace, name);
+                let id = format!("{}/{}", folder_name, name);
                 let absolute_path = dest_path.to_string_lossy().to_string();
 
                 let _ = sqlx::query(
@@ -346,7 +385,13 @@ pub async fn resolve_model_path(
     app: &AppHandle,
     raw_model_id: &str,
 ) -> Option<PathBuf> {
-    let leaf_name = raw_model_id.split('/').last().unwrap_or(raw_model_id);
+    let raw_path = PathBuf::from(raw_model_id);
+    if raw_path.exists() {
+        return Some(crate::llm::local::scheduler::normalize_path_buf(&raw_path));
+    }
+
+    let normalized_id = raw_model_id.replace('\\', "/");
+    let leaf_name = normalized_id.split('/').last().unwrap_or(&normalized_id);
     let with_gguf = if !leaf_name.ends_with(".gguf") {
         format!("{}.gguf", leaf_name)
     } else {
@@ -355,6 +400,7 @@ pub async fn resolve_model_path(
 
     let candidates = vec![
         raw_model_id,
+        normalized_id.as_str(),
         leaf_name,
         &with_gguf,
     ];
@@ -392,19 +438,29 @@ pub async fn resolve_model_path(
 
     for model_id in &candidates {
         for models_dir in &candidate_models_dirs {
-            let p = models_dir.join(model_id);
+            let p = models_dir.join(PathBuf::from(model_id));
             if p.exists() {
-                return Some(p);
+                return Some(crate::llm::local::scheduler::normalize_path_buf(&p));
             }
 
-            for ns in &["llm", "diffusion", "vae", "text_encoders", "projectors"] {
-                let p = models_dir.join(ns).join(model_id);
-                if p.exists() {
-                    return Some(p);
-                }
-                let p = models_dir.join(ns).join("unorganized").join(model_id);
-                if p.exists() {
-                    return Some(p);
+            // Check dedicated model subfolders: models/<folder>/<model_id>
+            if let Ok(entries) = std::fs::read_dir(models_dir) {
+                for entry in entries.flatten() {
+                    let sub = entry.path();
+                    if sub.is_dir() {
+                        let candidate = sub.join(model_id);
+                        if candidate.exists() {
+                            return Some(crate::llm::local::scheduler::normalize_path_buf(&candidate));
+                        }
+                        let candidate_leaf = sub.join(leaf_name);
+                        if candidate_leaf.exists() {
+                            return Some(crate::llm::local::scheduler::normalize_path_buf(&candidate_leaf));
+                        }
+                        let candidate_gguf = sub.join(&with_gguf);
+                        if candidate_gguf.exists() {
+                            return Some(crate::llm::local::scheduler::normalize_path_buf(&candidate_gguf));
+                        }
+                    }
                 }
             }
         }
@@ -424,12 +480,12 @@ pub async fn resolve_model_path(
             {
                 let p = PathBuf::from(&model.file_path);
                 if p.exists() {
-                    return Some(p);
+                    return Some(crate::llm::local::scheduler::normalize_path_buf(&p));
                 }
                 for models_dir in &candidate_models_dirs {
                     let p_rel = models_dir.join(&model.file_path);
                     if p_rel.exists() {
-                        return Some(p_rel);
+                        return Some(crate::llm::local::scheduler::normalize_path_buf(&p_rel));
                     }
                 }
             }
@@ -471,7 +527,7 @@ pub async fn analyze_hardware(
         }
     };
     
-    let ctx = context_size.unwrap_or_else(|| gguf_meta.as_ref().and_then(|m| m.context_length).unwrap_or(32768));
+    let ctx = context_size.unwrap_or(0);
     let total_layers = estimate_total_layers(gguf_meta.as_ref(), model_size_gb);
 
     // Try to use the actual server binary for accurate VRAM (it knows all drivers).
@@ -485,9 +541,9 @@ pub async fn analyze_hardware(
     };
 
     let decision = compute_ngl_decision(&hw_snapshot, gguf_meta.as_ref(), model_size_gb, ctx);
-    let (ngl, fully_gpu, hybrid, uses_shared_memory, estimated_vram_mb, schedule_message, recommended_cpu_threads) = match decision {
-        Ok(d) => (d.ngl, d.fully_gpu, d.hybrid, d.uses_shared_memory, d.estimated_vram_mb, d.message, d.recommended_cpu_threads),
-        Err(err_msg) => (0, false, false, false, 0, err_msg, 0),
+    let (ngl, fully_gpu, hybrid, uses_shared_memory, estimated_vram_mb, schedule_message, recommended_cpu_threads, strategy) = match decision {
+        Ok(d) => (d.ngl, d.fully_gpu, d.hybrid, d.uses_shared_memory, d.estimated_vram_mb, d.message, d.recommended_cpu_threads, d.strategy),
+        Err(err_msg) => (0, false, false, false, 0, err_msg, 0, "Unknown".to_string()),
     };
     let layers_on_gpu = ngl.min(total_layers);
     let layers_on_cpu = total_layers.saturating_sub(layers_on_gpu);
@@ -497,6 +553,10 @@ pub async fn analyze_hardware(
         gpu_backend: format!("{:?}", hw_snapshot.gpu_backend),
         vram_total_mb: hw_snapshot.vram_total_mb,
         vram_available_mb: hw_snapshot.vram_available_mb,
+        dedicated_vram_available_mb: hw_snapshot.dedicated_vram_available_mb,
+        shared_gpu_memory_mb: hw_snapshot.shared_gpu_memory_mb,
+        total_gpu_memory_mb: hw_snapshot.dedicated_vram_available_mb.saturating_add(hw_snapshot.shared_gpu_memory_mb),
+        strategy,
         has_dedicated_gpu: hw_snapshot.has_dedicated_gpu,
         is_igpu: hw_snapshot.is_igpu,
         is_npu: hw_snapshot.gpu_backend == GpuBackend::Npu,
@@ -541,21 +601,7 @@ pub async fn estimate_hardware_usage(
 }
 
 #[tauri::command]
-pub async fn open_external_installer_cli(app: AppHandle) -> Result<(), String> {
-    let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let script_path = app_dir.join("install-dependencies.bat");
-
-    let script_content = include_str!("../../../scripts/install-dependencies.bat");
-    let _ = tokio::fs::write(&script_path, script_content).await;
-
-    #[cfg(target_os = "windows")]
-    {
-        use std::process::Command;
-        let _ = Command::new("cmd.exe")
-            .args(&["/c", "start", "NYX Local Intelligence Installer", script_path.to_str().unwrap_or("install-dependencies.bat")])
-            .spawn();
-    }
-
+pub async fn open_external_installer_cli(_app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
@@ -614,6 +660,30 @@ pub fn get_active_local_llm_model() -> Option<String> {
     ACTIVE_LOCAL_LLM_MODEL.lock().unwrap().clone()
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ActiveServerConfig {
+    pub model_id: String,
+    pub context_size: Option<u32>,
+    pub gpu_layers: Option<u32>,
+    pub cpu_threads: Option<u32>,
+    pub flash_attention: Option<bool>,
+    pub kv_cache_type: Option<String>,
+    pub batch_size: Option<u32>,
+    pub split_mode: Option<String>,
+    pub tensor_split: Option<String>,
+    pub reasoning: Option<bool>,
+    pub reasoning_budget: Option<i32>,
+    pub has_mmproj_loaded: bool,
+    pub has_audio_loaded: bool,
+    pub has_mtp_loaded: bool,
+    pub mmproj_file: Option<String>,
+    pub draft_model_file: Option<String>,
+}
+
+pub static ACTIVE_SERVER_CONFIG: std::sync::LazyLock<std::sync::Mutex<Option<ActiveServerConfig>>> = std::sync::LazyLock::new(|| {
+    std::sync::Mutex::new(None)
+});
+
 #[tauri::command]
 pub async fn start_local_server(
     app: AppHandle,
@@ -624,13 +694,20 @@ pub async fn start_local_server(
     cpu_threads: Option<u32>,        // Optional manual override
     flash_attention: Option<bool>,
     kv_cache_type: Option<String>,
-    _use_mlock: Option<bool>,
+    use_mlock: Option<bool>,
     batch_size: Option<u32>,
     draft_model_id: Option<String>,
-    _disable_kv_offload: Option<bool>,
+    disable_kv_offload: Option<bool>,
     split_mode: Option<String>,
     tensor_split: Option<String>,
+    reasoning: Option<bool>,
+    reasoning_budget: Option<i32>,
+    load_vision_projector: Option<bool>,
+    load_audio_projector: Option<bool>,
+    load_draft_model: Option<bool>,
 ) -> Result<(), String> {
+    let _ = use_mlock;
+    let _ = disable_kv_offload;
     let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let models_dir = app_dir.join("models");
     let model_path = match resolve_model_path(&app, &model_id).await {
@@ -653,6 +730,7 @@ pub async fn start_local_server(
     if !model_path.exists() {
         return Err(format!("Model '{}' not found in {:?}. Please download it first.", model_id, models_dir));
     }
+    let model_path = crate::llm::local::scheduler::normalize_path_buf(&model_path);
 
     let explicit_draft = if let Some(ref d_id) = draft_model_id.as_ref().filter(|id| !id.trim().is_empty()) {
         resolve_model_path(&app, d_id).await
@@ -661,30 +739,83 @@ pub async fn start_local_server(
     };
 
     // Try to find an mmproj or audio projector file for this model
-    let target_meta_path_1 = model_path.with_extension("meta.json");
-    let target_meta_path_2 = model_path.with_extension("gguf.meta.json");
-    let (target_repo_id, has_multimodal_flag) = {
+    let models_dir = app_dir.join("models");
+    let model_filename = model_path.file_name().unwrap_or_default();
+    let model_stem = model_path.file_stem().unwrap_or_default();
+    let mut meta_search_paths = Vec::new();
+    meta_search_paths.push(PathBuf::from(format!("{}.meta.json", model_path.display())));
+    meta_search_paths.push(PathBuf::from(format!("{}.json", model_path.display())));
+    meta_search_paths.push(model_path.with_extension("meta.json"));
+    meta_search_paths.push(model_path.with_extension("gguf.meta.json"));
+    if let Some(parent) = model_path.parent() {
+        meta_search_paths.push(parent.join(format!("{}.meta.json", model_filename.to_string_lossy())));
+        meta_search_paths.push(parent.join(format!("{}.gguf.meta.json", model_filename.to_string_lossy())));
+        meta_search_paths.push(parent.join(format!("{}.meta.json", model_stem.to_string_lossy())));
+        meta_search_paths.push(parent.join(format!("{}.gguf.meta.json", model_stem.to_string_lossy())));
+    }
+    meta_search_paths.push(models_dir.join(format!("{}.meta.json", model_filename.to_string_lossy())));
+    meta_search_paths.push(models_dir.join(format!("{}.gguf.meta.json", model_filename.to_string_lossy())));
+
+    let (target_repo_id, has_multimodal_flag, meta_supports_reasoning, meta_context_length, target_architecture, target_pipeline_tag) = {
         let mut rid: Option<String> = None;
         let mut mm = false;
-        for mp in [&target_meta_path_1, &target_meta_path_2] {
+        let mut reasoning_from_meta = false;
+        let mut ctx_len: Option<u32> = None;
+        let mut arch: Option<String> = None;
+        let mut ptag: Option<String> = None;
+        for mp in &meta_search_paths {
             if let Ok(content) = tokio::fs::read_to_string(mp).await {
                 if let Ok(j) = serde_json::from_str::<serde_json::Value>(&content) {
                     if rid.is_none() {
                         rid = j.get("repo_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    }
+                    if arch.is_none() {
+                        arch = j.get("architecture").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    }
+                    if ptag.is_none() {
+                        ptag = j.get("pipeline_tag").and_then(|v| v.as_str()).map(|s| s.to_string());
                     }
                     if j.get("supports_vision").and_then(|v| v.as_bool()).unwrap_or(false)
                         || j.get("supports_audio").and_then(|v| v.as_bool()).unwrap_or(false)
                     {
                         mm = true;
                     }
+                    if j.get("supports_reasoning").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        reasoning_from_meta = true;
+                    }
+                    if let Some(tags) = j.get("tags").and_then(|v| v.as_array()) {
+                        for t in tags {
+                            if let Some(s) = t.as_str() {
+                                let sl = s.to_lowercase();
+                                if sl == "reasoning" || sl == "thinking" || sl == "thought" || sl.contains("reasoning") || sl.contains("chain-of-thought") {
+                                    reasoning_from_meta = true;
+                                }
+                            }
+                        }
+                    }
+                    if ctx_len.is_none() {
+                        if let Some(c) = j.get("context_length").and_then(|v| v.as_u64()) {
+                            ctx_len = Some(c as u32);
+                        }
+                    }
                 }
             }
         }
-        (rid, mm)
+        (rid, mm, reasoning_from_meta, ctx_len, arch, ptag)
     };
 
     let name_lower = model_id.to_lowercase();
+    let folder_has_mmproj = model_path.parent().map(|p| {
+        std::fs::read_dir(p).map(|rd| rd.flatten().any(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            is_vision_projector_name(&n)
+        })).unwrap_or(false)
+    }).unwrap_or(false);
+
     let is_candidate_model = has_multimodal_flag
+        || folder_has_mmproj
+        || target_architecture.as_deref() == Some("gemma4")
+        || target_pipeline_tag.as_deref().map_or(false, |pt| pt.contains("image"))
         || name_lower.contains("-vl") 
         || name_lower.contains("_vl") 
         || name_lower.contains("vision") 
@@ -694,43 +825,88 @@ pub async fn start_local_server(
         || name_lower.contains("multimodal");
 
     let mut mmproj_path = None;
-    if is_candidate_model {
+    let is_audio = load_audio_projector.unwrap_or(false);
+    let explicit_disable_vision = load_vision_projector == Some(false);
+    let should_load_mm = (!explicit_disable_vision && is_candidate_model)
+        || load_vision_projector == Some(true)
+        || is_audio;
+    if should_load_mm {
         let mut candidate_paths = Vec::new();
-        let search_dirs = vec![
-            app_dir.join("models"),
-            app_dir.join("models").join("projectors"),
-            app_dir.join("models").join("projectors").join("unorganized"),
-        ];
-        for dir in search_dirs {
-            if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
+        // Priority 1: Check the model's own dedicated folder FIRST
+        if let Some(parent) = model_path.parent() {
+            if let Ok(mut entries) = tokio::fs::read_dir(parent).await {
                 while let Ok(Some(entry)) = entries.next_entry().await {
-                    let name = entry.file_name().to_string_lossy().to_lowercase();
-                    if (name.contains("mmproj") || name.contains("projector") || name.contains("whisper"))
-                        && name.ends_with(".gguf")
-                    {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let matches_type = if is_audio {
+                        (name.to_lowercase().contains("whisper") || name.to_lowercase().contains("audio")) && name.to_lowercase().ends_with(".gguf")
+                    } else {
+                        is_vision_projector_name(&name)
+                    };
+                    if matches_type {
+                        candidate_paths.push(entry.path());
+                    }
+                }
+            }
+        }
+        // If not found in parent, check models_dir root
+        if candidate_paths.is_empty() {
+            if let Ok(mut entries) = tokio::fs::read_dir(&models_dir).await {
+                while let Ok(Some(entry)) = entries.next_entry().await {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let matches_type = if is_audio {
+                        (name.to_lowercase().contains("whisper") || name.to_lowercase().contains("audio")) && name.to_lowercase().ends_with(".gguf")
+                    } else {
+                        is_vision_projector_name(&name)
+                    };
+                    if matches_type {
                         candidate_paths.push(entry.path());
                     }
                 }
             }
         }
 
-        for path in candidate_paths {
-            let meta_path_1 = path.with_extension("meta.json");
-            let meta_path_2 = path.with_extension("gguf.meta.json");
-            for mp in [&meta_path_1, &meta_path_2] {
-                if let Ok(content) = tokio::fs::read_to_string(mp).await {
-                    if let Ok(j) = serde_json::from_str::<serde_json::Value>(&content) {
-                        if let Some(repo_id) = j.get("repo_id").and_then(|v| v.as_str()) {
-                            if Some(repo_id.to_string()) == target_repo_id && target_repo_id.is_some() {
-                                mmproj_path = Some(path.clone());
-                                break;
+        // Sort candidates by file size ascending so lightweight/BF16 projectors are prioritized over F32
+        let mut paths_with_size = Vec::new();
+        for p in candidate_paths {
+            let size = tokio::fs::metadata(&p).await.map(|m| m.len()).unwrap_or(u64::MAX);
+            paths_with_size.push((p, size));
+        }
+        paths_with_size.sort_by_key(|(_, size)| *size);
+
+        // 1. Companion file in the model's dedicated directory
+        if let Some(parent) = model_path.parent() {
+            let norm_parent = normalize_path_buf(parent);
+            for (path, _) in &paths_with_size {
+                if path.parent().map(normalize_path_buf) == Some(norm_parent.clone()) {
+                    info!("[start_local_server] Auto-paired dedicated model folder projector: {:?}", path);
+                    mmproj_path = Some(path.clone());
+                    break;
+                }
+            }
+        }
+
+        // 2. Match by metadata repo_id
+        if mmproj_path.is_none() {
+            for (path, _) in &paths_with_size {
+                let meta_path_1 = PathBuf::from(format!("{}.meta.json", path.display()));
+                let meta_path_2 = path.with_extension("meta.json");
+                let meta_path_3 = path.with_extension("gguf.meta.json");
+                for mp in [&meta_path_1, &meta_path_2, &meta_path_3] {
+                    if let Ok(content) = tokio::fs::read_to_string(mp).await {
+                        if let Ok(j) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if let Some(repo_id) = j.get("repo_id").and_then(|v| v.as_str()) {
+                                if Some(repo_id.to_string()) == target_repo_id && target_repo_id.is_some() {
+                                    info!("[start_local_server] Auto-paired matching repo_id projector: {:?}", path);
+                                    mmproj_path = Some(path.clone());
+                                    break;
+                                }
                             }
                         }
                     }
                 }
-            }
-            if mmproj_path.is_some() {
-                break;
+                if mmproj_path.is_some() {
+                    break;
+                }
             }
         }
     }
@@ -817,13 +993,17 @@ pub async fn start_local_server(
         None
     };
 
-    // If ctx is 0 (auto), default to 32768 (32K) context window (capped to model max if model max is smaller).
-    let model_max_ctx = gguf_meta.as_ref().and_then(|m| m.context_length).unwrap_or(32768);
+    let hw = HardwareSnapshot::collect().await;
+    let model_max_ctx = gguf_meta.as_ref().and_then(|m| m.context_length).or(meta_context_length).unwrap_or(32768);
     let effective_ctx = if ctx == 0 {
-        32768u32.min(model_max_ctx).max(2048)
+        // Auto: pass 0 to let the GPU scheduler calculate the optimal context from available budget
+        0
     } else {
-        ctx.min(model_max_ctx).max(2048)
+        // Explicit: honor user value up to model max, leveraging Shared GPU Memory when physical VRAM is exceeded
+        ctx.min(model_max_ctx).max(512)
     };
+    info!("[start_local_server] requested_ctx={} effective_ctx={} model_max_ctx={}",
+        ctx, effective_ctx, model_max_ctx);
 
     let is_gguf_image_model = if ext_lower == "gguf" {
         if let Some(ref meta) = gguf_meta {
@@ -992,8 +1172,6 @@ pub async fn start_local_server(
         return Ok(());
     }
 
-    let hw = HardwareSnapshot::collect().await;
-
     let target_bin_name = match &hw.gpu_backend {
         GpuBackend::Cuda => "llama-server-cuda.exe",
         GpuBackend::Vulkan | GpuBackend::Npu => "llama-server-vulkan.exe",
@@ -1082,12 +1260,37 @@ pub async fn start_local_server(
     // Computes NGL split + optimal thread counts + batch sizes + KV cache
     // placement + memory locking strategy — all from live hardware data.
 
-    // Check for draft model (small GGUF in the same directory that can be used for speculative decoding)
-    // Auto-detect draft model in directory (explicit user-provided draft takes priority)
-    let draft_model_path = explicit_draft.or_else(|| find_draft_model(&model_path));
+    // --- Step 2: Speculative decoding / MTP Companion Resolution ---
+    let mtp_companion = find_mtp_model(&model_path);
+    let regular_draft = find_draft_model(&model_path);
+
+    let (draft_model_path, spec_type) = if let Some(explicit) = explicit_draft {
+        let is_mtp = is_mtp_model(&explicit);
+        let st = if is_mtp { "draft-mtp".to_string() } else { "draft-simple".to_string() };
+        (Some(explicit), Some(st))
+    } else if let Some(mtp) = mtp_companion {
+        // Auto-load MTP companion unless load_draft_model was explicitly set to false
+        if load_draft_model.unwrap_or(true) {
+            info!("[start_local_server] Auto-paired MTP companion for speculative decoding: {:?}", mtp);
+            (Some(mtp), Some("draft-mtp".to_string()))
+        } else {
+            (None, None)
+        }
+    } else if load_draft_model.unwrap_or(true) && regular_draft.is_some() {
+        info!("[start_local_server] Auto-paired draft model for speculative decoding: {:?}", regular_draft);
+        (regular_draft, Some("draft-simple".to_string()))
+    } else {
+        (None, None)
+    };
 
 
-    let hybrid_cfg = match compute_gpu_inference_config(&hw, gguf_meta.as_ref(), model_size_gb, effective_ctx, draft_model_path.clone(), is_auto_ctx) {
+    let model_filename = model_path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(&model_id);
+    let full_model_ref = format!("{} {}", model_id, model_filename);
+
+    let hybrid_cfg = match compute_gpu_inference_config(&hw, gguf_meta.as_ref(), model_size_gb, effective_ctx, draft_model_path.clone(), is_auto_ctx, Some(&full_model_ref)) {
         Ok(cfg) => cfg,
         Err(err_msg) => {
             // Model cannot fit in GPU VRAM — surface a clear error to the frontend.
@@ -1099,14 +1302,21 @@ pub async fn start_local_server(
     let total_layers = estimate_total_layers(gguf_meta.as_ref(), model_size_gb);
 
 
-    // Always pass 999 to llama-server in GPU-only mode to guarantee 100% of all layers,
-    // embeddings, and output tensors are offloaded to GPU without any trailing layers left on CPU.
-    // Manual overrides may reduce GPU placement, but never exceed the
-    // capacity-aware plan calculated from the current hardware snapshot.
+    // Always pass 999 to llama-server when a dedicated GPU is present (or in full GPU mode)
+    // to guarantee 100% of all layers, embeddings, and output tensors are offloaded to
+    // the dedicated GPU. When physical VRAM is exceeded, Windows WDDM Shared GPU Memory
+    // enables the dedicated GPU to seamlessly access host RAM while executing all compute
+    // solely on the dedicated GPU.
     let final_ngl = match gpu_layers.filter(|&l| l > 0) {
-        Some(layers) => layers.min(total_layers).min(hybrid_cfg.ngl),
+        Some(layers) => {
+            if hw.has_dedicated_gpu && (hybrid_cfg.uses_shared_memory || hybrid_cfg.ngl >= total_layers) {
+                999
+            } else {
+                layers.min(total_layers).min(hybrid_cfg.ngl)
+            }
+        }
         None => {
-            if hybrid_cfg.ngl >= total_layers || hybrid_cfg.uses_shared_memory {
+            if hybrid_cfg.ngl >= total_layers || hybrid_cfg.uses_shared_memory || hw.has_dedicated_gpu {
                 999
             } else {
                 hybrid_cfg.ngl
@@ -1123,7 +1333,7 @@ pub async fn start_local_server(
     let final_kv_type = if kv_cache_type.as_deref() == Some("auto") || kv_cache_type.is_none() {
         Some(hybrid_cfg.kv_cache_type.clone())
     } else {
-        kv_cache_type
+        kv_cache_type.clone()
     };
     // Keep KV offload enabled so llama.cpp can place KV data with the GPU layers.
     let final_mlock   = false; // Never mlock in GPU-only mode — double-pinning risk
@@ -1134,6 +1344,9 @@ pub async fn start_local_server(
     // Effective context comes from the GPU scheduler (may be auto-reduced to fit VRAM).
     let estimated_vram_mb = vram_for_ngl(model_size_gb, gguf_meta.as_ref(), total_layers, if final_ngl >= 999 { total_layers } else { final_ngl }, effective_context_size);
     let context_capped = effective_context_size < effective_ctx;
+    let mmproj_filename = mmproj_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
+    let draft_filename = draft_model_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
+
     let _ = app.emit("vram-decision", serde_json::json!({
         "ngl": final_ngl,
         "fully_gpu": final_ngl >= total_layers || final_ngl >= 999,
@@ -1165,6 +1378,11 @@ pub async fn start_local_server(
         "context_capped": context_capped,
         "effective_context_size": effective_context_size,
         "gpu_backend": format!("{:?}", hw.gpu_backend),
+        "has_mmproj": mmproj_path.is_some(),
+        "mmproj_file": mmproj_filename,
+        "has_mtp": draft_model_path.is_some(),
+        "draft_model_file": draft_filename,
+        "spec_type": spec_type.clone(),
     }));
 
     // --- Step 3: Build config and start the server ---
@@ -1191,7 +1409,7 @@ pub async fn start_local_server(
     let (final_device_id, final_split_mode) = if split_mode.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
         (
             if hw.gpu_device_id.is_empty() { None } else { Some(hw.gpu_device_id.clone()) },
-            split_mode.filter(|s| !s.trim().is_empty()),
+            split_mode.clone().filter(|s| !s.trim().is_empty()),
         )
     } else {
         (
@@ -1199,10 +1417,24 @@ pub async fn start_local_server(
             None,
         )
     };
-    let final_tensor_split = tensor_split.filter(|s| !s.trim().is_empty());
+    let final_tensor_split = tensor_split.clone().filter(|s| !s.trim().is_empty());
+
+    // Stop any existing tracked child process and kill any lingering orphans BEFORE allocating port.
+    // This releases port 8080 so the new server can reliably reuse port 8080 without drifting to 8081.
+    manager.stop().await;
+    LlamaManager::kill_orphans(None).await;
 
     let active_port = find_free_port();
     SERVER_PORT.store(active_port, std::sync::atomic::Ordering::Relaxed);
+
+    let resolved_reasoning = reasoning.or_else(|| {
+        let gguf_reasoning = gguf_meta.as_ref().map(|m| m.supports_reasoning).unwrap_or(false);
+        if meta_supports_reasoning || gguf_reasoning {
+            Some(true)
+        } else {
+            None
+        }
+    });
 
     let cfg = LlamaServerConfig {
         server_path: server_path.clone(),
@@ -1219,31 +1451,208 @@ pub async fn start_local_server(
         use_mmap: hybrid_cfg.use_mmap,
         batch_size: final_batch,
         draft_model_path,
+        spec_type,
+        spec_draft_min: None,
+        spec_draft_max: None,
+        ngl_draft: None,
         disable_kv_offload: final_no_kv,
         prompt_cache_path,
-        mmproj_path,
+        mmproj_path: mmproj_path.clone(),
         port: active_port,
         split_mode: final_split_mode,
         tensor_split: final_tensor_split,
+        reasoning: resolved_reasoning,
+        reasoning_budget,
         extra_args: hybrid_cfg.extra_args,
     };
 
     let app_handle = app.clone();
-    manager.start(&cfg, Some(move |pct: u32, msg: &str| {
+    let start_res = manager.start(&cfg, Some(move |pct: u32, msg: &str| {
         let _ = app_handle.emit("llm-server-loading-progress", serde_json::json!({
             "progress": pct,
             "message": msg
         }));
-    })).await?;
+    })).await;
+
+    if let Err(err) = start_res {
+        if cfg.draft_model_path.is_some() {
+            if cfg.ngl_draft != Some(0) {
+                warn!("[start_local_server] Initial start with GPU draft offload failed: {}. Retrying with CPU draft placement (-ngld 0)...", err);
+                let mut fallback_cfg = cfg.clone();
+                fallback_cfg.ngl_draft = Some(0);
+                let app_handle_retry = app.clone();
+                let retry_res = manager.start(&fallback_cfg, Some(move |pct: u32, msg: &str| {
+                    let _ = app_handle_retry.emit("llm-server-loading-progress", serde_json::json!({
+                        "progress": pct,
+                        "message": msg
+                    }));
+                })).await;
+                if let Err(retry_err) = retry_res {
+                    warn!("[start_local_server] Failed to start with CPU draft: {}. Retrying without draft model...", retry_err);
+                    let mut no_draft_cfg = cfg.clone();
+                    no_draft_cfg.draft_model_path = None;
+                    no_draft_cfg.spec_type = None;
+                    let app_handle_final = app.clone();
+                    manager.start(&no_draft_cfg, Some(move |pct: u32, msg: &str| {
+                        let _ = app_handle_final.emit("llm-server-loading-progress", serde_json::json!({
+                            "progress": pct,
+                            "message": msg
+                        }));
+                    })).await?;
+                }
+            } else {
+                warn!("[start_local_server] Failed to start with draft model: {}. Retrying without draft model...", err);
+                let mut fallback_cfg = cfg.clone();
+                fallback_cfg.draft_model_path = None;
+                fallback_cfg.spec_type = None;
+                let app_handle_retry = app.clone();
+                manager.start(&fallback_cfg, Some(move |pct: u32, msg: &str| {
+                    let _ = app_handle_retry.emit("llm-server-loading-progress", serde_json::json!({
+                        "progress": pct,
+                        "message": msg
+                    }));
+                })).await?;
+            }
+        } else {
+            return Err(err);
+        }
+    }
 
     {
         let mut active_llm = ACTIVE_LOCAL_LLM_MODEL.lock().unwrap();
-        *active_llm = Some(model_id);
+        *active_llm = Some(model_id.clone());
     }
     ACTIVE_SERVER_CTX_SIZE.store(server_ctx, std::sync::atomic::Ordering::Relaxed);
+    {
+        let mmproj_filename = mmproj_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
+        let draft_filename = cfg.draft_model_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
 
-    let _ = app.emit("llm-server-ready", serde_json::json!({ "status": "Ready" }));
+        let mut cfg_lock = ACTIVE_SERVER_CONFIG.lock().unwrap();
+        *cfg_lock = Some(ActiveServerConfig {
+            model_id: model_id.clone(),
+            context_size,
+            gpu_layers,
+            cpu_threads,
+            flash_attention,
+            kv_cache_type: kv_cache_type.clone(),
+            batch_size,
+            split_mode: split_mode.clone(),
+            tensor_split: tensor_split.clone(),
+            reasoning,
+            reasoning_budget,
+            has_mmproj_loaded: mmproj_path.is_some(),
+            has_audio_loaded: load_audio_projector.unwrap_or(false),
+            has_mtp_loaded: cfg.draft_model_path.is_some(),
+            mmproj_file: mmproj_filename.clone(),
+            draft_model_file: draft_filename.clone(),
+        });
+    }
+
+    let mmproj_filename = mmproj_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
+    let draft_filename = cfg.draft_model_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
+
+    let _ = app.emit("llm-server-ready", serde_json::json!({
+        "status": "Ready",
+        "model_id": model_id,
+        "has_mmproj": mmproj_path.is_some(),
+        "mmproj_file": mmproj_filename,
+        "has_mtp": cfg.draft_model_path.is_some(),
+        "draft_model_file": draft_filename,
+        "spec_type": cfg.spec_type.clone(),
+    }));
     Ok(())
+}
+
+#[tauri::command]
+pub async fn load_multimodal_support(
+    app: AppHandle,
+    manager: State<'_, Arc<LlamaManager>>,
+    for_audio: Option<bool>,
+) -> Result<bool, String> {
+    let audio = for_audio.unwrap_or(false);
+    let current_cfg = {
+        let guard = ACTIVE_SERVER_CONFIG.lock().unwrap();
+        guard.clone()
+    };
+
+    let cfg = match current_cfg {
+        Some(c) => c,
+        None => return Ok(false),
+    };
+
+    if (!audio && cfg.has_mmproj_loaded) || (audio && cfg.has_audio_loaded) {
+        return Ok(true);
+    }
+
+    info!("[load_multimodal_support] Hot-loading companion support file (audio={}) for: {}", audio, cfg.model_id);
+    start_local_server(
+        app,
+        manager,
+        cfg.model_id,
+        cfg.context_size,
+        cfg.gpu_layers,
+        cfg.cpu_threads,
+        cfg.flash_attention,
+        cfg.kv_cache_type,
+        None,
+        cfg.batch_size,
+        None,
+        None,
+        cfg.split_mode,
+        cfg.tensor_split,
+        cfg.reasoning,
+        cfg.reasoning_budget,
+        Some(!audio),
+        Some(audio),
+        Some(false),
+    ).await?;
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn unload_multimodal_support(
+    app: AppHandle,
+    manager: State<'_, Arc<LlamaManager>>,
+) -> Result<bool, String> {
+    let current_cfg = {
+        let guard = ACTIVE_SERVER_CONFIG.lock().unwrap();
+        guard.clone()
+    };
+
+    let cfg = match current_cfg {
+        Some(c) => c,
+        None => return Ok(false),
+    };
+
+    if !cfg.has_mmproj_loaded && !cfg.has_audio_loaded {
+        return Ok(true);
+    }
+
+    info!("[unload_multimodal_support] Unloading companion support files, restoring clean base model: {}", cfg.model_id);
+    start_local_server(
+        app,
+        manager,
+        cfg.model_id,
+        cfg.context_size,
+        cfg.gpu_layers,
+        cfg.cpu_threads,
+        cfg.flash_attention,
+        cfg.kv_cache_type,
+        None,
+        cfg.batch_size,
+        None,
+        None,
+        cfg.split_mode,
+        cfg.tensor_split,
+        cfg.reasoning,
+        cfg.reasoning_budget,
+        Some(false),
+        Some(false),
+        Some(false),
+    ).await?;
+
+    Ok(true)
 }
 
 #[tauri::command]
@@ -1258,6 +1667,10 @@ pub async fn stop_local_server(manager: State<'_, Arc<LlamaManager>>) -> Result<
     {
         let mut active_llm = ACTIVE_LOCAL_LLM_MODEL.lock().unwrap();
         *active_llm = None;
+    }
+    {
+        let mut cfg_lock = ACTIVE_SERVER_CONFIG.lock().unwrap();
+        *cfg_lock = None;
     }
     Ok(())
 }
@@ -1327,10 +1740,23 @@ pub async fn check_local_server_status() -> Result<serde_json::Value, String> {
                     })
             });
 
+            let (has_mmproj, mmproj_file, has_mtp, draft_model_file) = {
+                let cfg_guard = ACTIVE_SERVER_CONFIG.lock().unwrap();
+                if let Some(ref c) = *cfg_guard {
+                    (c.has_mmproj_loaded, c.mmproj_file.clone(), c.has_mtp_loaded, c.draft_model_file.clone())
+                } else {
+                    (false, None, false, None)
+                }
+            };
+
             Ok(serde_json::json!({
                 "running": true,
                 "model_id": model_id,
                 "port": port,
+                "has_mmproj": has_mmproj,
+                "mmproj_file": mmproj_file,
+                "has_mtp": has_mtp,
+                "draft_model_file": draft_model_file,
             }))
         }
         _ => {
@@ -1361,6 +1787,10 @@ pub struct LocalModelInfo {
     pub supports_audio: bool,
     #[serde(default)]
     pub supports_tools: bool,
+    #[serde(default)]
+    pub has_draft: bool,
+    #[serde(default)]
+    pub has_mtp: bool,
 }
 
 static LOCAL_MODELS_CACHE: std::sync::LazyLock<tokio::sync::Mutex<Option<(std::time::Instant, Vec<LocalModelInfo>)>>> = std::sync::LazyLock::new(|| {
@@ -1464,7 +1894,7 @@ async fn extract_model_meta_capabilities(
                     for t in tags {
                         if let Some(s) = t.as_str() {
                             let sl = s.to_lowercase();
-                            if sl == "reasoning" || sl == "thinking" || sl == "thought" || sl.contains("reasoning") || sl.contains("r1") {
+                            if sl == "reasoning" || sl == "thinking" || sl == "thought" || sl.contains("reasoning") || sl.contains("chain-of-thought") {
                                 supports_reasoning = true;
                             }
                             if sl == "vision" || sl == "multimodal" || sl.contains("vision") || sl.contains("image-to-text") {
@@ -1479,11 +1909,62 @@ async fn extract_model_meta_capabilities(
                         }
                     }
                 }
-                if let Some(pt) = j.get("pipeline_tag").and_then(|v| v.as_str()) {
-                    if pt == "image-to-text" || pt == "image-text-to-text" || pt == "visual-question-answering" {
+                if let Some(caps) = j.get("capabilities") {
+                    if let Some(r) = caps.get("reasoning").and_then(|v| v.as_bool()) {
+                        supports_reasoning = supports_reasoning || r;
+                    }
+                    if let Some(v) = caps.get("vision").and_then(|v| v.as_bool()) {
+                        supports_vision = supports_vision || v;
+                    }
+                    if let Some(a) = caps.get("audio").and_then(|v| v.as_bool()) {
+                        supports_audio = supports_audio || a;
+                    }
+                    if let Some(t) = caps.get("tools").or_else(|| caps.get("toolCalling")).and_then(|v| v.as_bool()) {
+                        supports_tools = supports_tools || t;
+                    }
+                }
+                if let Some(mod_arr) = j.get("modalities").and_then(|v| v.as_array()) {
+                    for m in mod_arr {
+                        if let Some(s) = m.as_str() {
+                            let sl = s.to_lowercase();
+                            if sl.contains("image") || sl.contains("vision") { supports_vision = true; }
+                            if sl.contains("audio") || sl.contains("speech") { supports_audio = true; }
+                        }
+                    }
+                }
+                if let Some(tpl) = j.get("chat_template").and_then(|v| v.as_str()) {
+                    let tpl_lower = tpl.to_lowercase();
+                    if tpl_lower.contains("<think>")
+                        || tpl_lower.contains("<|thought|>")
+                        || tpl_lower.contains("thought\n")
+                        || tpl_lower.contains("reasoning_content")
+                        || tpl_lower.contains("enable_thinking")
+                    {
+                        supports_reasoning = true;
+                    }
+                    if tpl_lower.contains("tool_call")
+                        || tpl_lower.contains("<|tool_")
+                        || tpl_lower.contains("tools")
+                        || tpl_lower.contains("function_call")
+                    {
+                        supports_tools = true;
+                    }
+                }
+                if let Some(arch) = j.get("architecture").and_then(|v| v.as_str()) {
+                    let arch_lower = arch.to_lowercase();
+                    if arch_lower.contains("clip") || arch_lower.contains("vision") || arch_lower.contains("vlm") {
                         supports_vision = true;
                     }
-                    if pt == "automatic-speech-recognition" || pt == "audio-to-text" || pt == "text-to-speech" {
+                    if arch_lower.contains("whisper") || arch_lower.contains("audio") || arch_lower.contains("speech") {
+                        supports_audio = true;
+                    }
+                }
+                if let Some(pt) = j.get("pipeline_tag").and_then(|v| v.as_str()) {
+                    let ptl = pt.to_lowercase();
+                    if ptl == "image-to-text" || ptl == "image-text-to-text" || ptl == "visual-question-answering" || ptl == "any-to-any" {
+                        supports_vision = true;
+                    }
+                    if ptl == "automatic-speech-recognition" || ptl == "audio-to-text" || ptl == "text-to-speech" || ptl == "any-to-any" {
                         supports_audio = true;
                     }
                 }
@@ -1495,9 +1976,18 @@ async fn extract_model_meta_capabilities(
         if gm.supports_reasoning {
             supports_reasoning = true;
         }
+        if gm.supports_vision {
+            supports_vision = true;
+        }
+        if gm.supports_audio {
+            supports_audio = true;
+        }
+        if gm.supports_tools {
+            supports_tools = true;
+        }
         for t in &gm.tags {
             let tl = t.to_lowercase();
-            if tl.contains("reasoning") || tl.contains("thinking") || tl.contains("thought") || tl.contains("r1") {
+            if tl == "reasoning" || tl == "thinking" || tl == "thought" || tl.contains("reasoning") || tl.contains("chain-of-thought") {
                 supports_reasoning = true;
             }
             if tl.contains("vision") || tl.contains("multimodal") || tl.contains("image-to-text") {
@@ -1514,7 +2004,7 @@ async fn extract_model_meta_capabilities(
 
     if let Some(tags_str) = db_tags {
         let tl = tags_str.to_lowercase();
-        if tl.contains("reasoning") || tl.contains("thinking") || tl.contains("thought") || tl.contains("r1") {
+        if tl == "reasoning" || tl == "thinking" || tl == "thought" || tl.contains("reasoning") || tl.contains("chain-of-thought") {
             supports_reasoning = true;
         }
         if tl.contains("vision") || tl.contains("multimodal") || tl.contains("image-to-text") {
@@ -1529,6 +2019,58 @@ async fn extract_model_meta_capabilities(
     }
 
     (supports_reasoning, supports_vision, supports_audio, supports_tools)
+}
+
+pub fn is_companion_file(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    if is_vision_projector_name(&lower) {
+        return true;
+    }
+    if lower.contains("audio-projector")
+        || lower.contains("audio_projector")
+        || lower.contains("audio-encoder")
+        || lower.contains("audio_encoder")
+        || lower.contains("speech_encoder")
+        || lower.contains("speech-encoder")
+        || lower.contains("conformer")
+        || (lower.contains("whisper") && lower.ends_with(".gguf"))
+    {
+        return true;
+    }
+    if lower.starts_with("draft-")
+        || lower.starts_with("draft_")
+        || lower.starts_with("mtp-")
+        || lower.starts_with("mtp_")
+        || lower.contains("-draft")
+        || lower.contains("_draft")
+        || lower.contains("-mtp")
+        || lower.contains("_mtp")
+        || lower.ends_with(".mtp")
+        || lower.ends_with(".mtp.gguf")
+        || lower.contains(".mtp.")
+        || (lower.contains("speculative") && lower.ends_with(".gguf"))
+    {
+        return true;
+    }
+    if lower == "ae.safetensors" || lower == "vae.safetensors" {
+        return true;
+    }
+    if lower.starts_with("ae.")
+        || lower.starts_with("vae.")
+        || lower.starts_with("clip_l")
+        || lower.starts_with("clip_g")
+        || lower.starts_with("clip-l")
+        || lower.starts_with("clip-g")
+        || lower.starts_with("t5xxl")
+        || lower.starts_with("t5-xxl")
+        || lower.starts_with("t5_xxl")
+    {
+        return true;
+    }
+    if lower.ends_with("-vae.safetensors") && !lower.contains("text") {
+        return true;
+    }
+    false
 }
 
 #[tauri::command]
@@ -1553,6 +2095,17 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
     // Run self-healing legacy layout migration
     run_migration_worker(&app).await;
 
+    // Clean up any stale companion/draft/mtp entries that might have been saved into DB previously
+    if let Some(pool) = app.try_state::<sqlx::SqlitePool>() {
+        let _ = sqlx::query(
+            "DELETE FROM local_models WHERE 
+             LOWER(filename) LIKE 'mtp-%' OR LOWER(filename) LIKE 'mtp_%' OR LOWER(filename) LIKE '%-mtp%' OR LOWER(filename) LIKE '%_mtp%' OR LOWER(filename) LIKE '%.mtp%' OR
+             LOWER(filename) LIKE 'draft-%' OR LOWER(filename) LIKE 'draft_%' OR LOWER(filename) LIKE '%-draft%' OR LOWER(filename) LIKE '%_draft%' OR
+             LOWER(name) LIKE 'mtp-%' OR LOWER(name) LIKE 'mtp_%' OR LOWER(name) LIKE '%-mtp%' OR LOWER(name) LIKE '%_mtp%' OR LOWER(name) LIKE '%.mtp%' OR
+             LOWER(name) LIKE 'draft-%' OR LOWER(name) LIKE 'draft_%' OR LOWER(name) LIKE '%-draft%' OR LOWER(name) LIKE '%_draft%'"
+        ).execute(&*pool).await;
+    }
+
     // Retrieve database models first (DB-first lookup)
     let db_models = if let Some(pool) = app.try_state::<sqlx::SqlitePool>() {
         use crate::db::models::LocalModel;
@@ -1576,6 +2129,9 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
 
     let mut db_models_by_path = std::collections::HashMap::new();
     for db_model in &db_models {
+        if is_companion_file(&db_model.name) || is_companion_file(&db_model.filename) || is_companion_file(&db_model.id) {
+            continue;
+        }
         let normalized = normalize_absolute_path(&db_model.file_path);
         db_models_by_path.insert(normalized, db_model.clone());
     }
@@ -1591,6 +2147,21 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
 
     let namespaces = &["projectors", "vae", "text_encoders", "diffusion", "llm"];
     let mut scan_dirs = Vec::new();
+
+    // 1. Scan dedicated model folders directly inside models_dir (e.g. models/gemma-4-E2B-it, models/Ornith-1.5-9B)
+    if let Ok(mut rd) = tokio::fs::read_dir(&models_dir).await {
+        while let Ok(Some(entry)) = rd.next_entry().await {
+            let p = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if entry.file_type().await.map(|ft| ft.is_dir()).unwrap_or(false) {
+                if !namespaces.contains(&name.as_str()) && !name.starts_with('.') {
+                    scan_dirs.push(("llm".to_string(), p));
+                }
+            }
+        }
+    }
+
+    // 2. Also scan legacy namespaces for full backward-compatibility
     for ns in namespaces {
         scan_dirs.push((ns.to_string(), models_dir.join(ns)));
         scan_dirs.push((ns.to_string(), models_dir.join(ns).join("unorganized")));
@@ -1614,6 +2185,9 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
             let name = entry.file_name().to_string_lossy().to_string();
 
             if name.starts_with('.') || name == ".nyx_offload" || name.ends_with(".part") || name.ends_with(".meta.json") || name == "unorganized" {
+                continue;
+            }
+            if is_companion_file(&name) {
                 continue;
             }
             if name.contains("mmproj") && namespace != "projectors" {
@@ -1656,13 +2230,32 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                         has_mmproj = true;
                     }
                 }
-                let context_length = db_model.context_length.map(|c| c as u32);
+                let mut context_length = db_model.context_length.map(|c| c as u32);
                 let model_type = Some(db_model.model_type.clone());
 
+                let stem = Path::new(&db_model.filename).file_stem().unwrap_or_default().to_string_lossy().to_string();
                 let db_meta_candidates = vec![
                     parent_dir.join(format!("{}.meta.json", db_model.filename)),
+                    parent_dir.join(format!("{}.meta.json", stem)),
                     parent_dir.join(format!("{}.gguf.meta.json", db_model.filename)),
+                    parent_dir.join(format!("{}.gguf.meta.json", stem)),
+                    models_dir.join(format!("{}.meta.json", db_model.filename)),
+                    models_dir.join(format!("{}.meta.json", stem)),
+                    models_dir.join(format!("{}.gguf.meta.json", db_model.filename)),
+                    models_dir.join(format!("{}.gguf.meta.json", stem)),
                 ];
+                if context_length.is_none() {
+                    for meta_path in &db_meta_candidates {
+                        if let Ok(content) = tokio::fs::read_to_string(meta_path).await {
+                            if let Ok(j) = serde_json::from_str::<serde_json::Value>(&content) {
+                                if let Some(ctx) = j.get("context_length").and_then(|v| v.as_u64()) {
+                                    context_length = Some(ctx as u32);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
                 let cached_gguf = if db_model.filename.ends_with(".gguf") {
                     GGUF_META_CACHE.lock().unwrap().get(&db_model.filename).cloned()
                 } else {
@@ -1675,6 +2268,34 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                     &db_model.model_type,
                     db_model.tags.as_deref(),
                 ).await;
+
+                let parent_dir = path.parent().unwrap_or(&models_dir);
+                let mut folder_has_mtp = false;
+                let mut folder_has_mmproj = false;
+                let mut folder_has_draft = false;
+
+                if let Ok(entries) = std::fs::read_dir(parent_dir) {
+                    for entry in entries.flatten() {
+                        let ep = entry.path();
+                        if ep == path { continue; }
+                        let ename = ep.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+                        if is_mtp_model(&ep) {
+                            folder_has_mtp = true;
+                        }
+                        if ename.contains("mmproj") || ename.contains("projector") {
+                            folder_has_mmproj = true;
+                        }
+                        if ename.starts_with("draft-") || ename.contains("-draft") || ename.contains("_draft") {
+                            if !is_mtp_model(&ep) {
+                                folder_has_draft = true;
+                            }
+                        }
+                    }
+                }
+
+                let has_mtp = folder_has_mtp || find_mtp_model(&path).is_some();
+                let has_mmproj = has_mmproj || folder_has_mmproj;
+                let has_draft = folder_has_draft || find_draft_model(&path).is_some();
 
                 models.push(LocalModelInfo {
                     id,
@@ -1691,6 +2312,8 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                     supports_vision,
                     supports_audio,
                     supports_tools,
+                    has_draft,
+                    has_mtp,
                 });
                 continue;
             }
@@ -1815,6 +2438,8 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                     supports_vision,
                     supports_audio,
                     supports_tools,
+                    has_draft: false,
+                    has_mtp: false,
                 });
                 continue;
             }
@@ -1846,29 +2471,55 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
             } else {
                 None
             };
-            let context_length = gguf_meta.as_ref().and_then(|m| m.context_length);
-            let architecture = gguf_meta.as_ref().and_then(|m| m.architecture.clone());
-
             let stem = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
             let meta_candidates = vec![
                 dir_path.join(format!("{}.meta.json", name)),
                 dir_path.join(format!("{}.meta.json", stem)),
                 dir_path.join(format!("{}.gguf.meta.json", name)),
                 dir_path.join(format!("{}.gguf.meta.json", stem)),
+                models_dir.join(format!("{}.meta.json", name)),
+                models_dir.join(format!("{}.meta.json", stem)),
+                models_dir.join(format!("{}.gguf.meta.json", name)),
+                models_dir.join(format!("{}.gguf.meta.json", stem)),
             ];
 
+            // If metadata file exists in models_dir but not yet in dir_path, copy next to weights
+            for meta_path in &meta_candidates {
+                if meta_path.exists() && meta_path.parent() != Some(&dir_path) {
+                    if let Some(fname) = meta_path.file_name() {
+                        let dest = dir_path.join(fname);
+                        if !dest.exists() {
+                            let _ = tokio::fs::copy(meta_path, &dest).await;
+                        }
+                    }
+                }
+            }
+
+            let mut context_length = gguf_meta.as_ref().and_then(|m| m.context_length);
+            let mut architecture = gguf_meta.as_ref().and_then(|m| m.architecture.clone());
             let mut repo_id_opt: Option<String> = None;
             let mut description = format!("Local {} model", ext.to_uppercase());
 
             for meta_path in &meta_candidates {
                 if let Ok(content) = tokio::fs::read_to_string(&meta_path).await {
                     if let Ok(j) = serde_json::from_str::<serde_json::Value>(&content) {
-                        if let Some(rid) = j.get("repo_id").and_then(|v| v.as_str()) {
-                            repo_id_opt = Some(rid.to_string());
+                        if repo_id_opt.is_none() {
+                            if let Some(rid) = j.get("repo_id").and_then(|v| v.as_str()) {
+                                repo_id_opt = Some(rid.to_string());
+                            }
+                        }
+                        if context_length.is_none() {
+                            if let Some(ctx) = j.get("context_length").and_then(|v| v.as_u64()) {
+                                context_length = Some(ctx as u32);
+                            }
+                        }
+                        if architecture.is_none() {
+                            if let Some(arch) = j.get("architecture").and_then(|v| v.as_str()) {
+                                architecture = Some(arch.to_string());
+                            }
                         }
                         if let Some(a) = j.get("author").and_then(|v| v.as_str()) {
                             description = format!("Downloaded from {}", a);
-                            break;
                         }
                     }
                 }
@@ -1956,6 +2607,34 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                 None,
             ).await;
 
+            let parent_dir = path.parent().unwrap_or(&models_dir);
+            let mut folder_has_mtp = false;
+            let mut folder_has_mmproj = false;
+            let mut folder_has_draft = false;
+
+            if let Ok(entries) = std::fs::read_dir(parent_dir) {
+                for entry in entries.flatten() {
+                    let ep = entry.path();
+                    if ep == path { continue; }
+                    let ename = ep.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+                    if is_mtp_model(&ep) {
+                        folder_has_mtp = true;
+                    }
+                    if ename.contains("mmproj") || ename.contains("projector") {
+                        folder_has_mmproj = true;
+                    }
+                    if ename.starts_with("draft-") || ename.contains("-draft") || ename.contains("_draft") {
+                        if !is_mtp_model(&ep) {
+                            folder_has_draft = true;
+                        }
+                    }
+                }
+            }
+
+            let has_mtp = folder_has_mtp || find_mtp_model(&path).is_some();
+            let has_mmproj = has_mmproj || folder_has_mmproj;
+            let has_draft = folder_has_draft || find_draft_model(&path).is_some();
+
             models.push(LocalModelInfo {
                 id: rel_path,
                 name: display_name,
@@ -1971,10 +2650,13 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                 supports_vision,
                 supports_audio,
                 supports_tools,
+                has_draft,
+                has_mtp,
             });
         }
     }
 
+    models.retain(|m| !is_companion_file(&m.name) && !is_companion_file(&m.id));
     info!("[NYX] list_local_models: found {} models in {:?}", models.len(), models_dir);
     {
         let mut cache = LOCAL_MODELS_CACHE.lock().await;
@@ -2002,6 +2684,7 @@ pub async fn hf_download_model(
     model_id: String,
     filename: String,
     repo_id: Option<String>,
+    model_folder: Option<String>,
 ) -> Result<(), String> {
     let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     state.init_persistence(app_dir.clone()).await;
@@ -2046,7 +2729,12 @@ pub async fn hf_download_model(
         return Err("Invalid model filename".to_string());
     }
 
-    let dest = app_dir.join("models").join(&final_filename);
+    let folder_name = model_folder
+        .filter(|f| !f.trim().is_empty())
+        .unwrap_or_else(|| derive_model_folder_name(&final_filename, repo_id.as_deref()));
+    let model_dir = app_dir.join("models").join(&folder_name);
+    let _ = tokio::fs::create_dir_all(&model_dir).await;
+    let dest = model_dir.join(&final_filename);
 
     let is_paused = Arc::new(AtomicBool::new(false));
     let is_cancelled = Arc::new(AtomicBool::new(false));
@@ -2176,6 +2864,8 @@ pub async fn hf_pause_download(
             task.is_paused.store(true, Ordering::SeqCst);
             task.handle.abort();
         }
+        drop(tasks);
+        state.save_persistence().await;
         Ok(())
     } else {
         info!("[hf_pause_download] Task not active for: '{}', assuming already paused", model_id);
@@ -2211,7 +2901,7 @@ pub async fn hf_resume_download(
 
     if let Some(p) = restored {
         info!("[hf_resume_download] Restoring from persistence: '{}'", p.model_id);
-        hf_download_model(app, state, p.url, p.model_id, p.filename, p.repo_id).await
+        hf_download_model(app, state, p.url, p.model_id, p.filename, p.repo_id, None).await
     } else {
         Err("Cannot resume: Task record not found. Click X to dismiss.".to_string())
     }
@@ -2780,12 +3470,14 @@ pub struct HfModelFile {
 struct HfTreeEntry {
     pub r#type: String,
     pub path: String,
+    #[serde(default)]
     pub size: u64,
     pub lfs: Option<HfLfsInfo>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct HfLfsInfo {
+    #[serde(default)]
     pub size: u64,
 }
 
@@ -2796,29 +3488,59 @@ pub async fn hf_get_model_files(model_id: String) -> Result<Vec<HfModelFile>, St
         .build()
         .unwrap_or_else(|_| Client::new());
 
-    // Try main branch with recursive listing first
-    let url_main = format!("https://huggingface.co/api/models/{}/tree/main?recursive=true", model_id);
-    let mut resp = client.get(&url_main).send().await;
-    
-    if resp.as_ref().map_or(true, |r| !r.status().is_success()) {
-        let url_master = format!("https://huggingface.co/api/models/{}/tree/master?recursive=true", model_id);
-        resp = client.get(&url_master).send().await;
-    }
+    let branches = ["main", "master"];
+    for branch in &branches {
+        let mut all_files: Vec<HfModelFile> = Vec::new();
+        let mut next_url: Option<String> = Some(format!(
+            "https://huggingface.co/api/models/{}/tree/{}?recursive=true",
+            model_id, branch
+        ));
+        let mut pages = 0;
 
-    if let Ok(r) = resp {
-        if r.status().is_success() {
-            if let Ok(entries) = r.json::<Vec<HfTreeEntry>>().await {
-                let files: Vec<HfModelFile> = entries.into_iter()
-                    .filter(|e| e.r#type == "file")
-                    .map(|e| HfModelFile {
-                        filename: e.path,
-                        size: e.lfs.map(|l| l.size).unwrap_or(e.size),
-                    })
-                    .collect();
-                if !files.is_empty() {
-                    return Ok(files);
+        while let Some(url) = next_url {
+            pages += 1;
+            if pages > 20 {
+                // Safety limit: up to 20,000 files
+                break;
+            }
+
+            let resp = match client.get(&url).send().await {
+                Ok(r) if r.status().is_success() => r,
+                _ => break,
+            };
+
+            // Check pagination via Link header: <url>; rel="next"
+            let mut extracted_next = None;
+            if let Some(link_header) = resp.headers().get("link").and_then(|h| h.to_str().ok()) {
+                for part in link_header.split(',') {
+                    if part.contains("rel=\"next\"") || part.contains("rel=next") {
+                        if let Some(start) = part.find('<') {
+                            if let Some(end) = part[start..].find('>') {
+                                extracted_next = Some(part[start + 1..start + end].to_string());
+                                break;
+                            }
+                        }
+                    }
                 }
             }
+            next_url = extracted_next;
+
+            if let Ok(entries) = resp.json::<Vec<HfTreeEntry>>().await {
+                for e in entries {
+                    if e.r#type == "file" {
+                        all_files.push(HfModelFile {
+                            filename: e.path,
+                            size: e.lfs.map(|l| l.size).unwrap_or(e.size),
+                        });
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+
+        if !all_files.is_empty() {
+            return Ok(all_files);
         }
     }
 
@@ -2827,7 +3549,9 @@ pub async fn hf_get_model_files(model_id: String) -> Result<Vec<HfModelFile>, St
     let info_resp = client.get(&url_info).send().await.map_err(|e| e.to_string())?;
     if info_resp.status().is_success() {
         if let Ok(result) = info_resp.json::<HfModelResult>().await {
-            let files = result.siblings.into_iter()
+            let files = result
+                .siblings
+                .into_iter()
                 .map(|s| HfModelFile {
                     filename: s.rfilename,
                     size: 0,
@@ -2905,4 +3629,232 @@ pub async fn check_and_update_binaries(app: AppHandle) -> Result<BinaryUpdateSta
             format!("Local binaries are up to date ({})", current_version.trim())
         },
     })
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DiscoveredCompanionFile {
+    pub filename: String,
+    pub size: u64,
+    pub repo_id: String,
+    pub companion_type: String,
+    pub label: String,
+}
+
+#[tauri::command]
+pub async fn hf_find_companion_files(
+    state: State<'_, Arc<HfDownloaderState>>,
+    model_id: String,
+    base_model: Option<String>,
+    companion_type: String,
+) -> Result<Vec<DiscoveredCompanionFile>, String> {
+    let client = Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .connect_timeout(std::time::Duration::from_secs(6))
+        .timeout(std::time::Duration::from_secs(12))
+        .build()
+        .unwrap_or_else(|_| Client::new());
+
+    let target_source = base_model.as_deref().unwrap_or(&model_id);
+    let leaf_name = target_source.split('/').last().unwrap_or(target_source);
+    let mut clean_leaf = derive_model_folder_name(leaf_name, None);
+    if clean_leaf == "unorganized" || clean_leaf.is_empty() {
+        clean_leaf = leaf_name.to_string();
+    }
+
+    let token_opt = state.token.lock().await.clone();
+
+    let mut queries = Vec::new();
+    if companion_type == "vision" {
+        queries.push(format!("{} mmproj", clean_leaf));
+        queries.push(format!("{} GGUF", clean_leaf));
+        queries.push(clean_leaf.clone());
+    } else if companion_type == "audio" {
+        queries.push(format!("{} audio", clean_leaf));
+        queries.push(format!("{} whisper", clean_leaf));
+        queries.push(format!("{} GGUF", clean_leaf));
+    } else {
+        queries.push(format!("{} draft", clean_leaf));
+        queries.push(format!("{} mtp", clean_leaf));
+        queries.push(format!("{} GGUF", clean_leaf));
+    }
+
+    let mut visited_repos = std::collections::HashSet::new();
+    visited_repos.insert(model_id.to_lowercase());
+
+    // Also directly try base_model repo with -GGUF suffix if available
+    if let Some(ref bm) = base_model {
+        let bm_gguf = format!("{}-GGUF", bm);
+        visited_repos.insert(bm_gguf.to_lowercase());
+        let url = format!("https://huggingface.co/api/models/{}", bm_gguf);
+        let mut req = client.get(&url);
+        if let Some(ref t) = token_opt {
+            req = req.header("Authorization", format!("Bearer {}", t));
+        }
+        if let Ok(resp) = req.send().await {
+            if resp.status().is_success() {
+                if let Ok(details) = resp.json::<serde_json::Value>().await {
+                    if let Some(siblings) = details.get("siblings").and_then(|s| s.as_array()) {
+                        let mut found = Vec::new();
+                        for s in siblings {
+                            if let Some(rfn) = s.get("rfilename").and_then(|v| v.as_str()) {
+                                if companion_type == "vision" && is_vision_projector_name(rfn) {
+                                    found.push(rfn.to_string());
+                                }
+                            }
+                        }
+                        if !found.is_empty() {
+                            let mut results = Vec::new();
+                            for f in found {
+                                let mut size = 0u64;
+                                let raw_url = format!("https://huggingface.co/{}/resolve/main/{}", bm_gguf, f);
+                                let mut head_req = client.head(&raw_url);
+                                if let Some(ref t) = token_opt {
+                                    head_req = head_req.header("Authorization", format!("Bearer {}", t));
+                                }
+                                if let Ok(head_resp) = head_req.send().await {
+                                    if let Some(cl) = head_resp.headers().get("content-length").and_then(|h| h.to_str().ok()) {
+                                        if let Ok(bytes) = cl.parse::<u64>() {
+                                            size = bytes;
+                                        }
+                                    }
+                                }
+                                let label = format!("Vision Projector ({})", f.split('/').last().unwrap_or(&f));
+                                results.push(DiscoveredCompanionFile {
+                                    filename: f,
+                                    size,
+                                    repo_id: bm_gguf.clone(),
+                                    companion_type: companion_type.clone(),
+                                    label,
+                                });
+                            }
+                            return Ok(results);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for q in queries {
+        let search_url = format!(
+            "https://huggingface.co/api/models?search={}&filter=gguf&limit=6",
+            urlencoding::encode(&q)
+        );
+        let mut req = client.get(&search_url);
+        if let Some(ref t) = token_opt {
+            req = req.header("Authorization", format!("Bearer {}", t));
+        }
+
+        let search_resp = match req.send().await {
+            Ok(r) if r.status().is_success() => r,
+            _ => continue,
+        };
+
+        let list: Vec<serde_json::Value> = match search_resp.json().await {
+            Ok(l) => l,
+            _ => continue,
+        };
+
+        for item in list {
+            let candidate_id = match item.get("id").and_then(|v| v.as_str()) {
+                Some(id) => id.to_string(),
+                None => continue,
+            };
+
+            let cand_lower = candidate_id.to_lowercase();
+            if visited_repos.contains(&cand_lower) {
+                continue;
+            }
+            visited_repos.insert(cand_lower);
+
+            let detail_url = format!("https://huggingface.co/api/models/{}", candidate_id);
+            let mut det_req = client.get(&detail_url);
+            if let Some(ref t) = token_opt {
+                det_req = det_req.header("Authorization", format!("Bearer {}", t));
+            }
+
+            let det_resp = match det_req.send().await {
+                Ok(r) if r.status().is_success() => r,
+                _ => continue,
+            };
+
+            let details: serde_json::Value = match det_resp.json().await {
+                Ok(d) => d,
+                _ => continue,
+            };
+
+            let siblings = match details.get("siblings").and_then(|v| v.as_array()) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            let mut matched_files: Vec<String> = Vec::new();
+            for s in siblings {
+                let rfilename = match s.get("rfilename").and_then(|v| v.as_str()) {
+                    Some(f) => f,
+                    None => continue,
+                };
+                let rfn_lower = rfilename.to_lowercase();
+                if !rfn_lower.ends_with(".gguf") || rfn_lower.contains("imatrix") {
+                    continue;
+                }
+
+                let matches = if companion_type == "vision" {
+                    is_vision_projector_name(&rfn_lower)
+                } else if companion_type == "audio" {
+                    rfn_lower.contains("audio-projector")
+                        || rfn_lower.contains("audio_projector")
+                        || rfn_lower.contains("whisper")
+                        || rfn_lower.contains("speech_encoder")
+                } else {
+                    rfn_lower.contains("draft")
+                        || rfn_lower.contains("mtp")
+                        || rfn_lower.contains("speculative")
+                };
+
+                if matches {
+                    matched_files.push(rfilename.to_string());
+                }
+            }
+
+            if !matched_files.is_empty() {
+                let mut out = Vec::new();
+                for f in matched_files {
+                    let mut size = 0u64;
+                    // Probe file size with lightweight HEAD request
+                    let raw_url = format!("https://huggingface.co/{}/resolve/main/{}", candidate_id, f);
+                    let mut head_req = client.head(&raw_url);
+                    if let Some(ref t) = token_opt {
+                        head_req = head_req.header("Authorization", format!("Bearer {}", t));
+                    }
+                    if let Ok(head_resp) = head_req.send().await {
+                        if let Some(cl) = head_resp.headers().get("content-length").and_then(|h| h.to_str().ok()) {
+                            if let Ok(bytes) = cl.parse::<u64>() {
+                                size = bytes;
+                            }
+                        }
+                    }
+
+                    let clean_label = if companion_type == "vision" {
+                        format!("Vision Projector ({})", f.split('/').last().unwrap_or(&f))
+                    } else if companion_type == "audio" {
+                        format!("Audio Projector ({})", f.split('/').last().unwrap_or(&f))
+                    } else {
+                        format!("Draft Model ({})", f.split('/').last().unwrap_or(&f))
+                    };
+
+                    out.push(DiscoveredCompanionFile {
+                        filename: f,
+                        size,
+                        repo_id: candidate_id.clone(),
+                        companion_type: companion_type.clone(),
+                        label: clean_label,
+                    });
+                }
+                return Ok(out);
+            }
+        }
+    }
+
+    Ok(vec![])
 }

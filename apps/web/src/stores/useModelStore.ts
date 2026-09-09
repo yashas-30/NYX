@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import { inferModelSpecs, formatContextWindow } from '@shared/hooks/useLocalModels';
+import {
+  inferModelSpecs,
+  formatContextWindow,
+  isCompanionSupportFile,
+} from '@shared/hooks/useLocalModels';
 
 interface ModelState {
   modelsState: { chat: string };
@@ -104,7 +108,9 @@ export const useModelStore = create<ModelState>((set, get) => {
               (!m.status || m.status === 'completed') &&
               m.model_type !== 'vision' &&
               !m.name?.toLowerCase().includes('mmproj') &&
-              !m.id?.toLowerCase().includes('mmproj')
+              !m.id?.toLowerCase().includes('mmproj') &&
+              !isCompanionSupportFile(m.name) &&
+              !isCompanionSupportFile(m.id)
           )
           .map((m: any) => {
             const rawCtx = m.context_length || m.contextLength || m.max_context_length;
@@ -149,21 +155,9 @@ export const useModelStore = create<ModelState>((set, get) => {
               (searchStr.includes('transformer') && !searchStr.includes('sentence-transformer')) ||
               m.id?.endsWith('.ckpt');
 
-            const isVision =
-              m.has_mmproj ||
-              searchStr.includes('vl') ||
-              searchStr.includes('vision') ||
-              searchStr.includes('multimodal') ||
-              searchStr.includes('pixtral') ||
-              searchStr.includes('llava') ||
-              searchStr.includes('minicpm-v') ||
-              searchStr.includes('idefics') ||
-              searchStr.includes('deepseek-vl') ||
-              searchStr.includes('internvl') ||
-              searchStr.includes('moondream');
-
-            // Use the capability flag populated by backend (from GGUF chat_template / HF tags).
-            // Never infer from model name.
+            const isVision = m.supports_vision === true || m.has_mmproj === true;
+            const isAudio = m.supports_audio === true;
+            const isTools = m.supports_tools === true;
             const isReasoning = m.supports_reasoning === true;
 
             const isOnnx = m.model_type === 'onnx';
@@ -171,19 +165,29 @@ export const useModelStore = create<ModelState>((set, get) => {
 
             const modality = isImageGen
               ? 'Text-to-Image'
-              : isOnnx
-                ? 'ONNX'
-                : isPytorch
-                  ? 'PyTorch Native'
-                  : isVision
-                    ? 'Text + Vision'
-                    : 'Text';
+              : isVision && isAudio
+                ? 'Omni (Text + Vision + Audio)'
+                : isVision
+                  ? 'Text + Vision'
+                  : isAudio
+                    ? 'Text + Audio'
+                    : isOnnx
+                      ? 'ONNX'
+                      : isPytorch
+                        ? 'PyTorch Native'
+                        : 'Text';
 
             return {
               id: m.id,
               name: m.name,
               provider: 'nyx-native',
               description: m.description || `Local model (${m.size || ''})`,
+              context_length: rawCtx || m.context_length,
+              supports_reasoning: isReasoning,
+              supports_vision: isVision,
+              supports_audio: isAudio,
+              supports_tools: isTools,
+              filePath: m.filePath || m.path,
               specs: {
                 contextWindow: isImageGen || isOnnx || isPytorch ? 'N/A' : contextWindow,
                 maxOutput: 'N/A',
@@ -192,6 +196,9 @@ export const useModelStore = create<ModelState>((set, get) => {
               capabilities: {
                 vision: isVision,
                 reasoning: isReasoning,
+                toolCalling: isTools,
+                tools: isTools,
+                audio: isAudio,
                 imageGen: isImageGen,
                 onnx: isOnnx,
                 pytorch: isPytorch,

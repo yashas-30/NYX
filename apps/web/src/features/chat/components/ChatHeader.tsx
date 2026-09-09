@@ -32,6 +32,7 @@ export interface ChatHeaderProps {
   onStopGeneration?: () => void;
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
+  isCodePanelOpen?: boolean;
   sessionTitle?: string;
   onTitleChange?: (title: string) => void;
   onOpenLightning?: () => void;
@@ -60,6 +61,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onClear,
   sidebarOpen = true,
   onToggleSidebar,
+  isCodePanelOpen = false,
   allModels,
   currentModel,
   currentModelId: propModelId,
@@ -122,10 +124,21 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
     <div className="absolute top-3 left-3 z-30 flex items-center gap-1.5 select-none pointer-events-auto">
       {onToggleSidebar && (
         <motion.button
-          whileTap={{ scale: 0.95 }}
-          onClick={onToggleSidebar}
-          className="w-8 h-8 flex items-center justify-center rounded-lg bg-background/80 hover:bg-muted/80 backdrop-blur-md border border-border/40 text-muted-foreground hover:text-foreground transition-all cursor-pointer shadow-sm shrink-0"
-          title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+          whileTap={!isCodePanelOpen ? { scale: 0.95 } : undefined}
+          onClick={!isCodePanelOpen ? onToggleSidebar : undefined}
+          disabled={isCodePanelOpen}
+          className={`w-8 h-8 flex items-center justify-center rounded-lg bg-background/80 hover:bg-muted/80 backdrop-blur-md border border-border/40 transition-all shadow-sm shrink-0 ${
+            isCodePanelOpen
+              ? 'opacity-35 cursor-not-allowed text-muted-foreground/60'
+              : 'text-muted-foreground hover:text-foreground cursor-pointer'
+          }`}
+          title={
+            isCodePanelOpen
+              ? 'Sidebar is locked while code panel is open'
+              : sidebarOpen
+                ? 'Close sidebar'
+                : 'Open sidebar'
+          }
         >
           {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
         </motion.button>

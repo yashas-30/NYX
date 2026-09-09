@@ -2,7 +2,7 @@
 import React from 'react';
 import { Desktop, Sparkle } from '@phosphor-icons/react';
 import { formatSize } from '../lib/utils';
-import { isModelLoaded } from '../../../shared/hooks/useLocalModels';
+import { isModelLoaded, isCompanionSupportFile } from '../../../shared/hooks/useLocalModels';
 
 interface OnDeviceModelListProps {
   models: any[];
@@ -24,10 +24,12 @@ export const OnDeviceModelList: React.FC<OnDeviceModelListProps> = ({
   const query = searchQuery.toLowerCase().trim();
   const filtered = models.filter(
     (m) =>
-      !query ||
-      (m.name && m.name.toLowerCase().includes(query)) ||
-      (m.id && m.id.toLowerCase().includes(query)) ||
-      (m.provider && m.provider.toLowerCase().includes(query))
+      !isCompanionSupportFile(m.name) &&
+      !isCompanionSupportFile(m.id) &&
+      (!query ||
+        (m.name && m.name.toLowerCase().includes(query)) ||
+        (m.id && m.id.toLowerCase().includes(query)) ||
+        (m.provider && m.provider.toLowerCase().includes(query)))
   );
 
   if (filtered.length === 0) {
@@ -74,6 +76,12 @@ export const OnDeviceModelList: React.FC<OnDeviceModelListProps> = ({
             >
               {m.name || m.id}
             </div>
+
+            {m.has_mtp && (
+              <span className="shrink-0 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-400">
+                ⚡ MTP
+              </span>
+            )}
 
             {isLoaded ? (
               <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-mono">

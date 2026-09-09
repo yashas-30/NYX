@@ -12,8 +12,6 @@ use tauri::AppHandle;
 pub enum PrimaryIntent {
     DirectChat,
     AutonomousCoding,
-    DeepResearch,
-    SlidevPresentation,
     DiagramGeneration,
 }
 
@@ -81,7 +79,7 @@ pub async fn classify_intent_dynamically(
     let system_prompt = r#"You are an ultra-fast, grammar-aware intent router.
 Analyze the user request and output ONLY valid JSON matching this exact schema:
 {
-  "intent": "DirectChat" | "AutonomousCoding" | "DeepResearch" | "SlidevPresentation" | "DiagramGeneration",
+  "intent": "DirectChat" | "AutonomousCoding" | "DiagramGeneration",
   "needs_web_search": boolean,
   "search_depth": 0 | 1 | 2,
   "media_requirements": {
@@ -97,9 +95,7 @@ Analyze the user request and output ONLY valid JSON matching this exact schema:
 
 STRICT GATING RULES:
 - If the user asks to edit, refactor, write, debug, create, or delete code files, set intent to "AutonomousCoding".
-- If the user asks for a presentation, slides, slide deck, or pitch deck, set intent to "SlidevPresentation".
 - If the user asks for a diagram, flowchart, sequence map, Sankey, flywheel, Wardley map, or architecture visual, set intent to "DiagramGeneration".
-- If the user asks for deep research, comprehensive whitepaper, or multi-angle study, set intent to "DeepResearch".
 - Images are allowed ONLY for physical appearance, UI layout, or geography. BANNED for code/math.
 - YouTube is allowed ONLY for tutorials, how-to, or walkthroughs.
 Output NO extra text or markdown formatting."#;
@@ -164,12 +160,8 @@ Output NO extra text or markdown formatting."#;
         Err(_) => {
             // Fallback heuristic classification
             let p_lower = user_prompt.to_lowercase();
-            let intent = if p_lower.contains("slide") || p_lower.contains("presentation") || p_lower.contains("ppt") {
-                PrimaryIntent::SlidevPresentation
-            } else if p_lower.contains("diagram") || p_lower.contains("mermaid") || p_lower.contains("flowchart") {
+            let intent = if p_lower.contains("diagram") || p_lower.contains("svg") || p_lower.contains("flowchart") {
                 PrimaryIntent::DiagramGeneration
-            } else if p_lower.contains("deep research") || p_lower.contains("whitepaper") || p_lower.contains("in-depth analysis") {
-                PrimaryIntent::DeepResearch
             } else if p_lower.contains("file") || p_lower.contains("code") || p_lower.contains("refactor") || p_lower.contains("create") {
                 PrimaryIntent::AutonomousCoding
             } else {

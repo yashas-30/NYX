@@ -90,8 +90,12 @@ pub async fn llm_stream_request(
     // Listen for a cancel event from the frontend
     let cancel_name = format!("cancel_{}", event_name.clone().unwrap_or_default());
     let (cancel_tx, mut cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let cancel_tx_global = cancel_tx.clone();
     let cancel_id = app.listen(cancel_name, move |_| {
         let _ = cancel_tx.try_send(());
+    });
+    let cancel_global_id = app.listen("cancel_chat_stream", move |_| {
+        let _ = cancel_tx_global.try_send(());
     });
 
     loop {
@@ -130,6 +134,7 @@ pub async fn llm_stream_request(
     }
 
     app.unlisten(cancel_id);
+    app.unlisten(cancel_global_id);
 
     // Record observability trace
     let pool = app.state::<sqlx::SqlitePool>();

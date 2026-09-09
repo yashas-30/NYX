@@ -1,6 +1,6 @@
-use tauri::{State, Manager};
+use tauri::State;
 use sqlx::SqlitePool;
-use crate::db::models::{ChatConversation, ChatMessage, DbSession, DbMessage, SwarmContextPool, LongTermMemory, ExperienceLedgerEntry, LocalModel, decode_embedding, encode_embedding};
+use crate::db::models::{ChatConversation, ChatMessage, DbSession, DbMessage, SwarmContextPool, LongTermMemory, ExperienceLedgerEntry, LocalModel, encode_embedding};
 
 #[tauri::command]
 pub async fn db_get_chat_conversations(
@@ -188,7 +188,7 @@ pub async fn db_get_all_chat_sessions(
 
 #[tauri::command]
 pub async fn db_save_chat_session(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     pool: State<'_, SqlitePool>,
     session: ChatSessionPayload,
 ) -> Result<(), String> {
@@ -276,44 +276,6 @@ pub async fn db_save_chat_session(
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
-
-    // Store all structured prompt-response dialogue turns across the entire conversation in TurboVec vector memory
-    if let Some(tv_store) = app.try_state::<std::sync::Arc<crate::rag::turbovec_store::TurbovecStore>>() {
-        let tv_store_clone = tv_store.inner().clone();
-        let session_title = session.title.clone();
-        let session_id = session.id.clone();
-        let messages_clone = session.messages.clone();
-
-        tokio::spawn(async move {
-            tv_store_clone.sync_session_messages(&session_id, &session_title, &messages_clone).await;
-        });
-    }
-
-    // Trigger background multi-tier memory extraction for non-trivial sessions
-    if session.messages.len() >= 2 {
-        let pool_clone = pool.inner().clone();
-        let session_id = session.id.clone();
-        let snapshots: Vec<crate::agents::memory::memory_extractor::MessageSnapshot> = session
-            .messages
-            .into_iter()
-            .map(|m| crate::agents::memory::memory_extractor::MessageSnapshot {
-                role: m.role,
-                content: m.content,
-            })
-            .collect();
-
-        tokio::spawn(async move {
-            let _ = crate::agents::memory::memory_extractor::extract_and_store(
-                &pool_clone,
-                &session_id,
-                &snapshots,
-                "",
-                "gemini-3.5-flash-lite",
-            )
-            .await;
-        });
-    }
-
     Ok(())
 }
 
@@ -428,29 +390,21 @@ pub async fn db_add_memory(
     let mem_id = id.filter(|s| !s.is_empty()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let mem_category = category.filter(|s| !s.is_empty()).unwrap_or_else(|| "Preference".to_string());
 
-    let mut final_bytes: Vec<u8> = Vec::new();
-
-    if let Some(val) = embedding {
-        if let Some(arr) = val.as_array() {
-            let floats: Vec<f32> = arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
-            if !floats.is_empty() {
-                final_bytes = encode_embedding(&floats);
-            } else {
-                let bytes: Vec<u8> = arr.iter().filter_map(|v| v.as_u64().map(|u| u as u8)).collect();
-                final_bytes = bytes;
-            }
-        }
-    }
-
-    if final_bytes.is_empty() && !fact.trim().is_empty() {
-        if let Ok(embedder) = crate::rag::embeddings::Embedder::new() {
-            if let Ok(vecs) = embedder.embed(vec![fact.clone()]).await {
-                if let Some(first_vec) = vecs.into_iter().next() {
-                    final_bytes = encode_embedding(&first_vec);
+    let final_bytes: Vec<u8> = match embedding {
+        Some(val) => {
+            if let Some(arr) = val.as_array() {
+                let floats: Vec<f32> = arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
+                if !floats.is_empty() {
+                    encode_embedding(&floats)
+                } else {
+                    arr.iter().filter_map(|v| v.as_u64().map(|u| u as u8)).collect()
                 }
+            } else {
+                Vec::new()
             }
         }
-    }
+        None => Vec::new(),
+    };
 
     sqlx::query(
         "INSERT INTO long_term_memories (id, fact, category, embedding, created_at) VALUES (?, ?, ?, ?, ?)"
@@ -585,116 +539,46 @@ pub struct MemorySearchResult {
 pub async fn db_search_memories(
     pool: State<'_, SqlitePool>,
     query: Option<String>,
-    query_embedding: Option<Vec<f32>>,
+    _query_embedding: Option<Vec<f32>>,
     top_k: Option<usize>,
 ) -> Result<Vec<MemorySearchResult>, String> {
     let limit = top_k.unwrap_or(5);
     let query_text = query.unwrap_or_default();
-    let mut vec_to_search: Vec<f32> = query_embedding.unwrap_or_default();
+    let q_lower = query_text.to_lowercase();
+    let query_sql = if q_lower.is_empty() {
+        "SELECT * FROM long_term_memories ORDER BY created_at DESC LIMIT ?"
+    } else {
+        "SELECT * FROM long_term_memories WHERE LOWER(fact) LIKE ? OR LOWER(category) LIKE ? ORDER BY created_at DESC LIMIT ?"
+    };
 
-    if vec_to_search.is_empty() && !query_text.trim().is_empty() {
-        if let Ok(embedder) = crate::rag::embeddings::Embedder::new() {
-            if let Ok(vecs) = embedder.embed(vec![query_text.trim().to_string()]).await {
-                if let Some(first_vec) = vecs.into_iter().next() {
-                    vec_to_search = first_vec;
-                }
-            }
-        }
-    }
+    let rows = if q_lower.is_empty() {
+        sqlx::query_as::<_, LongTermMemory>(query_sql)
+            .bind(limit as i64)
+            .fetch_all(&*pool)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        let pattern = format!("%{}%", q_lower);
+        sqlx::query_as::<_, LongTermMemory>(query_sql)
+            .bind(&pattern)
+            .bind(&pattern)
+            .bind(limit as i64)
+            .fetch_all(&*pool)
+            .await
+            .map_err(|e| e.to_string())?
+    };
 
-    if vec_to_search.is_empty() {
-        let q_lower = query_text.to_lowercase();
-        let query_sql = if q_lower.is_empty() {
-            "SELECT * FROM long_term_memories ORDER BY created_at DESC LIMIT ?"
-        } else {
-            "SELECT * FROM long_term_memories WHERE LOWER(fact) LIKE ? OR LOWER(category) LIKE ? ORDER BY created_at DESC LIMIT ?"
-        };
-
-        let rows = if q_lower.is_empty() {
-            sqlx::query_as::<_, LongTermMemory>(query_sql)
-                .bind(limit as i64)
-                .fetch_all(&*pool)
-                .await
-                .map_err(|e| e.to_string())?
-        } else {
-            let pattern = format!("%{}%", q_lower);
-            sqlx::query_as::<_, LongTermMemory>(query_sql)
-                .bind(&pattern)
-                .bind(&pattern)
-                .bind(limit as i64)
-                .fetch_all(&*pool)
-                .await
-                .map_err(|e| e.to_string())?
-        };
-
-        let matched: Vec<MemorySearchResult> = rows
-            .into_iter()
-            .map(|m| MemorySearchResult {
-                id: m.id,
-                fact: m.fact,
-                category: m.category,
-                created_at: m.created_at,
-                similarity: 1.0,
-            })
-            .collect();
-        return Ok(matched);
-    }
-
-    let rows = sqlx::query_as::<_, LongTermMemory>(
-        "SELECT * FROM long_term_memories ORDER BY created_at DESC LIMIT 1000"
-    )
-    .fetch_all(&*pool)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
-
-    let mut scored: Vec<MemorySearchResult> = rows
+    let matched: Vec<MemorySearchResult> = rows
         .into_iter()
-        .filter_map(|m| {
-            let emb = decode_embedding(&m.embedding);
-            let raw_score = if !emb.is_empty() && emb.len() == vec_to_search.len() {
-                cosine_similarity(&vec_to_search, &emb)
-            } else if !query_text.is_empty() && m.fact.to_lowercase().contains(&query_text.to_lowercase()) {
-                0.8
-            } else {
-                return None;
-            };
-
-            // Apply exponential temporal recency decay: half-life ~70 days
-            let age_days = ((now_secs - m.created_at).max(0) as f32) / 86400.0;
-            let decay = (-0.01 * age_days).exp();
-            let final_score = raw_score * decay;
-
-            // Relevance threshold: filter out low-confidence matches (< 0.40)
-            if final_score < 0.40 {
-                return None;
-            }
-
-            Some(MemorySearchResult {
-                id: m.id,
-                fact: m.fact,
-                category: m.category,
-                created_at: m.created_at,
-                similarity: final_score,
-            })
+        .map(|m| MemorySearchResult {
+            id: m.id,
+            fact: m.fact,
+            category: m.category,
+            created_at: m.created_at,
+            similarity: 1.0,
         })
         .collect();
-
-    scored.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
-    scored.truncate(limit);
-    Ok(scored)
-}
-
-
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm_a == 0.0 || norm_b == 0.0 { 0.0 } else { dot / (norm_a * norm_b) }
+    Ok(matched)
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]

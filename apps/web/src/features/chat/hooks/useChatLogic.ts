@@ -21,7 +21,6 @@ import {
   compactHistoryAsync,
   estimateContextTokens,
 } from '@src/infrastructure/utils/compaction';
-import { buildChatPrompts, ChatContext } from '@src/core/prompts/chatPrompts';
 import { stripThinkingContent } from '@src/utils/textUtils';
 import { PlanPhase } from '@src/types/agent';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
@@ -449,15 +448,15 @@ export const useChatLogic = ({
 
   const stopChat = useCallback(() => {
     // Tell Tauri backend to explicitly stop any running agent/LLM loops
-    const isTauriEnv =
-      typeof window !== 'undefined' &&
-      ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
-    if (isTauriEnv) {
-      // import('@tauri-apps/api/core').then(m => m.invoke('cancel_agent_loop')).catch(console.error);
+    try {
+      emit('cancel_chat_stream').catch(() => {});
+    } catch {
+      // Non-critical if outside Tauri
     }
 
     cancelPipeline();
     cancelRequest('chat-stream');
+    cancelAllRequests();
   }, [cancelPipeline]);
 
   // Stable refs for loading/stopChat so the session sync effect doesn't re-run on every render
@@ -523,9 +522,31 @@ export const useChatLogic = ({
   const editMessage = useCallback(
     (index: number, newContent: string) => {
       const messages = historyRef.current;
-      if (index < 0 || index >= messages.length || messages[index].role !== 'user') return;
+      if (index < 0 || index >= messages.length) return;
 
-      // Truncate after this message and update content
+      // In-place edit for assistant messages (e.g. code block edits, inline fixes)
+      if (messages[index].role === 'assistant') {
+        const updated = [...messages];
+        const existingMsg = updated[index];
+        const updatedArtifacts = existingMsg.artifacts?.map((art) => ({
+          ...art,
+          content: art.content ? newContent : art.content,
+        }));
+        updated[index] = {
+          ...existingMsg,
+          content: newContent,
+          artifacts: updatedArtifacts || existingMsg.artifacts,
+        };
+
+        dispatch({ type: 'SET', messages: updated });
+        historyRef.current = updated;
+        persistHistory(updated);
+        return;
+      }
+
+      // User message editing: truncate after this message and update content, then auto-regenerate
+      if (messages[index].role !== 'user') return;
+
       const truncated = messages.slice(0, index + 1);
       truncated[index] = { ...truncated[index], content: newContent };
 
@@ -678,16 +699,8 @@ export const useChatLogic = ({
   // Return
   // -------------------------------------------------------------------------
 
-  const approveTool = useCallback(async (index: number, approvalId: string) => {
+  const approveTool = useCallback(async (index: number, _approvalId: string) => {
     try {
-      const isTauriEnv =
-        typeof window !== 'undefined' &&
-        ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
-
-      if (isTauriEnv) {
-        await invoke('approve_tool', { approvalId });
-      }
-
       dispatch({
         type: 'UPDATE',
         index,
@@ -698,16 +711,8 @@ export const useChatLogic = ({
     }
   }, []);
 
-  const rejectTool = useCallback(async (index: number, approvalId: string) => {
+  const rejectTool = useCallback(async (index: number, _approvalId: string) => {
     try {
-      const isTauriEnv =
-        typeof window !== 'undefined' &&
-        ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
-
-      if (isTauriEnv) {
-        await invoke('reject_tool', { approvalId });
-      }
-
       dispatch({
         type: 'UPDATE',
         index,

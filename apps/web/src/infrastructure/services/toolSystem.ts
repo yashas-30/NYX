@@ -6,34 +6,24 @@
  */
 
 import { useNyxStore } from '@src/shared/store/useNyxStore';
-import { useAppStore } from '@src/stores/useAppStore';
-import { getEffectiveApiKey } from '@src/infrastructure/utils/provider';
-import { WorkspaceIntelligence } from './workspaceIntelligence';
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 import {
   searchTopicImages,
   searchTopicVideos,
-  generateVisualAsset,
   ExtractedImage,
   ExtractedVideo,
 } from '@src/core/services/mediaEngine';
+import { distillSearchQuery } from '@src/shared/querySynthesizer';
 
 function safeEvaluateMath(expr: string): number {
-  const sanitized = expr.replace(/[^0-9+\-*/().,%^eE\sMath.sqrtcospitannlgabsminmax]/g, '');
-  const converted = sanitized
-    .replace(/\^/g, '**')
-    .replace(/\bsqrt\b/g, 'Math.sqrt')
-    .replace(/\bsin\b/g, 'Math.sin')
-    .replace(/\bcos\b/g, 'Math.cos')
-    .replace(/\btan\b/g, 'Math.tan')
-    .replace(/\babs\b/g, 'Math.abs')
-    .replace(/\bpi\b/gi, 'Math.PI')
-    .replace(/\blog\b/g, 'Math.log10')
-    .replace(/\bln\b/g, 'Math.log');
-  const result = Function(`"use strict"; return (${converted})`)();
-  if (typeof result !== 'number' || isNaN(result))
-    throw new Error('Invalid mathematical calculation');
-  return result;
+  const sanitized = expr.replace(/[^0-9+\-*/().%^eE ]/g, '');
+  if (!sanitized) throw new Error('Invalid mathematical expression');
+  const fn = new Function(`return (${sanitized})`);
+  const val = fn();
+  if (typeof val !== 'number' || isNaN(val)) {
+    throw new Error('Expression did not evaluate to a valid number');
+  }
+  return val;
 }
 
 // ============================================================================
@@ -433,26 +423,6 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     },
   },
   {
-    name: 'generate_image',
-    description: 'Generate an AI image from a descriptive text prompt.',
-    parameters: {
-      type: 'object',
-      properties: {
-        prompt: {
-          type: 'string',
-          description: 'Detailed prompt describing the image to generate.',
-        },
-        aspect_ratio: {
-          type: 'string',
-          enum: ['1:1', '16:9', '9:16', '4:3', '3:2'],
-          description: 'Aspect ratio of the generated image (default: "1:1").',
-          default: '1:1',
-        },
-      },
-      required: ['prompt'],
-    },
-  },
-  {
     name: 'calculate',
     description:
       'Evaluate a mathematical expression accurately (arithmetic, percentages, powers, trigonometry).',
@@ -547,30 +517,6 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     },
   },
   {
-    name: 'start_subagent',
-    description:
-      'Spawn and delegate a complex or isolated subtask to a specialized child subagent with its own independent context window and execution lifecycle.',
-    parameters: {
-      type: 'object',
-      properties: {
-        task: {
-          type: 'string',
-          description: 'Detailed instructions, prompt, or goal for the child subagent to execute.',
-        },
-        subagent_name: {
-          type: 'string',
-          description:
-            'Optional name of a registered subagent (e.g., "code_reviewer"), or omit for dynamic self-cloning.',
-        },
-        context: {
-          type: 'string',
-          description: 'Optional background context or file content for the subagent.',
-        },
-      },
-      required: ['task'],
-    },
-  },
-  {
     name: 'read_url_content',
     description: 'Fetch and extract text content from a web URL.',
     parameters: {
@@ -603,6 +549,30 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
         },
       },
       required: ['question'],
+    },
+  },
+  {
+    name: 'create_presentation',
+    description:
+      'Synthesize an executive-grade Slidev presentation deck using Slidev grammar (delimiters "---", YAML frontmatter, layout directives: cover, two-cols, fact, quote, section, end, slot syntax "::right::", and presenter notes "<!-- note: ... -->").',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Title of the presentation.',
+        },
+        topic: {
+          type: 'string',
+          description: 'The subject or theme of the presentation.',
+        },
+        slides_content: {
+          type: 'string',
+          description:
+            'The slide outlines, narrative data, bullet points, or raw Slidev markdown to compile.',
+        },
+      },
+      required: ['title'],
     },
   },
   {
@@ -816,7 +786,6 @@ export class ToolExecutor {
 
     let toolName = (call.name || '')
       .replace(/^default_api:/i, '')
-      .replace(/^antigravity:/i, '')
       .replace(/^gemini:/i, '')
       .trim();
 
@@ -827,7 +796,8 @@ export class ToolExecutor {
     if (toolName === 'create_file') toolName = 'write_file';
     if (toolName === 'find_file') toolName = 'find_by_name';
     if (toolName === 'list_dir') toolName = 'list_directory';
-    if (toolName === 'generate_image') toolName = 'generate_visual_asset';
+    if (toolName === 'slidev_presentation' || toolName === 'generate_presentation')
+      toolName = 'create_presentation';
 
     switch (toolName) {
       case 'read_file': {
@@ -842,7 +812,6 @@ export class ToolExecutor {
           '';
         if (!filePath) throw new Error('Missing file path for read_file');
         validatePath(filePath);
-        WorkspaceIntelligence.trackOpenFile(filePath);
         try {
           const content: string = await invoke('fs_read_file', { path: filePath });
           if (params.startLine && params.endLine) {
@@ -875,7 +844,6 @@ export class ToolExecutor {
           params.replacement ??
           '';
         validatePath(filePath);
-        WorkspaceIntelligence.trackOpenFile(filePath);
         try {
           await invoke('fs_write_file', {
             path: filePath,
@@ -907,7 +875,6 @@ export class ToolExecutor {
           params.body ??
           '';
         validatePath(filePath);
-        WorkspaceIntelligence.trackOpenFile(filePath);
         try {
           await invoke('fs_write_file', {
             path: filePath,
@@ -949,7 +916,8 @@ export class ToolExecutor {
       }
 
       case 'web_search': {
-        const q =
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        const rawQ =
           params.query ||
           params.q ||
           params.search_query ||
@@ -957,184 +925,89 @@ export class ToolExecutor {
           params.input ||
           params.topic ||
           (params.queries && params.queries.length > 0 ? params.queries[0] : '');
-        if (!q) throw new Error('Missing query parameter for web_search');
+        if (!rawQ) throw new Error('Missing query parameter for web_search');
+        const q = distillSearchQuery(rawQ) || rawQ;
         try {
           const storeState = useNyxStore.getState();
           const searchProvider = storeState.searchProvider || 'duckduckgo';
           const apiKey = storeState.apiKeys[searchProvider] || '';
-          const result: string = await invoke('search_web_command', {
+
+          const searchPromise = invoke<string>('search_web_command', {
             query: q,
             numResults: params.numResults ?? params.limit ?? 5,
             searchProvider: searchProvider,
             apiKey,
           });
+
+          const timeoutPromise = new Promise<string>((_, reject) =>
+            setTimeout(() => reject(new Error('Web search timed out after 8s')), 8000)
+          );
+
+          const abortPromise = new Promise<string>((_, reject) => {
+            if (signal?.aborted) {
+              reject(new DOMException('Aborted', 'AbortError'));
+              return;
+            }
+            signal?.addEventListener(
+              'abort',
+              () => reject(new DOMException('Aborted', 'AbortError')),
+              { once: true }
+            );
+          });
+
+          const result: string = await Promise.race([searchPromise, timeoutPromise, abortPromise]);
           return result;
         } catch (e: any) {
+          if (e?.name === 'AbortError' || signal?.aborted) throw e;
           throw new Error(e?.message || e || 'Web search failed');
         }
       }
 
       case 'deep_research': {
-        const q =
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        const rawQ =
           params.query ||
           params.prompt ||
           params.topic ||
           params.subject ||
           params.q ||
           (params.queries && params.queries.length > 0 ? params.queries[0] : '');
-        if (!q) throw new Error('Missing query parameter for deep_research');
+        if (!rawQ) throw new Error('Missing query parameter for deep_research');
+        const q = distillSearchQuery(rawQ) || rawQ;
 
-        const appKeys = useAppStore.getState().apiKeys || ({} as any);
-        const nyxKeys = useNyxStore.getState().apiKeys || {};
-        const geminiKey =
-          getEffectiveApiKey('gemini', { ...appKeys, ...nyxKeys }) ||
-          appKeys['gemini'] ||
-          nyxKeys['gemini'] ||
-          '';
-
-        // 1. First Attempt: Google AI Studio Deep Research via Gemini API
-        if (geminiKey && geminiKey.trim().length > 0) {
-          try {
-            // Attempt A: Interactions API with deep-research agent
-            const interactionRes = await fetch(
-              'https://generativelanguage.googleapis.com/v1beta/interactions',
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'x-goog-api-key': geminiKey,
-                },
-                body: JSON.stringify({
-                  agent: 'deep-research-preview-04-2026',
-                  input: q,
-                  agent_config: {
-                    type: 'deep-research',
-                    thinking_summaries: 'auto',
-                    visualization: 'auto',
-                  },
-                  tools: [{ type: 'google_search' }, { type: 'url_context' }],
-                }),
-              }
-            ).catch(() => null);
-
-            if (interactionRes && interactionRes.ok) {
-              const interactionData = await interactionRes.json();
-              if (interactionData.output_text) {
-                return interactionData.output_text;
-              }
-            }
-
-            // Attempt B: Google AI Studio Gemini 3.7 Pro Preview with Google Search Grounding & Deep Thinking
-            const genRes = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${geminiKey}`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  contents: [
-                    {
-                      role: 'user',
-                      parts: [
-                        {
-                          text: `Conduct an exhaustive technical deep research investigation, comparative benchmark analysis, and fact synthesis on the following topic:\n\n${q}`,
-                        },
-                      ],
-                    },
-                  ],
-                  systemInstruction: {
-                    parts: [
-                      {
-                        text: 'You are the Google Deep Research Engine. Output a comprehensive, structured research report with an Executive Summary, Key Technical Findings, In-Depth Architectural Analysis, Data & Benchmark Tables, and Verified Source Citations.',
-                      },
-                    ],
-                  },
-                  tools: [{ googleSearch: {} }],
-                  generationConfig: {
-                    thinkingConfig: { thinkingBudget: -1 },
-                  },
-                }),
-              }
-            ).catch(() => null);
-
-            if (genRes && genRes.ok) {
-              const genData = await genRes.json();
-              const firstCand = genData.candidates?.[0];
-              let reportText = '';
-              if (firstCand?.content?.parts) {
-                for (const p of firstCand.content.parts) {
-                  if (p.text && !p.thought) reportText += p.text;
-                }
-              }
-
-              // Extract citations from groundingMetadata
-              const grounding = firstCand?.groundingMetadata;
-              const citations: string[] = [];
-              if (grounding?.groundingChunks) {
-                for (const chunk of grounding.groundingChunks) {
-                  if (chunk.web?.uri) {
-                    citations.push(`- [${chunk.web.title || 'Source'}](${chunk.web.uri})`);
-                  }
-                }
-              }
-
-              if (reportText) {
-                const citationBlock =
-                  citations.length > 0
-                    ? `\n\n### Discovered Sources & Verified Citations\n${citations.join('\n')}`
-                    : '';
-                return `${reportText}${citationBlock}`;
-              }
-            }
-          } catch (geminiResearchErr) {
-            console.warn(
-              '[toolSystem:deep_research] Google AI Studio call warning:',
-              geminiResearchErr
-            );
-          }
-        }
-
-        // 2. Fallback: Local / Tauri Deep Research DAG
+        // Execute web search with higher result count and citations
         try {
           const storeState = useNyxStore.getState();
           const searchProvider = storeState.searchProvider || 'duckduckgo';
           const apiKey = storeState.apiKeys[searchProvider] || '';
-          const onProgress = new Channel<any>();
 
-          const researchResult: any = await invoke('start_deep_research', {
-            query: {
-              prompt: q,
-              depth_limit: params.numResults ?? params.limit ?? 8,
-              provider: searchProvider,
-              api_key: apiKey,
-            },
-            onProgress,
-          }).catch((err) => {
-            console.warn(
-              '[toolSystem:deep_research] start_deep_research failed, falling back to search_web_command:',
-              err
+          const abortPromise = new Promise<any>((_, reject) => {
+            if (signal?.aborted) {
+              reject(new DOMException('Aborted', 'AbortError'));
+              return;
+            }
+            signal?.addEventListener(
+              'abort',
+              () => reject(new DOMException('Aborted', 'AbortError')),
+              { once: true }
             );
-            return null;
           });
 
-          if (researchResult && typeof researchResult === 'object') {
-            const report = researchResult.report || '';
-            const sources = (researchResult.sources || [])
-              .map(
-                (s: any, idx: number) =>
-                  `[${idx + 1}] [${s.title || 'Source'}](${s.url}): ${s.snippet || ''}`
-              )
-              .join('\n\n');
-            return `${report}\n\n### Discovered Sources & Citations\n${sources}`;
-          }
+          const timeoutPromise = new Promise<any>((_, reject) =>
+            setTimeout(() => reject(new Error('Deep research timed out after 10s')), 10000)
+          );
 
-          const fallbackResult: string = await invoke('search_web_command', {
+          const searchPromise = invoke<string>('search_web_command', {
             query: q,
             numResults: params.numResults ?? 8,
             searchProvider,
             apiKey,
           });
-          return fallbackResult || 'Deep research completed with no external findings.';
+
+          const searchResult = await Promise.race([searchPromise, timeoutPromise, abortPromise]);
+          return searchResult || 'Deep research completed with no external findings.';
         } catch (e: any) {
+          if (e?.name === 'AbortError' || signal?.aborted) throw e;
           throw new Error(e?.message || e || 'Deep research failed');
         }
       }
@@ -1195,34 +1068,6 @@ export class ToolExecutor {
         }
       }
 
-      case 'generate_image': {
-        const prompt = (
-          params.prompt ||
-          params.text ||
-          params.description ||
-          params.image_prompt ||
-          ''
-        ).trim();
-        if (!prompt) throw new Error('Missing prompt for generate_image');
-        const ar =
-          params.aspect_ratio === '16:9' ||
-          params.aspect_ratio === '9:16' ||
-          params.aspect_ratio === '4:3'
-            ? params.aspect_ratio
-            : '1:1';
-        try {
-          const asset = await generateVisualAsset(prompt, ar);
-          return {
-            prompt,
-            imageUrl: asset.imageUrl,
-            source: asset.engine,
-            status: 'success',
-          };
-        } catch (e: any) {
-          throw new Error(e?.message || e || 'Image generation failed');
-        }
-      }
-
       case 'calculate': {
         const expr = (
           params.expression ||
@@ -1248,22 +1093,36 @@ export class ToolExecutor {
         const url = (params.url || params.uri || params.link || params.webpage || '').trim();
         if (!url) throw new Error('Missing URL for fetch_page_content');
         try {
-          const text: string = await invoke('fetch_page_content', { url });
+          const text: string = await invoke('fetch_page_content_command', {
+            url,
+            maxChars: params.max_chars ?? params.maxChars ?? 30000,
+          });
           return text;
         } catch (e: any) {
-          // Fallback to fetch
+          // Fallback to browser fetch
           try {
             const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
             const html = await resp.text();
-            const cleanText = html
-              .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-              .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-              .replace(/<[^>]+>/g, ' ')
-              .replace(/\s+/g, ' ')
-              .trim();
-            return cleanText.substring(0, 10000);
+            let cleanText = '';
+            if (typeof DOMParser !== 'undefined') {
+              const doc = new DOMParser().parseFromString(html, 'text/html');
+              doc
+                .querySelectorAll('script, style, noscript, svg, nav, footer, header')
+                .forEach((el) => el.remove());
+              cleanText = (doc.body.innerText || doc.body.textContent || '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            } else {
+              cleanText = html
+                .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            }
+            return cleanText.substring(0, 30000);
           } catch (inner) {
-            throw new Error(`Failed to fetch page: ${e || inner}`);
+            throw new Error(`Failed to fetch page: ${e?.message || e || inner}`);
           }
         }
       }
@@ -1314,48 +1173,41 @@ export class ToolExecutor {
         }
       }
 
-      case 'start_subagent': {
-        const task = params.task || params.prompt || params.instructions || '';
-        if (!task) throw new Error('Missing task parameter for start_subagent');
-        const subagentName = params.subagent_name || params.name || params.role;
-        const context = params.context || '';
-
-        try {
-          const { antigravityAgent } = await import('@src/core/agents/antigravityAgent');
-          const subResult = await antigravityAgent.runAgentLoop({
-            prompt: context ? `Context:\n${context}\n\nTask:\n${task}` : task,
-            maxIterations: 5,
-          });
-
-          return {
-            subagent: subagentName || 'dynamic_clone',
-            status: subResult.status,
-            output: subResult.outputText,
-            reasoning: subResult.reasoning,
-            steps_count: subResult.steps.length,
-          };
-        } catch (subErr: any) {
-          throw new Error(`Subagent delegation failed: ${subErr?.message || subErr}`);
-        }
-      }
-
       case 'read_url_content': {
-        const url = params.url || params.Url || params.uri || params.link;
+        const url = (params.url || params.Url || params.uri || params.link || '').trim();
         if (!url) throw new Error('Missing url parameter for read_url_content');
         try {
-          const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-          const html = await resp.text();
-          const cleanText = html
-            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-          return cleanText.length > 8000
-            ? cleanText.substring(0, 8000) + '\n...[truncated]'
-            : cleanText;
-        } catch (e: any) {
-          throw new Error(`Failed to read URL ${url}: ${e?.message || e}`);
+          const text: string = await invoke('fetch_page_content_command', {
+            url,
+            maxChars: 30000,
+          });
+          return text;
+        } catch {
+          // Fallback to fetch
+          try {
+            const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const html = await resp.text();
+            let cleanText = '';
+            if (typeof DOMParser !== 'undefined') {
+              const doc = new DOMParser().parseFromString(html, 'text/html');
+              doc
+                .querySelectorAll('script, style, noscript, svg, nav, footer, header')
+                .forEach((el) => el.remove());
+              cleanText = (doc.body.innerText || doc.body.textContent || '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            } else {
+              cleanText = html
+                .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            }
+            return cleanText.substring(0, 30000);
+          } catch (e: any) {
+            throw new Error(`Failed to read URL ${url}: ${e?.message || e}`);
+          }
         }
       }
 
@@ -1368,6 +1220,35 @@ export class ToolExecutor {
         };
       }
 
+      case 'create_presentation': {
+        const title = params.title || params.topic || 'Slidev Presentation';
+        const topic = params.topic || params.subject || title;
+        const slidesContent = (
+          params.slides_content ||
+          params.content ||
+          params.slides ||
+          params.outline ||
+          ''
+        ).trim();
+
+        const rawDeck = slidesContent.startsWith('---')
+          ? slidesContent
+          : `---\ntheme: seriph\ntitle: ${title}\nlayout: cover\n---\n\n# ${title}\n### ${topic}\n\n---\nlayout: default\n---\n\n${slidesContent || `# ${title}\n\n${topic}`}`;
+
+        const formattedDeck = rawDeck.startsWith('```slidev')
+          ? rawDeck
+          : `\`\`\`slidev\n${rawDeck}\n\`\`\``;
+
+        return {
+          status: 'success',
+          title,
+          topic,
+          slidev: formattedDeck,
+          slidevDeck: formattedDeck,
+          content: formattedDeck,
+        };
+      }
+
       case 'finish': {
         const output =
           params.output || params.response || params.content || 'Task completed successfully.';
@@ -1375,7 +1256,7 @@ export class ToolExecutor {
       }
 
       default:
-        return `Unsupported or simulated tool '${call.name}'. Action acknowledged.`;
+        throw new Error(`Tool '${call.name}' is not recognized or available.`);
     }
   }
 

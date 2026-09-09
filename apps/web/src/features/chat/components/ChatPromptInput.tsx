@@ -4,7 +4,7 @@
  * @description Prompt pill with inference settings panel, tailored specifically for the Chat Agent.
  */
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   SendIcon as Send,
@@ -56,6 +56,7 @@ import { MicVAD } from '@ricky0123/vad-web';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { useModelStore } from '@src/core/stores/useModelStore';
 import { useAppStore } from '@src/stores/useAppStore';
+import { findLocalModelDef } from '@src/shared/hooks/useLocalModels';
 
 interface ChatPromptInputProps {
   prompt: string;
@@ -305,12 +306,26 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   const docInputRef = useRef<HTMLInputElement>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
+  const lastPasteTimeRef = useRef<number>(0);
+  const MAX_ATTACHMENTS = 4;
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     try {
-      onAttachFiles(Array.from(files));
+      const currentTotal = (selectedImages?.length ?? 0) + (pendingFiles?.length ?? 0);
+      if (currentTotal >= MAX_ATTACHMENTS) {
+        toast.error(`Maximum limit of ${MAX_ATTACHMENTS} attachments reached.`);
+        return;
+      }
+      const fileList = Array.from(files);
+      const remainingSlots = MAX_ATTACHMENTS - currentTotal;
+      if (fileList.length > remainingSlots) {
+        toast.warning(
+          `Only ${remainingSlots} attachment${remainingSlots > 1 ? 's' : ''} added. Maximum limit is ${MAX_ATTACHMENTS}.`
+        );
+      }
+      onAttachFiles(fileList.slice(0, remainingSlots));
     } catch (error: any) {
       toast.error(`File attach failed: ${error.message}`);
     } finally {
@@ -341,11 +356,19 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   // This is the most reliable source: it reads from the Rust backend via
   // loadLocalLibraryModels() and isn't subject to the prop chain being stale.
   const localLibraryModels = useModelStore((s) => s.localLibraryModels);
-  const localModelDef = localLibraryModels.find((m) => m.id === currentModelId);
+  const localModelDef = useMemo(() => {
+    return findLocalModelDef(currentModelId, localLibraryModels);
+  }, [currentModelId, localLibraryModels]);
 
   // ── Context window max ────────────────────────────────────────────────────
-  let maxContext = 8192;
-  if (localModelDef?.specs?.contextWindow) {
+  let maxContext = 131072;
+  if (
+    localModelDef?.context_length &&
+    typeof localModelDef.context_length === 'number' &&
+    localModelDef.context_length > 0
+  ) {
+    maxContext = localModelDef.context_length;
+  } else if (localModelDef?.specs?.contextWindow) {
     const val = String(localModelDef.specs.contextWindow).toUpperCase();
     const cleanVal = val.replace(/\(.*?\)/g, '').trim();
 
@@ -356,36 +379,35 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
     } else if (cleanVal.includes('K')) {
       maxContext = parseInt(cleanVal.replace('K', '').trim()) * 1024;
     } else {
-      maxContext = parseInt(cleanVal.trim()) || 8192;
+      maxContext = parseInt(cleanVal.trim()) || 131072;
     }
   }
 
-  // If the saved context exceeds this model's max, auto-correct to the model's max.
-  const storedCtx = localSettings.contextSize ?? 8192;
-  const effectiveCtx = storedCtx > maxContext ? maxContext : storedCtx;
+  // Respect Auto (0) or user-configured context. Never force 8192 over native capacity.
+  const storedCtx = localSettings.contextSize ?? 0;
 
-  // Auto-save the corrected value so the next model load uses the right context.
+  // Auto-save the corrected value only if user set a non-zero value exceeding model max.
   useEffect(() => {
-    if (storedCtx > maxContext && currentModelId) {
+    if (storedCtx > 0 && storedCtx > maxContext && currentModelId) {
       updateLocal('contextSize', maxContext);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentModelId, maxContext]);
+  }, [currentModelId, maxContext, storedCtx]);
 
   const capabilities = getModelCapabilities(currentModelId || '');
   // Priority: 1) useModelStore metadata  2) currentModel prop metadata  3) string heuristic
   const supportsVision = localModelDef
-    ? !!localModelDef.capabilities?.vision
+    ? !!(localModelDef.capabilities?.vision ?? localModelDef.supports_vision)
     : currentModel != null && 'capabilities' in currentModel
       ? !!(currentModel as any).capabilities?.vision
       : capabilities.supportsVision;
   const supportsReasoning = localModelDef
-    ? !!localModelDef.capabilities?.reasoning
+    ? !!(localModelDef.capabilities?.reasoning ?? localModelDef.supports_reasoning)
     : currentModel != null && 'capabilities' in currentModel
       ? !!(currentModel as any).capabilities?.reasoning
       : capabilities.supportsReasoning;
   const supportsAudio = localModelDef
-    ? !!(localModelDef.capabilities as any)?.audio
+    ? !!((localModelDef.capabilities as any)?.audio ?? localModelDef.supports_audio)
     : currentModel != null && 'capabilities' in currentModel
       ? !!(currentModel as any).capabilities?.audio
       : (capabilities.supportsAudio ?? false);
@@ -414,6 +436,111 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
     }
   }, [isLocalModel, localLibraryModels.length, loadLocalLibraryModels]);
 
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement> | ClipboardEvent) => {
+      const now = Date.now();
+      if (now - lastPasteTimeRef.current < 250) {
+        e.preventDefault();
+        return;
+      }
+      lastPasteTimeRef.current = now;
+
+      const clipboardData =
+        (e as React.ClipboardEvent<HTMLTextAreaElement>).clipboardData ||
+        (e as ClipboardEvent).clipboardData;
+      if (!clipboardData) return;
+
+      const items = clipboardData.items;
+      const filesToAttach: File[] = [];
+
+      if (items && items.length > 0) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.kind === 'file') {
+            const file = item.getAsFile();
+            if (file) {
+              filesToAttach.push(file);
+            }
+          }
+        }
+      }
+
+      if (filesToAttach.length === 0 && clipboardData.files && clipboardData.files.length > 0) {
+        for (let i = 0; i < clipboardData.files.length; i++) {
+          const file = clipboardData.files[i];
+          if (file) {
+            filesToAttach.push(file);
+          }
+        }
+      }
+
+      if (filesToAttach.length > 0) {
+        e.preventDefault();
+
+        const currentTotal = (selectedImages?.length ?? 0) + (pendingFiles?.length ?? 0);
+        if (currentTotal >= MAX_ATTACHMENTS) {
+          toast.error(`Maximum limit of ${MAX_ATTACHMENTS} attachments reached.`);
+          return;
+        }
+
+        const imageFiles: File[] = [];
+        const nonImageFiles: File[] = [];
+
+        for (const file of filesToAttach) {
+          if (file.type.startsWith('image/')) {
+            imageFiles.push(file);
+          } else {
+            nonImageFiles.push(file);
+          }
+        }
+
+        // Check vision capability
+        if (imageFiles.length > 0 && !supportsVision) {
+          toast.error(
+            `The selected model (${currentModel?.name || currentModelId || 'current model'}) does not support image attachments. Switch to a vision-capable model to analyze images.`
+          );
+        }
+
+        // Check audio capability
+        const audioFiles = nonImageFiles.filter(
+          (f) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|webm)$/i.test(f.name)
+        );
+        if (audioFiles.length > 0 && !supportsAudio) {
+          toast.error(
+            `The selected model (${currentModel?.name || currentModelId || 'current model'}) does not support audio attachments.`
+          );
+        }
+
+        const validFiles = filesToAttach.filter((f) => {
+          if (f.type.startsWith('image/')) return supportsVision;
+          const isAudio =
+            f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|webm)$/i.test(f.name);
+          if (isAudio) return supportsAudio;
+          return true; // Documents, PDF, code
+        });
+
+        if (validFiles.length > 0) {
+          const remainingSlots = MAX_ATTACHMENTS - currentTotal;
+          if (validFiles.length > remainingSlots) {
+            toast.warning(
+              `Only ${remainingSlots} attachment${remainingSlots > 1 ? 's' : ''} added. Maximum limit is ${MAX_ATTACHMENTS}.`
+            );
+          }
+          onAttachFiles(validFiles.slice(0, remainingSlots));
+        }
+      }
+    },
+    [
+      onAttachFiles,
+      supportsVision,
+      supportsAudio,
+      currentModel,
+      currentModelId,
+      selectedImages,
+      pendingFiles,
+    ]
+  );
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isLoading) {
@@ -427,11 +554,50 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
         onClearHistory();
         toast.success('Context reset');
       }
+
+      // Quick shortcut to trigger document attach (Ctrl+Shift+U)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'u') {
+        e.preventDefault();
+        docInputRef.current?.click();
+      }
+
+      // Quick shortcut to trigger image attach (Ctrl+Shift+I)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'i') {
+        if (supportsVision) {
+          e.preventDefault();
+          imageInputRef.current?.click();
+        } else {
+          toast.error(`The selected model does not support image attachments.`);
+        }
+      }
+    };
+
+    const handleWindowPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target === textareaRef.current ||
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA')
+      ) {
+        return;
+      }
+      if (
+        (e.clipboardData?.items &&
+          Array.from(e.clipboardData.items).some((i) => i.kind === 'file')) ||
+        (e.clipboardData?.files && e.clipboardData.files.length > 0)
+      ) {
+        handlePaste(e);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLoading, onStop, onClearHistory]);
+    window.addEventListener('paste', handleWindowPaste);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('paste', handleWindowPaste);
+    };
+  }, [isLoading, onStop, onClearHistory, handlePaste, supportsVision]);
 
   const updateLocal = useCallback(
     (key: string, value: any) => {
@@ -443,7 +609,17 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   const resetLocalSettings = useCallback(() => {
     onModelSettingsChange({
       ...modelSettings,
-      // 0 = auto � let the SmartNglScheduler decide from live VRAM measurement.\r\n      gpuLayers: undefined,\r\n      // 0 = auto � backend uses 8192 by default, auto-reduced for VRAM if needed.\r\n      contextSize: 0,\r\n      // 0 = auto � scheduler picks optimal ubatch size from VRAM headroom.\r\n      batchSize: 0,\r\n      // 0 = auto � scheduler picks physical CPU core count.\r\n      threads: 0,\r\n      temperature: 0.7,\r\n      topP: 0.95,\r\n      topK: 40,\r\n      flashAttention: true,\r\n      // auto = backend selects q8_0, q5_0, or q4_0 by VRAM headroom.\r\n      kvCacheType: 'auto',\r\n      useMlock: false,\r\n      disableKvOffload: false,
+      gpuLayers: undefined,
+      contextSize: 32768,
+      batchSize: 0,
+      threads: 0,
+      temperature: 0.3,
+      topP: 0.95,
+      topK: 40,
+      flashAttention: true,
+      kvCacheType: 'auto',
+      useMlock: false,
+      disableKvOffload: false,
     });
     toast.success('Settings reset to smart auto-defaults');
   }, [modelSettings, onModelSettingsChange]);
@@ -1123,7 +1299,12 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                     setTemplateSelectedIndex(0);
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder="Message NYX..."
+                  onPaste={handlePaste}
+                  placeholder={
+                    supportsVision
+                      ? 'Message NYX... (Ctrl+V to paste images, PDFs, code, audio)'
+                      : 'Message NYX... (Ctrl+V to paste PDFs, code, text)'
+                  }
                   className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-0.5 px-1 resize-none min-h-[32px] max-h-[150px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/40 focus:outline-none"
                   style={{ scrollbarWidth: 'none' }}
                 />

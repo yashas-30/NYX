@@ -70,6 +70,9 @@ export interface HardwareSpecs {
   free_ram: number;
   gpu_name: string;
   gpu_vram: number;
+  shared_gpu_memory?: number;
+  dedicated_vram?: number;
+  has_dedicated_gpu?: boolean;
 }
 
 export interface DownloadProgress {

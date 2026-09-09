@@ -67,6 +67,45 @@ export function useHfModelFiles(modelId: string | null) {
   });
 }
 
+export interface DiscoveredCompanionFile {
+  filename: string;
+  size: number;
+  repo_id: string;
+  companion_type: 'vision' | 'audio' | 'draft';
+  label: string;
+}
+
+export function useHfCompanionFiles(
+  modelId: string | null,
+  baseModel?: string | null,
+  neededTypes: ('vision' | 'audio' | 'draft')[] = []
+) {
+  return useQuery<DiscoveredCompanionFile[], Error>({
+    queryKey: ['hf-companion-files', modelId, baseModel, neededTypes.sort().join(',')],
+    queryFn: async () => {
+      if (!modelId || neededTypes.length === 0) return [];
+      const results: DiscoveredCompanionFile[] = [];
+      for (const companionType of neededTypes) {
+        try {
+          const companions = await invoke<DiscoveredCompanionFile[]>('hf_find_companion_files', {
+            modelId,
+            baseModel: baseModel || null,
+            companionType,
+          });
+          if (companions && companions.length > 0) {
+            results.push(...companions);
+          }
+        } catch (err) {
+          console.warn(`[useHfCompanionFiles] Failed to find ${companionType} companions:`, err);
+        }
+      }
+      return results;
+    },
+    enabled: !!modelId && neededTypes.length > 0,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
 // Strip YAML front matter only when the file starts with ---
 // Using /s (dotAll) so . matches \n; no /m flag so ^ anchors at string start only.
 function stripFrontMatter(text: string): string {

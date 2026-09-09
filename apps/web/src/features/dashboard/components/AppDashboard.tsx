@@ -11,6 +11,7 @@ import { useChatSessions } from '@src/shared/hooks/useChatSessions';
 import { AppRouter } from '@src/app/router';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 import { useTheme } from '@src/shared/context/ThemeContext';
+import { useAppStore } from '@src/stores/useAppStore';
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 import {
   SettingsIcon as Settings,
@@ -33,7 +34,10 @@ import { toast } from '@src/shared/components/ui/sonner';
 import { CommandPalette } from '@src/shared/components/CommandPalette';
 
 export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const sidebarOpen = useAppStore((s) => s.sidebarOpen);
+  const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar);
+  const isCodePanelOpen = useAppStore((s) => s.codeBlockPanelOpen);
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobile, setIsMobile] = useState(
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
@@ -329,7 +333,10 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             statuses={statuses}
             chatSessions={activeSessions as any}
             sidebarOpen={sidebarOpen}
-            onToggleSidebar={() => setSidebarOpen((p) => !p)}
+            onToggleSidebar={() => {
+              if (isCodePanelOpen) return;
+              toggleSidebar();
+            }}
             models={models}
             setModel={setModel}
             updateApiKey={updateApiKey}

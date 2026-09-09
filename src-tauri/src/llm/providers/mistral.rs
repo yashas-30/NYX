@@ -11,8 +11,8 @@ use tokio_util::io::StreamReader;
 use futures_util::TryStreamExt;
 use crate::llm::types::{UnifiedRequest, StreamChunkPayload, sanitize_messages_for_api};
 use super::common::{
-    build_fast_http_client, budget_messages, validate_key_format,
-    CONTEXT_BUDGET_CHARS, MAX_TOKENS_DEFAULT, QuotaResponse, KEY_VALIDATION_CACHE,
+    build_fast_http_client, budget_messages, validate_key_format, resolve_context_budget_chars,
+    MAX_TOKENS_DEFAULT, QuotaResponse, KEY_VALIDATION_CACHE,
 };
 
 /// Dedicated high-speed HTTP client for Mistral AI API
@@ -51,7 +51,8 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
     );
 
     let max_tokens = req.max_tokens.unwrap_or(MAX_TOKENS_DEFAULT);
-    let budgeted = budget_messages(&req.messages, CONTEXT_BUDGET_CHARS);
+    let budget_chars = resolve_context_budget_chars(req, 256_000 * 4);
+    let budgeted = budget_messages(&req.messages, budget_chars);
     let sanitized_history = sanitize_messages_for_api(&budgeted);
 
     let normalized_model = normalize_mistral_model(&req.model_id);
@@ -150,28 +151,57 @@ pub async fn execute_stream(
 ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunkPayload, String>>, String> {
     let (url, body, headers) = build_request(req)?;
 
-    let mut response = MISTRAL_CLIENT.post(&url)
-        .headers(headers.clone())
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let response;
+    let mut attempts = 0;
+    let max_attempts = 4;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body_text = response.text().await.unwrap_or_default();
+    loop {
+        attempts += 1;
+        let resp = MISTRAL_CLIENT
+            .post(&url)
+            .headers(headers.clone())
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
 
-        // 1. Handle short 429 rate limit backoff retry (2s sleep)
-        if status.as_u16() == 429 {
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            if let Ok(retry_resp) = MISTRAL_CLIENT.post(&url)
+        if resp.status().is_success() {
+            response = resp;
+            break;
+        }
+
+        let status = resp.status();
+        let body_text = resp.text().await.unwrap_or_default();
+
+        // 1. Handle 429 rate limit with progressive exponential backoff (2s, 4s, 6s)
+        if status.as_u16() == 429 && attempts < max_attempts {
+            let wait_duration = tokio::time::Duration::from_secs(attempts * 2);
+            tokio::time::sleep(wait_duration).await;
+            continue;
+        }
+
+        // 2. Handle unsupported tools retry fallback
+        let is_tool_unsupported = (status.as_u16() == 400 || status.as_u16() == 422)
+            && (body_text.to_lowercase().contains("tool") 
+                || body_text.to_lowercase().contains("function") 
+                || body_text.to_lowercase().contains("not support")
+                || body_text.to_lowercase().contains("unsupported"));
+
+        if is_tool_unsupported && body.get("tools").is_some() {
+            let mut retry_body = body.clone();
+            if let Some(map) = retry_body.as_object_mut() {
+                map.remove("tools");
+            }
+            if let Ok(retry_resp) = MISTRAL_CLIENT
+                .post(&url)
                 .headers(headers.clone())
-                .json(&body)
+                .json(&retry_body)
                 .send()
                 .await
             {
                 if retry_resp.status().is_success() {
                     response = retry_resp;
+                    break;
                 } else {
                     let r_status = retry_resp.status();
                     let r_text = retry_resp.text().await.unwrap_or_default();
@@ -182,42 +212,10 @@ pub async fn execute_stream(
                 let err_msg = extract_mistral_error(&body_text).unwrap_or(body_text);
                 return Err(format!("Request failed ({}): {}", status, err_msg));
             }
-        } else {
-            // 2. Handle unsupported tools retry fallback
-            let is_tool_unsupported = (status.as_u16() == 400 || status.as_u16() == 422)
-                && (body_text.to_lowercase().contains("tool") 
-                    || body_text.to_lowercase().contains("function") 
-                    || body_text.to_lowercase().contains("not support")
-                    || body_text.to_lowercase().contains("unsupported"));
-
-            if is_tool_unsupported && body.get("tools").is_some() {
-                let mut retry_body = body.clone();
-                if let Some(map) = retry_body.as_object_mut() {
-                    map.remove("tools");
-                }
-                if let Ok(retry_resp) = MISTRAL_CLIENT.post(&url)
-                    .headers(headers.clone())
-                    .json(&retry_body)
-                    .send()
-                    .await
-                {
-                    if retry_resp.status().is_success() {
-                        response = retry_resp;
-                    } else {
-                        let r_status = retry_resp.status();
-                        let r_text = retry_resp.text().await.unwrap_or_default();
-                        let err_msg = extract_mistral_error(&r_text).unwrap_or(r_text);
-                        return Err(format!("Request failed ({}): {}", r_status, err_msg));
-                    }
-                } else {
-                    let err_msg = extract_mistral_error(&body_text).unwrap_or(body_text);
-                    return Err(format!("Request failed ({}): {}", status, err_msg));
-                }
-            } else {
-                let err_msg = extract_mistral_error(&body_text).unwrap_or(body_text);
-                return Err(format!("Request failed ({}): {}", status, err_msg));
-            }
         }
+
+        let err_msg = extract_mistral_error(&body_text).unwrap_or(body_text);
+        return Err(format!("Request failed ({}): {}", status, err_msg));
     }
 
     let (tx, rx) = tokio::sync::mpsc::channel(256);
@@ -227,7 +225,7 @@ pub async fn execute_stream(
             std::io::Error::new(std::io::ErrorKind::Other, e)
         });
         let stream_reader = StreamReader::new(byte_stream);
-        let mut lines = BufReader::with_capacity(64 * 1024, stream_reader).lines();
+        let mut lines = BufReader::with_capacity(4 * 1024 * 1024, stream_reader).lines();
         let mut buffer = String::new();
 
         'outer: loop {

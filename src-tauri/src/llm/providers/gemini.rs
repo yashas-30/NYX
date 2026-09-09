@@ -12,8 +12,8 @@ use futures_util::TryStreamExt;
 use crate::llm::types::{UnifiedMessage, UnifiedRequest, StreamChunkPayload};
 use super::common::{
     build_fast_http_client, budget_messages, get_content_string,
-    validate_key_format, GEMINI_CONTEXT_BUDGET_CHARS, MAX_TOKENS_DEFAULT,
-    QuotaResponse, KEY_VALIDATION_CACHE,
+    validate_key_format, resolve_context_budget_chars,
+    MAX_TOKENS_DEFAULT, QuotaResponse, KEY_VALIDATION_CACHE,
 };
 
 /// Dedicated high-speed HTTP client for Google AI Studio / Gemini API
@@ -63,6 +63,25 @@ fn sanitize_gemini_turns(messages: Vec<UnifiedMessage>) -> Vec<UnifiedMessage> {
 
     let mut out: Vec<UnifiedMessage> = Vec::new();
     for m in messages {
+        // Consecutive tool responses must be merged into a single turn because
+        // Gemini converts them to role "user" and strictly forbids consecutive user turns.
+        if m.role == "tool" {
+            if let Some(last) = out.last_mut() {
+                if last.role == "tool" {
+                    let mut existing_parts = match &last.content {
+                        Value::Array(arr) => arr.clone(),
+                        other => vec![other.clone()],
+                    };
+                    match &m.content {
+                        Value::Array(arr) => existing_parts.extend(arr.clone()),
+                        other => existing_parts.push(other.clone()),
+                    }
+                    last.content = Value::Array(existing_parts);
+                    continue;
+                }
+            }
+        }
+
         let is_tool_turn = m.content.is_array();
         if let Some(last) = out.last_mut() {
             if last.role == m.role && !is_tool_turn && !last.content.is_array() {
@@ -84,7 +103,8 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
     let is_gemini_2_5 = model_id_lower.contains("gemini-2.5") || model_id_lower.contains("2.5");
     let default_max = if is_gemini_3 || is_gemini_2_5 { 65536 } else { MAX_TOKENS_DEFAULT };
     let max_tokens = req.max_tokens.unwrap_or(default_max).max(if is_gemini_3 || is_gemini_2_5 { 32768 } else { 8192 });
-    let budgeted = budget_messages(&req.messages, GEMINI_CONTEXT_BUDGET_CHARS);
+    let budget_chars = resolve_context_budget_chars(req, 1_048_576 * 4);
+    let budgeted = budget_messages(&req.messages, budget_chars);
     let sanitized_history = sanitize_gemini_turns(budgeted);
 
     let is_gemma = req.model_id.to_lowercase().contains("gemma");
@@ -98,35 +118,78 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
                     let c_val = item.get("content").cloned().unwrap_or(json!(""));
                     let resp_obj = if c_val.is_object() {
                         c_val
+                    } else if let Some(s) = c_val.as_str() {
+                        if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                            if parsed.is_object() {
+                                parsed
+                            } else {
+                                json!({ "output": parsed, "result": parsed })
+                            }
+                        } else {
+                            json!({ "output": s, "result": s })
+                        }
                     } else {
-                        json!({ "result": c_val, "output": c_val })
+                        json!({ "output": c_val, "result": c_val })
                     };
-                    func_parts.push(json!({
+
+                    let mut fp = json!({
                         "functionResponse": {
                             "name": name,
                             "response": resp_obj
                         }
-                    }));
+                    });
+                    if let Some(call_id) = item.get("tool_call_id").or_else(|| item.get("id")).and_then(|v| v.as_str()) {
+                        if !call_id.is_empty() {
+                            fp["functionResponse"]["id"] = json!(call_id);
+                        }
+                    }
+                    func_parts.push(fp);
                 }
             } else if let Some(obj) = m.content.as_object() {
                 let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("tool");
                 let c_val = obj.get("content").cloned().unwrap_or(json!(""));
                 let resp_obj = if c_val.is_object() {
                     c_val
+                } else if let Some(s) = c_val.as_str() {
+                    if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                        if parsed.is_object() {
+                            parsed
+                        } else {
+                            json!({ "output": parsed, "result": parsed })
+                        }
+                    } else {
+                        json!({ "output": s, "result": s })
+                    }
                 } else {
-                    json!({ "result": c_val, "output": c_val })
+                    json!({ "output": c_val, "result": c_val })
                 };
-                func_parts.push(json!({
+                let mut fp = json!({
                     "functionResponse": {
                         "name": name,
                         "response": resp_obj
                     }
-                }));
+                });
+                if let Some(call_id) = obj.get("tool_call_id").or_else(|| obj.get("id")).and_then(|v| v.as_str()) {
+                    if !call_id.is_empty() {
+                        fp["functionResponse"]["id"] = json!(call_id);
+                    }
+                }
+                func_parts.push(fp);
             } else {
+                let s = get_content_string(&m.content);
+                let resp_obj = if let Ok(parsed) = serde_json::from_str::<Value>(&s) {
+                    if parsed.is_object() {
+                        parsed
+                    } else {
+                        json!({ "output": parsed, "result": parsed })
+                    }
+                } else {
+                    json!({ "output": s, "result": s })
+                };
                 func_parts.push(json!({
                     "functionResponse": {
                         "name": "tool",
-                        "response": { "result": m.content.clone(), "output": m.content.clone() }
+                        "response": resp_obj
                     }
                 }));
             }
@@ -165,40 +228,84 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
                         }
                         None
                     }
-                    "tool_call" | "function" => {
-                        let func = part.get("function")?;
-                        let name = func.get("name")?.as_str()?;
-                        let args_val = if let Some(s) = func.get("arguments").and_then(|a| a.as_str()) {
-                            serde_json::from_str::<Value>(s).unwrap_or(json!({}))
+                    "tool_call" | "function" | "tool_use" => {
+                        let name = if let Some(f) = part.get("function") {
+                            f.get("name").and_then(|n| n.as_str()).unwrap_or("tool")
                         } else {
-                            func.get("arguments").cloned().unwrap_or(json!({}))
+                            part.get("name").and_then(|n| n.as_str()).unwrap_or("tool")
+                        };
+
+                        let args_val = if let Some(f) = part.get("function") {
+                            if let Some(s) = f.get("arguments").and_then(|a| a.as_str()) {
+                                serde_json::from_str::<Value>(s).unwrap_or(json!({}))
+                            } else {
+                                f.get("arguments").cloned().unwrap_or(json!({}))
+                            }
+                        } else if let Some(input) = part.get("input") {
+                            if let Some(s) = input.as_str() {
+                                serde_json::from_str::<Value>(s).unwrap_or(json!({}))
+                            } else {
+                                input.clone()
+                            }
+                        } else if let Some(args) = part.get("args").or_else(|| part.get("arguments")) {
+                            if let Some(s) = args.as_str() {
+                                serde_json::from_str::<Value>(s).unwrap_or(json!({}))
+                            } else {
+                                args.clone()
+                            }
+                        } else {
+                            json!({})
                         };
 
                         let maybe_sig = part.get("thoughtSignature")
                             .or_else(|| part.get("thought_signature"))
                             .or_else(|| part.get("signature"))
-                            .or_else(|| func.get("thoughtSignature"))
-                            .or_else(|| func.get("thought_signature"))
-                            .and_then(|s| s.as_str());
+                            .or_else(|| part.get("function").and_then(|f| f.get("thoughtSignature").or_else(|| f.get("thought_signature"))))
+                            .and_then(|s| s.as_str())
+                            .filter(|s| !s.is_empty());
 
-                        let mut part_obj = json!({
+                        let mut fc_val = json!({
                             "functionCall": {
                                 "name": name,
                                 "args": args_val
                             }
                         });
-
                         if let Some(sig) = maybe_sig {
-                            if !sig.is_empty() {
-                                part_obj["thoughtSignature"] = json!(sig);
-                            }
+                            fc_val["thoughtSignature"] = json!(sig);
                         }
-
-                        Some(part_obj)
+                        Some(fc_val)
                     }
-                    _ => None,
+                    _ => {
+                        if let Some(fc) = part.get("functionCall") {
+                            let name = fc.get("name").and_then(|n| n.as_str()).unwrap_or("tool");
+                            let args = fc.get("args").cloned().unwrap_or(json!({}));
+                            let sig = part.get("thoughtSignature")
+                                .or_else(|| part.get("thought_signature"))
+                                .or_else(|| fc.get("thoughtSignature"))
+                                .and_then(|s| s.as_str())
+                                .filter(|s| !s.is_empty());
+                            let mut fc_val = json!({
+                                "functionCall": {
+                                    "name": name,
+                                    "args": args
+                                }
+                            });
+                            if let Some(s) = sig {
+                                fc_val["thoughtSignature"] = json!(s);
+                            }
+                            Some(fc_val)
+                        } else {
+                            None
+                        }
+                    }
                 }
             }).collect();
+
+            let parts = if parts.is_empty() {
+                vec![json!({"text": ""})]
+            } else {
+                parts
+            };
 
             json!({
                 "role": role,
@@ -299,40 +406,40 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
         }
     }
 
-    // Tools (Not supported on Gemma)
+    // Tools & Function Declarations (Supported across Gemini and Gemma 4)
     let mut tools_list: Vec<Value> = Vec::new();
-    if !is_gemma {
-        let mut has_func_decls = false;
-        if let Some(tools) = &req.tools {
-            if let Some(tool_arr) = tools.as_array() {
-                let decls: Vec<Value> = tool_arr.iter()
-                    .filter_map(|t| {
-                        let mut func = t.get("function").cloned().unwrap_or_else(|| t.clone());
-                        if func.get("name").is_some() {
-                            clean_gemini_schema(&mut func);
-                            Some(func)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                if !decls.is_empty() {
-                    tools_list.push(json!({"functionDeclarations": decls}));
-                    has_func_decls = true;
-                }
+    let mut has_func_decls = false;
+    if let Some(tools) = &req.tools {
+        if let Some(tool_arr) = tools.as_array() {
+            let decls: Vec<Value> = tool_arr.iter()
+                .filter_map(|t| {
+                    let mut func = t.get("function").cloned().unwrap_or_else(|| t.clone());
+                    if func.get("name").is_some() {
+                        clean_gemini_schema(&mut func);
+                        Some(func)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if !decls.is_empty() {
+                tools_list.push(json!({"functionDeclarations": decls}));
+                has_func_decls = true;
             }
         }
+    }
 
-        // Only add googleSearch grounding when NO function declarations are present and web search is enabled
-        if !has_func_decls && req.web_search_enabled {
-            tools_list.push(json!({"googleSearch": {}}));
-        }
+    // When web search is enabled on Gemini, attach native Google Search Grounding directly
+    if req.web_search_enabled && !is_gemma {
+        tools_list.clear();
+        tools_list.push(json!({"googleSearch": {}}));
+        has_func_decls = false;
+    }
 
-        if !tools_list.is_empty() {
-            body["tools"] = Value::Array(tools_list);
-            if has_func_decls {
-                body["toolConfig"] = json!({"functionCallingConfig": {"mode": "AUTO"}});
-            }
+    if !tools_list.is_empty() {
+        body["tools"] = Value::Array(tools_list);
+        if has_func_decls {
+            body["toolConfig"] = json!({"functionCallingConfig": {"mode": "AUTO"}});
         }
     }
 
@@ -505,7 +612,11 @@ pub fn parse_sse_event(data: &str) -> Vec<StreamChunkPayload> {
                     }
                     events.push(start_payload);
                     events.push(StreamChunkPayload::tool_args(args.to_string()));
-                    events.push(StreamChunkPayload::tool_complete());
+                    let mut complete_payload = StreamChunkPayload::tool_complete();
+                    if let Some(s) = sig {
+                        complete_payload.metadata = Some(json!({ "thoughtSignature": s, "thought_signature": s }));
+                    }
+                    events.push(complete_payload);
                 }
             }
         }
@@ -552,7 +663,7 @@ pub async fn execute_stream(
     let (url, body, headers) = build_request(req)?;
 
     let mut attempts = 0;
-    let max_attempts = 2;
+    let max_attempts = 4;
     let mut current_url = url.clone();
     let mut current_body = body.clone();
     let mut final_response = None;
@@ -593,7 +704,7 @@ pub async fn execute_stream(
                     continue;
                 }
 
-                // 3. Transient rate-limit / overload recovery (short backoff)
+                // 3. Transient rate-limit / overload recovery (progressive backoff)
                 let is_transient_overload = status.as_u16() == 429
                     || status.as_u16() == 503
                     || body_text.contains("UNAVAILABLE")
@@ -601,7 +712,7 @@ pub async fn execute_stream(
                     || body_text.contains("RESOURCE_EXHAUSTED");
 
                 if is_transient_overload && attempts < max_attempts {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(attempts as u64 * 1500)).await;
                     continue;
                 }
 
@@ -646,7 +757,7 @@ pub async fn execute_stream(
             std::io::Error::new(std::io::ErrorKind::Other, e)
         });
         let stream_reader = StreamReader::new(byte_stream);
-        let mut lines = BufReader::with_capacity(64 * 1024, stream_reader).lines();
+        let mut lines = BufReader::with_capacity(4 * 1024 * 1024, stream_reader).lines();
         let mut buffer = String::new();
 
         'outer: loop {

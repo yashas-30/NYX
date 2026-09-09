@@ -28,11 +28,17 @@ pub fn sanitize_messages_for_api(messages: &[UnifiedMessage]) -> Vec<Value> {
 
         if m.role == "assistant" && m.content.is_array() {
             let mut tool_calls: Vec<Value> = Vec::new();
+            let mut text_parts: Vec<String> = Vec::new();
             if let Some(arr) = m.content.as_array() {
                 for item in arr {
                     let item_type = item.get("type").and_then(|t| t.as_str());
-                    // Accept "tool_call", "function", and "tool_use"
-                    if item_type == Some("tool_call") || item_type == Some("function") || item_type == Some("tool_use") {
+                    if item_type == Some("text") {
+                        if let Some(t) = item.get("text").and_then(|s| s.as_str()) {
+                            if !t.trim().is_empty() {
+                                text_parts.push(t.to_string());
+                            }
+                        }
+                    } else if item_type == Some("tool_call") || item_type == Some("function") || item_type == Some("tool_use") {
                         if item_type == Some("tool_use") {
                             let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("call_0");
                             let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("tool");
@@ -52,13 +58,25 @@ pub fn sanitize_messages_for_api(messages: &[UnifiedMessage]) -> Vec<Value> {
                                 }
                             }));
                         } else {
-                            tool_calls.push(item.clone());
+                            let mut tc = item.clone();
+                            if let Some(obj) = tc.as_object_mut() {
+                                obj.insert("type".to_string(), json!("function"));
+                                if !obj.contains_key("id") {
+                                    obj.insert("id".to_string(), json!("call_0"));
+                                }
+                            }
+                            tool_calls.push(tc);
                         }
                     }
                 }
             }
             if !tool_calls.is_empty() {
-                sanitized.push(json!({"role": "assistant", "tool_calls": tool_calls, "content": null}));
+                let content_val = if text_parts.is_empty() {
+                    Value::Null
+                } else {
+                    json!(text_parts.join("\n\n"))
+                };
+                sanitized.push(json!({"role": "assistant", "tool_calls": tool_calls, "content": content_val}));
                 continue;
             }
         }

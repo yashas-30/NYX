@@ -282,7 +282,7 @@ export const OnDeviceModelDetail: React.FC<OnDeviceModelDetailProps> = ({
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-white/5 text-[11px] font-mono">
               <div>
-                <div className="text-muted-foreground/60 text-[10px]">Estimated VRAM</div>
+                <div className="text-muted-foreground/60 text-[10px]">Model Footprint</div>
                 <div className="text-foreground font-bold">{hardwareEst.estimated_vram_mb} MB</div>
               </div>
               <div>
@@ -292,9 +292,15 @@ export const OnDeviceModelDetail: React.FC<OnDeviceModelDetailProps> = ({
                 </div>
               </div>
               <div>
-                <div className="text-muted-foreground/60 text-[10px]">Active Context</div>
+                <div className="text-muted-foreground/60 text-[10px]">
+                  {hardwareEst.uses_shared_memory ? 'VRAM + Shared RAM' : 'Available VRAM'}
+                </div>
                 <div className="text-foreground font-bold">
-                  {Math.round((settings.contextSize || 32768) / 1024)}K
+                  {hardwareEst.has_dedicated_gpu &&
+                  (hardwareEst.shared_gpu_memory_mb > 0 ||
+                    hardwareEst.dedicated_vram_available_mb > 0)
+                    ? `${(hardwareEst.dedicated_vram_available_mb / 1024).toFixed(1)}GB + ${(hardwareEst.shared_gpu_memory_mb / 1024).toFixed(1)}GB`
+                    : `${(hardwareEst.vram_available_mb / 1024).toFixed(1)} GB`}
                 </div>
               </div>
               <div>
@@ -550,6 +556,52 @@ export const OnDeviceModelDetail: React.FC<OnDeviceModelDetailProps> = ({
                 checked={settings.useMlock ?? false}
                 onChange={(e) => handleSettingChange('useMlock', e.target.checked)}
                 className="w-4 h-4 accent-primary cursor-pointer rounded"
+              />
+            </div>
+
+            {/* Speculative Decoding (MTP) Toggle */}
+            <div
+              className={`flex items-center justify-between p-3 rounded-lg border col-span-1 md:col-span-2 transition-all ${
+                model.has_mtp
+                  ? 'bg-cyan-500/5 border-cyan-500/30'
+                  : 'bg-white/5 border-white/10 opacity-50 cursor-not-allowed'
+              }`}
+            >
+              <div className="flex flex-col gap-0.5">
+                <div className="text-xs font-bold font-mono flex items-center gap-2">
+                  <span className={model.has_mtp ? 'text-cyan-400' : 'text-muted-foreground'}>
+                    ⚡ Speculative Decoding (MTP)
+                  </span>
+                  {model.has_mtp ? (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                      MTP Ready
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-white/5 text-muted-foreground border border-white/10">
+                      Unavailable
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">
+                  {model.has_mtp
+                    ? 'Multi-Token Prediction companion detected in folder. Generates multiple tokens per forward pass (~2x generation speedup).'
+                    : 'Option unavailable: No MTP companion file present in this model folder.'}
+                </div>
+              </div>
+
+              <input
+                type="checkbox"
+                disabled={!model.has_mtp}
+                checked={model.has_mtp && (settings.enableSpeculative ?? true)}
+                onChange={(e) => handleSettingChange('enableSpeculative', e.target.checked)}
+                className={`w-4 h-4 rounded ${
+                  model.has_mtp ? 'accent-cyan-500 cursor-pointer' : 'cursor-not-allowed opacity-30'
+                }`}
+                title={
+                  model.has_mtp
+                    ? 'Enable or disable MTP Speculative Decoding'
+                    : 'No MTP companion file detected in this model folder'
+                }
               />
             </div>
           </div>

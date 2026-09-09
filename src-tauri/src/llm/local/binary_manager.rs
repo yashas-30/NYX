@@ -61,6 +61,8 @@ impl Downloader {
                                 if let Some(assets) = rel.get("assets").and_then(|a| a.as_array()) {
                                     let mut target_url = None;
                                     let mut cudart_url = None;
+                                    let mut preferred_target_url = None;
+                                    let mut preferred_cudart_url = None;
 
                                     for asset in assets {
                                         if let (Some(name), Some(url)) = (asset["name"].as_str(), asset["browser_download_url"].as_str()) {
@@ -68,18 +70,30 @@ impl Downloader {
                                             if name_lower.contains("win") && (name_lower.contains("x64") || name_lower.contains("x86_64")) && name_lower.ends_with(".zip") {
                                                 let is_cuda = matches!(backend, GpuBackend::Cuda | GpuBackend::Unknown) && name_lower.contains("cuda");
                                                 let is_vulkan = matches!(backend, GpuBackend::Vulkan | GpuBackend::Npu) && name_lower.contains("vulkan");
+                                                let is_cu12 = is_cuda && (name_lower.contains("12.4") || name_lower.contains("cu12") || name_lower.contains("cuda-12"));
 
                                                 if name_lower.starts_with("cudart") && is_cuda {
-                                                    cudart_url = Some(url.to_string());
+                                                    if is_cu12 {
+                                                        preferred_cudart_url = Some(url.to_string());
+                                                    } else if cudart_url.is_none() {
+                                                        cudart_url = Some(url.to_string());
+                                                    }
                                                 } else if (is_cuda || is_vulkan) && !name_lower.starts_with("cudart") {
-                                                    target_url = Some(url.to_string());
+                                                    if is_cu12 {
+                                                        preferred_target_url = Some(url.to_string());
+                                                    } else if target_url.is_none() {
+                                                        target_url = Some(url.to_string());
+                                                    }
                                                 }
                                             }
                                         }
                                     }
 
-                                    if let Some(url) = target_url {
-                                        return (tag.to_string(), url, cudart_url);
+                                    let final_target = preferred_target_url.or(target_url);
+                                    let final_cudart = preferred_cudart_url.or(cudart_url);
+
+                                    if let Some(url) = final_target {
+                                        return (tag.to_string(), url, final_cudart);
                                     }
                                 }
                             }

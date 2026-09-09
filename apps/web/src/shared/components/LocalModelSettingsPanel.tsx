@@ -1,15 +1,21 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ZapIcon as Zap, CheckIcon as Check, LayersIcon as Layers } from '@animateicons/react/lucide';
-import { RotateCcw, MemoryStick, Thermometer, Cpu, Settings2, Rocket } from 'lucide-react';
+import {
+  ZapIcon as Zap,
+  CheckIcon as Check,
+  LayersIcon as Layers,
+} from '@animateicons/react/lucide';
+import { RotateCcw, MemoryStick, Thermometer, Cpu, Settings2, Rocket, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { SectionLabel, ParamSlider } from '@shared/components/PromptInputSubcomponents';
 import { z } from 'zod';
 import { useModelStore } from '@core/stores/useModelStore';
+import { useAppStore } from '@src/stores/useAppStore';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { useLocalServerStatus, isModelLoaded } from '@shared/hooks/useLocalModels';
+import { parseTokenCount } from '@src/infrastructure/utils/provider';
 
 interface LocalModelSettingsPanelProps {
   isLocalModel: boolean;
@@ -36,8 +42,12 @@ function StatusDot({ running, loading }: { running: boolean; loading: boolean })
     );
   }
   return (
-    <span className={`inline-flex items-center gap-1 text-[8px] font-bold uppercase tracking-wider ${running ? 'text-emerald-400' : 'text-muted-foreground/50'}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${running ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`} />
+    <span
+      className={`inline-flex items-center gap-1 text-[8px] font-bold uppercase tracking-wider ${running ? 'text-emerald-400' : 'text-muted-foreground/50'}`}
+    >
+      <span
+        className={`w-1.5 h-1.5 rounded-full ${running ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`}
+      />
       {running ? 'Running' : 'Stopped'}
     </span>
   );
@@ -64,7 +74,15 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
   const [isRestarting, setIsRestarting] = useState(false);
   // Tracks the actual server context size and whether it was auto-reduced.
   // Populated by the `vram-decision` event emitted by start_local_server.
-  const [liveServerCtx, setLiveServerCtx] = useState<{ size: number; capped: boolean } | null>(null);
+  const [liveServerCtx, setLiveServerCtx] = useState<{ size: number; capped: boolean } | null>(
+    null
+  );
+  const [companionStatus, setCompanionStatus] = useState<{
+    hasMmproj: boolean;
+    mmprojFile?: string;
+    hasMtp: boolean;
+    draftModelFile?: string;
+  } | null>(null);
 
   const loadedLocalModel = useModelStore((s) => s.loadedLocalModel);
   const setLoadedLocalModel = useModelStore((s) => s.setLoadedLocalModel);
@@ -78,27 +96,49 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
 
   // ── GPU strategy labels ───────────────────────────────────────────────────
 
+  const isSharedMem =
+    hardwareEst?.strategy === 'SharedGpuMemory' ||
+    (hardwareEst?.uses_shared_memory && hardwareEst?.has_dedicated_gpu);
+  const isFullGpu =
+    (hardwareEst?.strategy === 'FullDedicatedGpu' || hardwareEst?.fully_gpu) && !isSharedMem;
+
   const actualGpuModeLabel = hardwareEst
-    ? hardwareEst.fully_gpu
-      ? 'Full GPU'
-      : hardwareEst.hybrid
-      ? 'Hybrid'
-      : 'CPU Only'
-    : (hardwareEst?.strategy === 'FullDedicated' ? 'Full GPU Computation' :
-       hardwareEst?.strategy === 'SharedMemory' ? 'GPU + PCIe Shared RAM' :
-       hardwareEst?.strategy === 'IntegratedMemory' ? 'Integrated GPU' : 'CPU Only');
+    ? isFullGpu
+      ? 'Full Dedicated GPU'
+      : isSharedMem
+        ? 'GPU + Shared RAM'
+        : hardwareEst.hybrid
+          ? 'Hybrid'
+          : hardwareEst.is_igpu || hardwareEst.strategy === 'IntegratedGpu'
+            ? 'Integrated GPU'
+            : 'CPU Only'
+    : 'Auto Detection';
 
   const actualGpuColor = hardwareEst
-    ? hardwareEst.fully_gpu
+    ? isFullGpu
       ? 'text-emerald-500'
-      : hardwareEst.hybrid
-      ? 'text-amber-400'
-      : 'text-muted-foreground'
+      : isSharedMem
+        ? 'text-blue-500'
+        : hardwareEst.hybrid
+          ? 'text-amber-400'
+          : 'text-muted-foreground'
     : 'text-muted-foreground';
 
   // ── Context window max ────────────────────────────────────────────────────
 
-  const currentDef = localLibraryModels.find((m) => m.id === currentModelId);
+  const currentDef = useMemo(() => {
+    if (!currentModelId || !localLibraryModels?.length) return undefined;
+    const cleanCurrent = currentModelId.replace(/\\/g, '/').split('/').pop() || currentModelId;
+    return localLibraryModels.find((m: any) => {
+      const cleanM = (m.id || '').replace(/\\/g, '/').split('/').pop() || m.id;
+      return (
+        m.id === currentModelId ||
+        m.name === currentModelId ||
+        cleanM === cleanCurrent ||
+        m.id?.toLowerCase() === currentModelId.toLowerCase()
+      );
+    });
+  }, [currentModelId, localLibraryModels]);
 
   const isImageModel = Boolean(
     currentDef?.capabilities?.imageGen ||
@@ -116,18 +156,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
   if (hardwareEst?.max_context_length && hardwareEst.max_context_length > 0) {
     maxContext = hardwareEst.max_context_length;
   } else if (currentDef?.specs?.contextWindow) {
-    const val = String(currentDef.specs.contextWindow).toUpperCase();
-    const cleanVal = val.replace(/\(.*?\)/g, '').trim(); // Remove things like "(extended to 256K)"
-    
-    if (cleanVal.includes('B')) {
-      maxContext = parseInt(cleanVal.replace('B', '').trim()) * 1024 * 1024 * 1024;
-    } else if (cleanVal.includes('M')) {
-      maxContext = parseInt(cleanVal.replace('M', '').trim()) * 1024 * 1024;
-    } else if (cleanVal.includes('K')) {
-      maxContext = parseInt(cleanVal.replace('K', '').trim()) * 1024;
-    } else {
-      maxContext = parseInt(cleanVal.trim()) || 131072;
-    }
+    maxContext = parseTokenCount(currentDef.specs.contextWindow, 131072);
   }
 
   // ── Hardware estimation: fires on open AND when key settings change ───────
@@ -147,22 +176,42 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
     { value: 524288, label: '512K' },
   ];
   // Limit available context sizes to the model's maximum context length, but always include Auto (0)
-  let availableContextSizes = CONTEXT_SIZES.filter(s => s.value <= maxContext || s.value === 0);
-  if (maxContext > 0 && !availableContextSizes.find(s => s.value === maxContext)) {
+  let availableContextSizes = CONTEXT_SIZES.filter((s) => s.value <= maxContext || s.value === 0);
+  if (maxContext > 0 && !availableContextSizes.find((s) => s.value === maxContext)) {
     availableContextSizes.push({ value: maxContext, label: `${Math.round(maxContext / 1024)}K` });
   }
 
-  // Default to 8K if undefined
-  const storedCtx = localSettings.contextSize ?? 8192;
+  // Default to 32K if undefined
+  const storedCtx = localSettings.contextSize ?? 32768;
   const effectiveCtx = storedCtx;
 
-  let foundIndex = availableContextSizes.findIndex(s => s.value === effectiveCtx);
+  let foundIndex = availableContextSizes.findIndex((s) => s.value === effectiveCtx);
   if (foundIndex === -1) {
     // Find the closest lower value
-    foundIndex = availableContextSizes.reduce((best, s, i) =>
-      s.value <= effectiveCtx ? i : best, 0);
+    foundIndex = availableContextSizes.reduce(
+      (best, s, i) => (s.value <= effectiveCtx ? i : best),
+      0
+    );
   }
   const currentCtxIndex = foundIndex;
+
+  // Derive detected model quantization for display
+  const detectedModelQuant = useMemo(() => {
+    const raw = (
+      (currentDef?.specs as any)?.quantization ||
+      (currentDef as any)?.name ||
+      (currentDef as any)?.fileName ||
+      currentModelId ||
+      ''
+    ).toLowerCase();
+    if (raw.includes('q4') || raw.includes('iq4')) return 'q4_0';
+    if (raw.includes('q8')) return 'q8_0';
+    if (raw.includes('q5') || raw.includes('iq5')) return 'q5_0';
+    if (raw.includes('q6')) return 'q8_0';
+    if (raw.includes('bf16') || raw.includes('f16')) return 'f16';
+    if (raw.includes('f32')) return 'f32';
+    return 'q4_0';
+  }, [currentDef, currentModelId]);
 
   const estDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -211,16 +260,32 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
             const { status, elapsed_secs } = event.payload;
             if (status) toast.info(status, { id: 'panel-server-status' });
             else if (elapsed_secs !== undefined) {
-              const t = elapsed_secs > 60
-                ? `${Math.floor(elapsed_secs / 60)}m ${Math.floor(elapsed_secs % 60)}s`
-                : `${elapsed_secs}s`;
+              const t =
+                elapsed_secs > 60
+                  ? `${Math.floor(elapsed_secs / 60)}m ${Math.floor(elapsed_secs % 60)}s`
+                  : `${elapsed_secs}s`;
               toast.info(`Loading model... ${t}`, { id: 'panel-server-status' });
             }
           }
         );
 
-        unlistenReady = await listen<{ status: string }>('llm-server-ready', () => {
+        unlistenReady = await listen<{
+          status: string;
+          has_mmproj?: boolean;
+          mmproj_file?: string;
+          has_mtp?: boolean;
+          draft_model_file?: string;
+        }>('llm-server-ready', (event) => {
           setIsLoading(false);
+          const { has_mmproj, mmproj_file, has_mtp, draft_model_file } = event.payload || {};
+          if (has_mmproj !== undefined || has_mtp !== undefined) {
+            setCompanionStatus({
+              hasMmproj: !!has_mmproj,
+              mmprojFile: mmproj_file,
+              hasMtp: !!has_mtp,
+              draftModelFile: draft_model_file,
+            });
+          }
           toast.success('Model server ready', { id: 'panel-server-status' });
         });
 
@@ -238,11 +303,32 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
           strategy?: string;
           effective_context_size?: number;
           context_capped?: boolean;
+          has_mmproj?: boolean;
+          mmproj_file?: string;
+          has_mtp?: boolean;
+          draft_model_file?: string;
         }>('vram-decision', (event) => {
-          const { suggest_cloud_fallback, message, effective_context_size, context_capped } = event.payload;
+          const {
+            suggest_cloud_fallback,
+            message,
+            effective_context_size,
+            context_capped,
+            has_mmproj,
+            mmproj_file,
+            has_mtp,
+            draft_model_file,
+          } = event.payload;
           // Update live server context badge
           if (effective_context_size) {
             setLiveServerCtx({ size: effective_context_size, capped: !!context_capped });
+          }
+          if (has_mmproj !== undefined || has_mtp !== undefined) {
+            setCompanionStatus({
+              hasMmproj: !!has_mmproj,
+              mmprojFile: mmproj_file,
+              hasMtp: !!has_mtp,
+              draftModelFile: draft_model_file,
+            });
           }
           if (suggest_cloud_fallback) {
             toast.warning(message, { duration: 10000, id: 'vram-decision' });
@@ -272,7 +358,10 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
     gpuLayers: z.number().min(-1).max(999).optional().nullable(),
     threads: z.number().min(0).max(128).optional().nullable(),
     flashAttention: z.boolean().optional().nullable(),
-    kvCacheType: z.enum(['auto', 'f16', 'q8_0', 'q5_0', 'q5_1', 'q4_0', 'q4_1']).optional().nullable(),
+    kvCacheType: z
+      .enum(['auto', 'f16', 'q8_0', 'q5_0', 'q5_1', 'q4_0', 'q4_1'])
+      .optional()
+      .nullable(),
     batchSize: z.number().min(0).max(8192).optional().nullable(),
     useMlock: z.boolean().optional().nullable(),
     disableKvOffload: z.boolean().optional().nullable(),
@@ -320,7 +409,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
       const waitForEvent = <T,>(eventName: string): Promise<T> => {
         return new Promise((resolve, reject) => {
           let unlisten: () => void;
-          
+
           const onAbort = () => {
             unlisten?.();
             reject(new Error('Aborted'));
@@ -346,9 +435,10 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
             const { elapsed_secs, status } = event.payload;
             if (status) toast.info(status, { id: 'restart-status' });
             else if (elapsed_secs !== undefined) {
-              const timeStr = elapsed_secs > 60
-                ? `${Math.floor(elapsed_secs / 60)}m ${Math.floor(elapsed_secs % 60)}s`
-                : `${elapsed_secs}s`;
+              const timeStr =
+                elapsed_secs > 60
+                  ? `${Math.floor(elapsed_secs / 60)}m ${Math.floor(elapsed_secs % 60)}s`
+                  : `${elapsed_secs}s`;
               toast.info(`Loading... ${timeStr}`, { id: 'restart-status' });
             }
           }),
@@ -357,14 +447,19 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
             const { progress, status } = event.payload;
             toast.info(`${status} (${Math.round(progress)}%)`, { id: 'restart-status' });
           }),
-          listen<{ ngl: number; fully_gpu: boolean; suggest_cloud_fallback: boolean; message: string }>('vram-decision', (event) => {
+          listen<{
+            ngl: number;
+            fully_gpu: boolean;
+            suggest_cloud_fallback: boolean;
+            message: string;
+          }>('vram-decision', (event) => {
             if (signal.aborted) return;
             if (event.payload.suggest_cloud_fallback) {
               toast.warning(event.payload.message, { duration: 10000, id: 'vram-decision' });
             } else {
               toast.info(event.payload.message, { id: 'vram-decision' });
             }
-          })
+          }),
         ]);
         unlistenFns.push(unlistenLoading, unlistenVram, unlistenDownload);
       };
@@ -377,12 +472,12 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
 
       // Await stop first so there's no race condition
       await invoke('stop_local_server');
-      
+
       // Register ready/error listeners BEFORE invoking start_local_server.
       // Image models fire llm-server-ready almost instantly (no llama-server process),
       // so if we register the listener after invoke() we miss the event entirely.
       const readyPromise = waitForEvent<{ status: string }>('llm-server-ready');
-      const errorPromise = waitForEvent<{ error: string }>('llm-server-error').then(payload => {
+      const errorPromise = waitForEvent<{ error: string }>('llm-server-error').then((payload) => {
         throw new Error(payload.error);
       });
 
@@ -399,13 +494,13 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
         disableKvOffload: localSettings.disableKvOffload ?? false,
         splitMode: localSettings.splitMode,
         tensorSplit: localSettings.tensorSplit,
+        reasoning: useAppStore.getState().reasoningEnabled,
+        loadVisionProjector: true,
+        loadDraftModel: localSettings.enableSpeculative ?? true,
       });
 
       // Wait for either success, error event, or backend invocation failure
-      await Promise.race([
-        startPromise.then(() => readyPromise),
-        errorPromise,
-      ]);
+      await Promise.race([startPromise.then(() => readyPromise), errorPromise]);
 
       clearTimeout(timeoutId);
 
@@ -547,8 +642,8 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                       {isRestarting
                         ? 'Applying...'
                         : isModelLoaded(currentModelId, loadedLocalModel)
-                        ? 'Apply & Restart'
-                        : 'Apply & Start'}
+                          ? 'Apply & Restart'
+                          : 'Apply & Start'}
                     </motion.button>
 
                     {/* Close */}
@@ -583,7 +678,9 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                             <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider">
                               GPU Offload Strategy
                             </span>
-                            <span className={`text-[9px] font-black uppercase tracking-wider ${actualGpuColor}`}>
+                            <span
+                              className={`text-[9px] font-black uppercase tracking-wider ${actualGpuColor}`}
+                            >
                               {actualGpuModeLabel}
                             </span>
                           </div>
@@ -592,32 +689,47 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                             <div className="mt-2.5 pt-2.5 border-t border-border/50">
                               <div className="flex justify-between items-center mb-1">
                                 <span className="text-[8px] font-semibold text-muted-foreground">
-                                  VRAM Usage ({hardwareEst.model_size_gb.toFixed(1)}GB Model | CTX:{' '}
+                                  {isSharedMem ? 'GPU Memory (VRAM + Shared)' : 'VRAM Usage'} (
+                                  {hardwareEst.model_size_gb.toFixed(1)}GB Model | CTX:{' '}
                                   {effectiveCtx === 0
                                     ? 'Auto'
-                                    : `${Math.round(effectiveCtx / 1024)}K`})
+                                    : `${Math.round(effectiveCtx / 1024)}K`}
+                                  )
                                 </span>
                                 <span className="text-[9px] font-mono text-foreground">
                                   {Math.round(hardwareEst.estimated_vram_mb / 102.4) / 10} GB /{' '}
-                                  {Math.round(hardwareEst.vram_available_mb / 102.4) / 10} GB avail.
+                                  {Math.round(
+                                    (isSharedMem
+                                      ? hardwareEst.total_gpu_memory_mb ||
+                                        (hardwareEst.dedicated_vram_available_mb ||
+                                          hardwareEst.vram_available_mb) +
+                                          (hardwareEst.shared_gpu_memory_mb || 0)
+                                      : hardwareEst.vram_available_mb) / 102.4
+                                  ) / 10}{' '}
+                                  GB avail.
                                 </span>
                               </div>
                               <div className="w-full bg-black/20 rounded-full h-1.5 overflow-hidden flex">
                                 {(() => {
+                                  const availBudgetMb = isSharedMem
+                                    ? hardwareEst.total_gpu_memory_mb ||
+                                      (hardwareEst.dedicated_vram_available_mb ||
+                                        hardwareEst.vram_available_mb) +
+                                        (hardwareEst.shared_gpu_memory_mb || 0)
+                                    : hardwareEst.vram_available_mb || 1;
                                   const pct = Math.min(
                                     100,
-                                    (hardwareEst.estimated_vram_mb /
-                                      Math.max(1, hardwareEst.vram_available_mb)) *
+                                    (hardwareEst.estimated_vram_mb / Math.max(1, availBudgetMb)) *
                                       100
                                   );
-                                  const color =
-                                    hardwareEst.strategy === 'FullDedicated'
-                                      ? 'bg-emerald-500'
-                                      : hardwareEst.strategy === 'SharedMemory'
+                                  const color = isFullGpu
+                                    ? 'bg-emerald-500'
+                                    : isSharedMem
                                       ? 'bg-blue-500'
-                                      : hardwareEst.strategy === 'IntegratedMemory'
-                                      ? 'bg-amber-500'
-                                      : 'bg-muted-foreground';
+                                      : hardwareEst.is_igpu ||
+                                          hardwareEst.strategy === 'IntegratedGpu'
+                                        ? 'bg-amber-500'
+                                        : 'bg-muted-foreground';
                                   return (
                                     <div
                                       className={`${color} h-full transition-all duration-300`}
@@ -643,7 +755,9 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                                       style={{
                                         width: `${Math.min(
                                           100,
-                                          (hardwareEst.estimated_ram_mb / hardwareEst.ram_total_mb) * 100
+                                          (hardwareEst.estimated_ram_mb /
+                                            hardwareEst.ram_total_mb) *
+                                            100
                                         )}%`,
                                       }}
                                     />
@@ -654,9 +768,12 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                               {/* iGPU Warning Banner */}
                               {hardwareEst.is_igpu && (
                                 <div className="mt-2 px-2 py-1.5 rounded bg-amber-500/10 border border-amber-500/30 flex items-start gap-1.5">
-                                  <span className="text-amber-400 text-[9px] leading-none mt-0.5">⚠</span>
+                                  <span className="text-amber-400 text-[9px] leading-none mt-0.5">
+                                    ⚠
+                                  </span>
                                   <p className="text-[8px] leading-tight text-amber-300/90">
-                                    Integrated GPU detected — context capped at 8192 tokens and GPU layers limited to 35% for system stability.
+                                    Integrated GPU detected — context capped at 8192 tokens and GPU
+                                    layers limited to 35% for system stability.
                                   </p>
                                 </div>
                               )}
@@ -670,29 +787,74 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                                   </span>
                                 </div>
                                 {/* Mode pill */}
-                                <span className={`shrink-0 text-[7px] font-bold px-1.5 py-0.5 rounded-full ${
-                                  hardwareEst.fully_gpu
-                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                <span
+                                  className={`shrink-0 text-[7px] font-bold px-1.5 py-0.5 rounded-full ${
+                                    hardwareEst.fully_gpu
+                                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                      : hardwareEst.hybrid
+                                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                        : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+                                  }`}
+                                >
+                                  {hardwareEst.fully_gpu
+                                    ? 'Full GPU'
                                     : hardwareEst.hybrid
-                                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                    : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
-                                }`}>
-                                  {hardwareEst.fully_gpu ? 'Full GPU' : hardwareEst.hybrid ? 'Hybrid' : 'CPU Only'}
+                                      ? 'Hybrid'
+                                      : 'CPU Only'}
                                 </span>
                                 {/* Active server context badge — shows effective context size after auto-reduction */}
                                 {liveServerCtx && (
                                   <span
-                                    title={liveServerCtx.capped ? 'Context was auto-reduced to fit VRAM' : 'Active server context window'}
+                                    title={
+                                      liveServerCtx.capped
+                                        ? 'Context was auto-reduced to fit VRAM'
+                                        : 'Active server context window'
+                                    }
                                     className={`shrink-0 text-[7px] font-bold px-1.5 py-0.5 rounded-full ${
                                       liveServerCtx.capped
                                         ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                                         : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                                     }`}
                                   >
-                                    {liveServerCtx.capped ? '⚡' : '📐'} CTX: {Math.round(liveServerCtx.size / 1024)}K{liveServerCtx.capped ? ' (auto)' : ''}
+                                    {liveServerCtx.capped ? '⚡' : '📐'} CTX:{' '}
+                                    {Math.round(liveServerCtx.size / 1024)}K
+                                    {liveServerCtx.capped ? ' (auto)' : ''}
                                   </span>
                                 )}
                               </div>
+
+                              {/* Active Companion Acceleration (MTP & mmproj) */}
+                              {Boolean(
+                                (serverStatus as any)?.has_mtp ||
+                                (serverStatus as any)?.has_mmproj ||
+                                companionStatus?.hasMtp ||
+                                companionStatus?.hasMmproj
+                              ) && (
+                                <div className="mt-2.5 pt-2 border-t border-border/40 flex flex-wrap gap-1.5 items-center">
+                                  {Boolean(
+                                    (serverStatus as any)?.has_mtp || companionStatus?.hasMtp
+                                  ) && (
+                                    <span
+                                      title={`MTP Acceleration Active: ${(serverStatus as any)?.draft_model_file || companionStatus?.draftModelFile || 'Multi-Token Prediction'}`}
+                                      className="inline-flex items-center gap-1 text-[7.5px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm"
+                                    >
+                                      <Zap size={8} className="text-emerald-400" />⚡ MTP Active
+                                      (5-Token Draft)
+                                    </span>
+                                  )}
+                                  {Boolean(
+                                    (serverStatus as any)?.has_mmproj || companionStatus?.hasMmproj
+                                  ) && (
+                                    <span
+                                      title={`Multimodal Projector Active: ${(serverStatus as any)?.mmproj_file || companionStatus?.mmprojFile || 'Vision Projector'}`}
+                                      className="inline-flex items-center gap-1 text-[7.5px] font-mono font-bold px-2 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30 shadow-sm"
+                                    >
+                                      <Eye size={8} className="text-blue-400" />
+                                      👁️ Multimodal (mmproj) Active
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -705,18 +867,49 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                           label="Context & Memory"
                           color="text-foreground"
                         />
-                        <div className="mt-3">
-                          <div className="p-3.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between">
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                                <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Dynamic Auto-Scaling Context</p>
-                              </div>
-                              <p className="text-[9px] text-muted-foreground mt-1">Context window automatically scales up to hardware limits as required by conversation length.</p>
+                        <div className="mt-3 space-y-4">
+                          <div>
+                            <ParamSlider
+                              label="Context Length"
+                              hint={
+                                localSettings.contextSize === 0
+                                  ? 'Auto: Scheduler dynamically selects optimal context length for hardware.'
+                                  : hardwareEst?.uses_shared_memory
+                                    ? 'Exceeds dedicated VRAM: Leverages Windows Shared GPU Memory (100% compute on dedicated GPU).'
+                                    : 'Fits completely within Dedicated GPU VRAM.'
+                              }
+                              value={currentCtxIndex}
+                              min={0}
+                              max={availableContextSizes.length - 1}
+                              step={1}
+                              display={(idx) => availableContextSizes[idx]?.label ?? 'Auto'}
+                              accent={
+                                hardwareEst?.uses_shared_memory
+                                  ? 'accent-amber'
+                                  : 'accent-foreground'
+                              }
+                              onChange={(idx) => {
+                                const targetVal = availableContextSizes[idx]?.value ?? 0;
+                                updateLocal('contextSize', targetVal);
+                              }}
+                            />
+                            <div className="mt-2.5 flex items-center justify-between text-[9px]">
+                              <span className="text-muted-foreground font-mono">
+                                Active Window:{' '}
+                                {localSettings.contextSize === 0
+                                  ? 'Auto (Dynamic)'
+                                  : `${(localSettings.contextSize || 32768).toLocaleString()} tokens`}
+                              </span>
+                              {hardwareEst?.uses_shared_memory ? (
+                                <span className="font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                                  ⚡ SHARED GPU MEMORY
+                                </span>
+                              ) : (
+                                <span className="font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                  ✅ FULL VRAM
+                                </span>
+                              )}
                             </div>
-                            <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/20 px-2 py-1 rounded-full border border-emerald-500/30 shrink-0">
-                              ⚡ Auto (Variable)
-                            </span>
                           </div>
 
                           <div className="mt-4 pt-4 border-t border-border/50">
@@ -761,19 +954,25 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                           {/* Advanced Settings Toggle */}
                           <div className="flex items-center justify-between pt-2 border-t border-border/50">
                             <div>
-                              <p className="text-[10px] font-bold text-foreground">Advanced Settings</p>
+                              <p className="text-[10px] font-bold text-foreground">
+                                Advanced Settings
+                              </p>
                             </div>
                             <label className="relative inline-flex items-center cursor-pointer">
                               <input
                                 type="checkbox"
                                 className="sr-only peer"
                                 checked={advancedLocalModelSettings}
-                                onChange={(e) => useNyxStore.getState().setAdvancedLocalModelSettings(e.target.checked)}
+                                onChange={(e) =>
+                                  useNyxStore
+                                    .getState()
+                                    .setAdvancedLocalModelSettings(e.target.checked)
+                                }
                               />
                               <div className="w-7 h-4 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500" />
                             </label>
                           </div>
-                          
+
                           {advancedLocalModelSettings && (
                             <>
                               <ParamSlider
@@ -857,144 +1056,170 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                         <>
                           {/* Optimizations */}
                           <section>
-                        <SectionLabel
-                          icon={<Settings2 size={9} />}
-                          label="Optimizations"
-                          color="text-foreground"
-                        />
-                        <div className="mt-3 space-y-4">
-                          {/* Flash Attention */}
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-[10px] font-bold text-foreground">Flash Attention</p>
-                              <p className="text-[9px] text-muted-foreground mt-0.5">Saves VRAM on long contexts</p>
-                            </div>
-                            <label className="relative inline-flex items-center cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="sr-only peer"
-                                checked={localSettings.flashAttention ?? false}
-                                onChange={(e) => updateLocal('flashAttention', e.target.checked)}
-                              />
-                              <div className="w-7 h-4 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500" />
-                            </label>
-                          </div>
-
-                          {/* mlock */}
-                          <div className="flex items-center justify-between pt-2 border-t border-border/50">
-                            <div>
-                              <p className="text-[10px] font-bold text-foreground">Lock Memory (mlock)</p>
-                              <p className="text-[9px] text-muted-foreground mt-0.5">Prevents swapping to disk</p>
-                            </div>
-                            <label className="relative inline-flex items-center cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="sr-only peer"
-                                checked={localSettings.useMlock ?? false}
-                                onChange={(e) => updateLocal('useMlock', e.target.checked)}
-                              />
-                              <div className="w-7 h-4 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500" />
-                            </label>
-                          </div>
-
-                          {/* KV Cache Quantization */}
-                          <div className="pt-2 border-t border-border/50">
-                            <label className="text-[10px] font-bold text-foreground block mb-1.5">
-                              KV Cache Quantization
-                            </label>
-                            <select
-                              value={localSettings.kvCacheType || 'auto'}
-                              onChange={(e) => updateLocal('kvCacheType', e.target.value)}
-                              className="w-full bg-muted/30 border border-border rounded-md text-[10px] px-2 py-1.5 text-foreground outline-none"
-                            >
-                              <option value="auto">Auto (Match Model)</option>
-                              <option value="f16">FP16 (High Quality, High VRAM)</option>
-                              <option value="q8_0">Q8_0 (Recommended, Balanced)</option>
-                              <option value="q4_0">Q4_0 (Max VRAM Savings)</option>
-                            </select>
-                          </div>
-
-                          {/* Batch Size */}
-                          <div className="pt-2 border-t border-border/50">
-                            <ParamSlider
-                              label="Batch Size"
-                              hint="Maximum logical batch size. 0 = Hardware Optimized."
-                              value={localSettings.batchSize || 0}
-                              min={0}
-                              max={4096}
-                              step={512}
-                              display={(v) => (v === 0 ? 'Auto' : `${v}`)}
-                              accent="accent-foreground"
-                              onChange={(v) => updateLocal('batchSize', v)}
+                            <SectionLabel
+                              icon={<Settings2 size={9} />}
+                              label="Optimizations"
+                              color="text-foreground"
                             />
-                          </div>
-                        </div>
-                      </section>
+                            <div className="mt-3 space-y-4">
+                              {/* Flash Attention */}
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="text-[10px] font-bold text-foreground">
+                                    Flash Attention
+                                  </p>
+                                  <p className="text-[9px] text-muted-foreground mt-0.5">
+                                    Saves VRAM on long contexts
+                                  </p>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={localSettings.flashAttention ?? false}
+                                    onChange={(e) =>
+                                      updateLocal('flashAttention', e.target.checked)
+                                    }
+                                  />
+                                  <div className="w-7 h-4 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500" />
+                                </label>
+                              </div>
 
-                      {/* Advanced Orchestration */}
-                      <section>
-                        <SectionLabel
-                          icon={<Rocket size={9} />}
-                          label="Advanced Orchestration"
-                          color="text-foreground"
-                        />
-                        <div className="mt-3 space-y-4">
-                          <div className="flex flex-col gap-2 pt-2">
-                            <div>
-                              <p className="text-[10px] font-bold text-foreground">Multi-GPU Split Mode</p>
-                              <p className="text-[9px] text-muted-foreground mt-0.5">
-                                'row' (default) prevents GGML_ASSERT crashes on some backends.
-                              </p>
+                              {/* mlock */}
+                              <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                                <div>
+                                  <p className="text-[10px] font-bold text-foreground">
+                                    Lock Memory (mlock)
+                                  </p>
+                                  <p className="text-[9px] text-muted-foreground mt-0.5">
+                                    Prevents swapping to disk
+                                  </p>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={localSettings.useMlock ?? false}
+                                    onChange={(e) => updateLocal('useMlock', e.target.checked)}
+                                  />
+                                  <div className="w-7 h-4 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500" />
+                                </label>
+                              </div>
+
+                              {/* KV Cache Quantization */}
+                              <div className="pt-2 border-t border-border/50">
+                                <label className="text-[10px] font-bold text-foreground block mb-1.5">
+                                  KV Cache Quantization
+                                </label>
+                                <select
+                                  value={localSettings.kvCacheType || 'auto'}
+                                  onChange={(e) => updateLocal('kvCacheType', e.target.value)}
+                                  className="w-full bg-muted/30 border border-border rounded-md text-[10px] px-2 py-1.5 text-foreground outline-none"
+                                >
+                                  <option value="auto">
+                                    Auto (Match Model
+                                    {detectedModelQuant
+                                      ? `: ${detectedModelQuant.toUpperCase()}`
+                                      : ''}
+                                    )
+                                  </option>
+                                  <option value="f16">FP16 (High Quality, High VRAM)</option>
+                                  <option value="q8_0">Q8_0 (Recommended, Balanced)</option>
+                                  <option value="q5_0">Q5_0 (5-bit, High Efficiency)</option>
+                                  <option value="q4_0">Q4_0 (Max VRAM Savings)</option>
+                                </select>
+                              </div>
+
+                              {/* Batch Size */}
+                              <div className="pt-2 border-t border-border/50">
+                                <ParamSlider
+                                  label="Batch Size"
+                                  hint="Maximum logical batch size. 0 = Hardware Optimized."
+                                  value={localSettings.batchSize || 0}
+                                  min={0}
+                                  max={4096}
+                                  step={512}
+                                  display={(v) => (v === 0 ? 'Auto' : `${v}`)}
+                                  accent="accent-foreground"
+                                  onChange={(v) => updateLocal('batchSize', v)}
+                                />
+                              </div>
                             </div>
-                            <select
-                              value={localSettings.splitMode || ''}
-                              onChange={(e) => updateLocal('splitMode', e.target.value)}
-                              className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-emerald-500/50"
-                            >
-                              <option value="">Auto</option>
-                              <option value="row">Row (Stable)</option>
-                              <option value="layer">Layer</option>
-                              <option value="none">None</option>
-                            </select>
-                          </div>
-                          
-                          <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
-                            <div>
-                              <p className="text-[10px] font-bold text-foreground">Tensor Split (e.g. 3,2)</p>
-                              <p className="text-[9px] text-muted-foreground mt-0.5">
-                                Proportion of VRAM per GPU (comma separated). Leave empty for auto.
-                              </p>
-                            </div>
-                            <input
-                              type="text"
-                              placeholder="e.g. 3,2"
-                              value={localSettings.tensorSplit || ''}
-                              onChange={(e) => updateLocal('tensorSplit', e.target.value)}
-                              className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-emerald-500/50"
+                          </section>
+
+                          {/* Advanced Orchestration */}
+                          <section>
+                            <SectionLabel
+                              icon={<Rocket size={9} />}
+                              label="Advanced Orchestration"
+                              color="text-foreground"
                             />
-                          </div>
+                            <div className="mt-3 space-y-4">
+                              <div className="flex flex-col gap-2 pt-2">
+                                <div>
+                                  <p className="text-[10px] font-bold text-foreground">
+                                    Multi-GPU Split Mode
+                                  </p>
+                                  <p className="text-[9px] text-muted-foreground mt-0.5">
+                                    'row' (default) prevents GGML_ASSERT crashes on some backends.
+                                  </p>
+                                </div>
+                                <select
+                                  value={localSettings.splitMode || ''}
+                                  onChange={(e) => updateLocal('splitMode', e.target.value)}
+                                  className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-emerald-500/50"
+                                >
+                                  <option value="">Auto</option>
+                                  <option value="row">Row (Stable)</option>
+                                  <option value="layer">Layer</option>
+                                  <option value="none">None</option>
+                                </select>
+                              </div>
 
-                          <div className="flex items-center justify-between pt-2 border-t border-border/50">
-                            <div>
-                              <p className="text-[10px] font-bold text-foreground">Strict VRAM Enforcer</p>
-                              <p className="text-[9px] text-muted-foreground mt-0.5">
-                                Disable KV Cache Offload to prevent PCIe bottlenecks
-                              </p>
+                              <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+                                <div>
+                                  <p className="text-[10px] font-bold text-foreground">
+                                    Tensor Split (e.g. 3,2)
+                                  </p>
+                                  <p className="text-[9px] text-muted-foreground mt-0.5">
+                                    Proportion of VRAM per GPU (comma separated). Leave empty for
+                                    auto.
+                                  </p>
+                                </div>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. 3,2"
+                                  value={localSettings.tensorSplit || ''}
+                                  onChange={(e) => updateLocal('tensorSplit', e.target.value)}
+                                  className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-emerald-500/50"
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                                <div>
+                                  <p className="text-[10px] font-bold text-foreground">
+                                    Strict VRAM Enforcer
+                                  </p>
+                                  <p className="text-[9px] text-muted-foreground mt-0.5">
+                                    Disable KV Cache Offload to prevent PCIe bottlenecks
+                                  </p>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={localSettings.disableKvOffload ?? false}
+                                    onChange={(e) =>
+                                      updateLocal('disableKvOffload', e.target.checked)
+                                    }
+                                  />
+                                  <div className="w-7 h-4 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500" />
+                                </label>
+                              </div>
                             </div>
-                            <label className="relative inline-flex items-center cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="sr-only peer"
-                                checked={localSettings.disableKvOffload ?? false}
-                                onChange={(e) => updateLocal('disableKvOffload', e.target.checked)}
-                              />
-                              <div className="w-7 h-4 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500" />
-                            </label>
-                          </div>
-                        </div>
-                      </section>
-                      </>
-                    )}
+                          </section>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

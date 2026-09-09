@@ -71,3 +71,9 @@ claude-obsidian/
 extracted_text*.txt
 test_api.py
 scripts/debug-console.cjs
+.aider*
+*.history
+openrouter_free_summary.json
+src-tauri/target_check/
+.agents/skills/
+skills-lock.json

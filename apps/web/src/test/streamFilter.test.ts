@@ -80,10 +80,34 @@ PTSD is a debilitating trauma- and stressor-related disorder.`;
     expect(stripResponsePreamble(raw)).toBe('# Main Topic\n\nContent here.');
   });
 
-  it('strips leaked broken image URLs in sentences outside markdown tags', () => {
-    const text =
-      'Symptoms include hyperarousal /v2/dyggnsmgmv7yzj3aphe6rdcsjx6jc3sachvcdoaizecfr3dnitcq_3_0.png) and flashbacks com/z/ptsd-posttraumatic-stress-disorder-mind-map-23145855.jpg) during sleep.';
-    const sanitized = sanitizeLeakedMediaUrls(text);
-    expect(sanitized).toBe('Symptoms include hyperarousal and flashbacks during sleep.');
+  it('extracts Gemma 4 dual-channel thought tags to reasoning', () => {
+    const raw =
+      '<|channel>thought\nThe user wants HTML code for a calculator with addition, multiplication, subtraction, and division.\nI will reuse the previous calculator structure.<channel|>The previous code has been updated to ensure it is fully functional.';
+    const result = extractThinkingAndContent(raw);
+    expect(result.parsedReasoning).toContain('The user wants HTML code for a calculator');
+    expect(result.parsedReasoning).toContain('I will reuse the previous calculator structure.');
+    expect(result.parsedContent).toBe(
+      'The previous code has been updated to ensure it is fully functional.'
+    );
+    expect(result.parsedContent).not.toContain('<|channel>thought');
+    expect(result.parsedContent).not.toContain('<channel|>');
+  });
+
+  it('completely strips dual-channel thoughts when stripReasoning is true (Reasoning OFF)', () => {
+    const raw =
+      '<|channel>thought\nThe user wants HTML code for a calculator with addition, multiplication, subtraction, and division.\nI should provide a complete implementation.<channel|>The code has been updated.';
+    const result = extractThinkingAndContent(raw, undefined, { stripReasoning: true });
+    expect(result.parsedReasoning).toBe('');
+    expect(result.parsedContent).toBe('The code has been updated.');
+    expect(result.parsedContent).not.toContain('<|channel>');
+    expect(result.parsedContent).not.toContain('<channel|>');
+    expect(result.parsedContent).not.toContain('The user wants HTML code');
+  });
+
+  it('completely strips standard <think> tags when stripReasoning is true (Reasoning OFF)', () => {
+    const raw = '<think>Thinking about what to say...</think>Here is the direct answer.';
+    const result = extractThinkingAndContent(raw, undefined, { stripReasoning: true });
+    expect(result.parsedReasoning).toBe('');
+    expect(result.parsedContent).toBe('Here is the direct answer.');
   });
 });

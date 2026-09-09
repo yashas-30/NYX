@@ -55,6 +55,10 @@ pub async fn pty_spawn(
     cmd.env("LANG", "en_US.UTF-8");
     cmd.env("LC_ALL", "en_US.UTF-8");
 
+    // Automatically inject full system and user-local PATH (~/.local/bin, npm, uv, python scripts, cargo)
+    let augmented_path = crate::commands::system::get_augmented_path();
+    cmd.env("PATH", &augmented_path);
+
     // Memory & Execution Optimization for OpenCode CLI (Go runtime):
     // 1. Cap Go memory limit to 128MiB so GC runs proactively and keeps RAM minimal.
     // 2. Set GOGC to 50 for aggressive heap compaction.

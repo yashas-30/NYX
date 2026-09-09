@@ -20,7 +20,8 @@ impl CommandExtWindows for TokioCommand {
     fn hide_window(&mut self) -> &mut Self {
         #[cfg(target_os = "windows")]
         {
-            self.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            // CREATE_NO_WINDOW (0x08000000) | ABOVE_NORMAL_PRIORITY_CLASS (0x00008000)
+            self.creation_flags(0x08000000 | 0x00008000);
         }
         self
     }
@@ -103,12 +104,18 @@ pub struct LlamaServerConfig {
     pub use_mmap: bool,
     pub batch_size: u32,
     pub draft_model_path: Option<PathBuf>,
+    pub spec_type: Option<String>,
+    pub spec_draft_min: Option<u32>,
+    pub spec_draft_max: Option<u32>,
+    pub ngl_draft: Option<u32>,
     pub disable_kv_offload: bool,
     pub prompt_cache_path: Option<PathBuf>,
     pub mmproj_path: Option<PathBuf>,
     pub port: u16,
     pub split_mode: Option<String>,
     pub tensor_split: Option<String>,
+    pub reasoning: Option<bool>,
+    pub reasoning_budget: Option<i32>,
     pub extra_args: Vec<String>,
 }
 
@@ -138,6 +145,12 @@ impl LlamaServerConfig {
 
         if let Some(mmproj) = &self.mmproj_path {
             args.extend(["--mmproj".into(), mmproj.to_string_lossy().into_owned()]);
+            args.push("--mmproj-offload".into());
+            if let Some(ref dev) = self.device_id {
+                if !dev.is_empty() {
+                    args.extend(["--mmproj-device".into(), dev.clone()]);
+                }
+            }
         }
 
         if self.use_mmap {
@@ -158,6 +171,9 @@ impl LlamaServerConfig {
             if VALID_KV_TYPES.contains(&kct.as_str()) {
                 args.extend(["-ctk".into(), kct.clone()]);
                 args.extend(["-ctv".into(), kct.clone()]);
+                // Quantize draft model KV cache to match target model, saving VRAM and boosting speculative decoding throughput
+                args.extend(["-ctkd".into(), kct.clone()]);
+                args.extend(["-ctvd".into(), kct.clone()]);
             }
         }
 
@@ -166,12 +182,63 @@ impl LlamaServerConfig {
         }
 
         if let Some(ref draft) = self.draft_model_path {
+            let is_mtp = self.spec_type.as_deref() == Some("draft-mtp")
+                || crate::llm::local::scheduler::is_mtp_model(draft);
+            let spec_type_str = self.spec_type.clone().unwrap_or_else(|| {
+                if is_mtp {
+                    "draft-mtp".into()
+                } else {
+                    "draft-simple".into()
+                }
+            });
+
             args.extend([
-                "-md".into(), draft.to_string_lossy().into_owned(),
-                "--draft-min".into(), "5".into(),
-                "--draft-max".into(), "16".into(),
-                "-ngld".into(), self.ngl.to_string(),
+                "--spec-type".into(),
+                spec_type_str,
+                "-md".into(),
+                draft.to_string_lossy().into_owned(),
             ]);
+
+            // Multi-Token Prediction (MTP) heads share the transformer layers and KV cache of the target model.
+            // When ngld > 0 is combined with --spec-draft-device on models using shared GPU memory / VRAM,
+            // llama.cpp tries to create a separate device allocator pool which crashes with "invalid vector subscript".
+            // Setting ngld to 0 (unless explicitly specified in ngl_draft) and omitting --spec-draft-device allows MTP to attach
+            // directly to the target model's layers without vector allocation collision.
+            let ngld_val = self.ngl_draft.unwrap_or(if is_mtp { 0 } else { self.ngl });
+
+            if is_mtp {
+                // Multi-token prediction (MTP) heads: draft up to 5 consecutive tokens for accelerated generation.
+                let draft_min = self.spec_draft_min.unwrap_or(1);
+                let draft_max = self.spec_draft_max.unwrap_or(5);
+                args.extend([
+                    "--spec-draft-n-min".into(),
+                    draft_min.to_string(),
+                    "--spec-draft-n-max".into(),
+                    draft_max.to_string(),
+                    "-ngld".into(),
+                    ngld_val.to_string(),
+                ]);
+            } else {
+                // Standalone draft model (e.g. 0.5B/1B draft)
+                let draft_min = self.spec_draft_min.unwrap_or(5);
+                let draft_max = self.spec_draft_max.unwrap_or(16);
+                args.extend([
+                    "--spec-draft-n-min".into(),
+                    draft_min.to_string(),
+                    "--spec-draft-n-max".into(),
+                    draft_max.to_string(),
+                    "-ngld".into(),
+                    ngld_val.to_string(),
+                ]);
+            }
+
+            if ngld_val > 0 && !is_mtp {
+                if let Some(ref dev) = self.device_id {
+                    if !dev.is_empty() {
+                        args.extend(["--spec-draft-device".into(), dev.clone()]);
+                    }
+                }
+            }
         }
 
         if let Some(ref dev) = self.device_id {
@@ -195,13 +262,32 @@ impl LlamaServerConfig {
         // Single slot execution for desktop client (prevents allocating 4 concurrent slots in memory)
         args.extend(["-np".into(), "1".into()]);
 
-        // Disable 8GB default host RAM prompt cache reservation to prevent system RAM ballooning
-        args.extend(["--cache-ram".into(), "0".into()]);
-        args.push("--no-cache-idle-slots".into());
+        // Enable host RAM prompt cache ceiling (4096 MiB) so prompt prefixes, system prompts,
+        // and conversation history are retained and instantly reused across conversation turns.
+        args.extend(["--cache-ram".into(), "4096".into()]);
 
-        // Disable template-forced reasoning loops for local models so answers are generated immediately on GPU
-        args.extend(["--reasoning".into(), "off".into()]);
-        args.extend(["--reasoning-budget".into(), "0".into()]);
+        // Enable chunk cache reuse via KV shifting (minimum 256 tokens)
+        args.extend(["--cache-reuse".into(), "256".into()]);
+
+        // Slot prompt similarity threshold: reuse active slot if prefix matches by at least 5%
+        args.extend(["--slot-prompt-similarity".into(), "0.05".into()]);
+
+        // Prevent premature connection and generation aborts on long runs:
+        // Set server read/write timeout to 86400 seconds (24 hours) instead of default 3600 (1 hour).
+        args.extend(["--timeout".into(), "86400".into()]);
+
+        // Keep-alive SSE ping interval to keep intermediate HTTP and TCP sockets alive
+        args.extend(["--sse-ping-interval".into(), "15".into()]);
+
+        // Reasoning format support in llama-server:
+        // 'deepseek' extracts reasoning into message.reasoning_content.
+        // 'none' leaves thoughts in message.content without extraction.
+        // Only activate deepseek formatting when reasoning is explicitly requested or enabled.
+        if let Some(true) = self.reasoning {
+            args.extend(["--reasoning-format".into(), "deepseek".into()]);
+        } else {
+            args.extend(["--reasoning-format".into(), "none".into()]);
+        }
 
         // Enable KV prompt caching unconditionally for instant first-token generation
         args.push("--cache-prompt".into());
@@ -220,6 +306,9 @@ impl LlamaServerConfig {
         // Always pass -fit off so llama-server allocates all specified layers and
         // uses Windows WDDM Shared GPU Memory instead of aborting via fitting heuristics.
         args.extend(["-fit".into(), "off".into()]);
+
+        // Disable empty warmup run on startup to eliminate unnecessary model initialization latency
+        args.push("--no-warmup".into());
 
         // Filter out any invalid extra_args
         for extra in &self.extra_args {
@@ -263,6 +352,53 @@ pub fn trim_process_working_set(pid: u32) {
 
 #[cfg(not(target_os = "windows"))]
 pub fn trim_process_working_set(_pid: u32) {}
+
+#[cfg(target_os = "windows")]
+pub fn trim_current_process_working_set() {
+    type HANDLE = *mut std::ffi::c_void;
+    type BOOL = i32;
+    type DWORD = u32;
+
+    const PROCESS_QUERY_INFORMATION: DWORD = 0x0400;
+    const PROCESS_SET_QUOTA: DWORD = 0x0100;
+
+    extern "system" {
+        fn GetCurrentProcess() -> HANDLE;
+        fn OpenProcess(dwDesiredAccess: DWORD, bInheritHandle: BOOL, dwProcessId: DWORD) -> HANDLE;
+        fn CloseHandle(hObject: HANDLE) -> BOOL;
+        fn K32EmptyWorkingSet(hProcess: HANDLE) -> BOOL;
+    }
+
+    unsafe {
+        let handle = GetCurrentProcess();
+        if !handle.is_null() {
+            let _ = K32EmptyWorkingSet(handle);
+            tracing::info!("[LlamaManager] Trimmed host process (nyx.exe) working set");
+        }
+    }
+
+    // Also trim child WebView2 processes to free unneeded browser renderer page cache
+    let my_pid = std::process::id();
+    let s = sysinfo::System::new_with_specifics(
+        sysinfo::RefreshKind::new().with_processes(sysinfo::ProcessRefreshKind::everything())
+    );
+    for (pid, proc) in s.processes() {
+        let name = proc.name().to_lowercase();
+        let is_child = proc.parent().map(|p| p.as_u32() == my_pid).unwrap_or(false);
+        if is_child || name.contains("msedgewebview2") {
+            unsafe {
+                let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA, 0, pid.as_u32());
+                if !handle.is_null() {
+                    let _ = K32EmptyWorkingSet(handle);
+                    let _ = CloseHandle(handle);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn trim_current_process_working_set() {}
 
 pub struct LlamaManager {
     process: Arc<Mutex<Option<Child>>>,
@@ -387,11 +523,18 @@ impl LlamaManager {
         let active_pid = child.id();
         *guard = Some(child);
 
+        // Trim host RAM working set immediately after loading (wait 300ms for final CUDA allocations to settle)
         if let Some(pid) = active_pid {
+            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
             trim_process_working_set(pid);
         }
+        trim_current_process_working_set();
 
-        // Spawn orphan watchdog & RAM trimmer: kill any stray llama-server processes and trim RAM every 30s
+        // Spawn orphan watchdog: kill any stray external processes every 30s
+        // NOTE: NEVER invoke trim_process_working_set in a periodic loop!
+        // Trimming the working set while CUDA is executing kernel memory transfers on pinned
+        // host pages (shared GPU memory) invalidates driver page tables and crashes llama-server
+        // with Access Violation / CUDA driver timeout, causing premature stream cutoff.
         let weak_process = Arc::downgrade(&self.process);
         tauri::async_runtime::spawn(async move {
             loop {
@@ -401,9 +544,6 @@ impl LlamaManager {
                     let current_pid = guard.as_ref().and_then(|c| c.id());
                     drop(guard);
                     if current_pid == active_pid {
-                        if let Some(pid) = current_pid {
-                            trim_process_working_set(pid);
-                        }
                         LlamaManager::kill_orphans(current_pid).await;
                     } else {
                         break; // Process changed or ended; terminate watchdog task
@@ -660,6 +800,13 @@ impl LlamaManager {
         let active_pid = child.id();
         *guard = Some(child);
 
+        // Trim host RAM working set immediately after loading
+        if let Some(pid) = active_pid {
+            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+            trim_process_working_set(pid);
+        }
+        trim_current_process_working_set();
+
         // Spawn watchdog
         let weak_process = Arc::downgrade(&self.process);
         tauri::async_runtime::spawn(async move {
@@ -809,10 +956,11 @@ impl LlamaManager {
         Ok(())
     }
 
-    async fn kill_orphans(exclude_pid: Option<u32>) {
-        let (pids_to_kill, _) = tokio::task::spawn_blocking(move || {
-            let mut sys = sysinfo::System::new_all();
-            sys.refresh_processes();
+    pub async fn kill_orphans(exclude_pid: Option<u32>) {
+        let pids_to_kill = tokio::task::spawn_blocking(move || {
+            let sys = sysinfo::System::new_with_specifics(
+                sysinfo::RefreshKind::new().with_processes(sysinfo::ProcessRefreshKind::everything())
+            );
             let mut pids = Vec::new();
             for (pid, process) in sys.processes() {
                 let name = process.name().to_lowercase();
@@ -824,8 +972,8 @@ impl LlamaManager {
                     }
                 }
             }
-            (pids, sys)
-        }).await.unwrap_or((Vec::new(), sysinfo::System::new()));
+            pids
+        }).await.unwrap_or_default();
 
         #[cfg(target_os = "windows")]
         for pid in pids_to_kill {

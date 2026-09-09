@@ -31,6 +31,9 @@ pub struct HardwareSpecs {
     pub free_ram: u64,
     pub gpu_name: String,
     pub gpu_vram: u64,
+    pub shared_gpu_memory: u64,
+    pub dedicated_vram: u64,
+    pub has_dedicated_gpu: bool,
 }
 
 #[tauri::command]
@@ -43,6 +46,9 @@ pub async fn get_hardware_specs() -> SystemResult<HardwareSpecs> {
         free_ram: hw.ram_available_mb * 1024 * 1024,
         gpu_name: hw.gpu_name,
         gpu_vram: hw.vram_total_mb * 1024 * 1024,
+        shared_gpu_memory: hw.shared_gpu_memory_mb * 1024 * 1024,
+        dedicated_vram: hw.dedicated_vram_available_mb * 1024 * 1024,
+        has_dedicated_gpu: hw.has_dedicated_gpu,
     };
     SystemResult { success: true, data: Some(specs), error: None }
 }
@@ -172,7 +178,12 @@ pub async fn execute_command(command: String, cwd: String) -> Result<CommandResu
         cmd.current_dir(cwd);
     }
 
-    let output = cmd.output().await.map_err(|e| e.to_string())?;
+    let output = match tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output()).await {
+        Ok(res) => res.map_err(|e| e.to_string())?,
+        Err(_) => {
+            return Err("Execution timed out: command exceeded the 30-second limit.".to_string());
+        }
+    };
 
     Ok(CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),
@@ -183,16 +194,10 @@ pub async fn execute_command(command: String, cwd: String) -> Result<CommandResu
 
 #[tauri::command]
 pub async fn cleanup_session_state(
-    app: AppHandle,
+    _app: AppHandle,
     session_id: String,
 ) -> Result<(), String> {
-    tracing::info!("Cleaning up conductor channel for session {}", session_id);
-    // PTY sessions are cleaned up individually via pty_close.
-    // Here we only drop the conductor mpsc sender so the actor task exits.
-    let app_state = app.state::<crate::AppState>();
-    let mut conductors = app_state.conductor_channels.lock().await;
-    conductors.remove(&session_id);
-    app.state::<crate::AppState>().agent_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    tracing::info!("Cleaning up session state for session {}", session_id);
     Ok(())
 }
 
@@ -207,3 +212,227 @@ pub async fn set_search_settings(
     *state.search_api_key.write().await = api_key;
     Ok(())
 }
+
+use std::path::PathBuf;
+
+/// Returns the system PATH augmented with all user-local tool directories:
+/// ~/.local/bin, npm global, WinGet Links & Packages, Python scripts, Cargo bin, etc.
+pub fn get_augmented_path() -> String {
+    let sep = if cfg!(windows) { ";" } else { ":" };
+    let mut dirs_to_add: Vec<PathBuf> = Vec::new();
+
+    if let Some(home) = dirs::home_dir() {
+        // Critical tool directories
+        dirs_to_add.push(home.join(".local").join("bin"));
+        dirs_to_add.push(home.join(".cargo").join("bin"));
+
+        #[cfg(windows)]
+        {
+            dirs_to_add.push(home.join("AppData").join("Roaming").join("npm"));
+            dirs_to_add.push(home.join("AppData").join("Local").join("Microsoft").join("WinGet").join("Links"));
+
+            // WinGet Packages directories (e.g. astral-sh.uv, etc.)
+            let winget_pkgs = home.join("AppData").join("Local").join("Microsoft").join("WinGet").join("Packages");
+            if let Ok(entries) = std::fs::read_dir(&winget_pkgs) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        dirs_to_add.push(p.clone());
+                        let bin_sub = p.join("bin");
+                        if bin_sub.is_dir() {
+                            dirs_to_add.push(bin_sub);
+                        }
+                    }
+                }
+            }
+
+            // Python installations and scripts
+            let py_root = home.join("AppData").join("Local").join("Programs").join("Python");
+            if let Ok(entries) = std::fs::read_dir(&py_root) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        dirs_to_add.push(p.join("Scripts"));
+                        dirs_to_add.push(p);
+                    }
+                }
+            }
+        }
+
+        #[cfg(not(windows))]
+        {
+            dirs_to_add.push(home.join(".npm-global").join("bin"));
+            dirs_to_add.push(PathBuf::from("/usr/local/bin"));
+            dirs_to_add.push(PathBuf::from("/opt/homebrew/bin"));
+        }
+    }
+
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let current_splits: Vec<&str> = current_path.split(if cfg!(windows) { ';' } else { ':' }).collect();
+
+    let mut result_parts: Vec<String> = Vec::new();
+
+    // Add extra dirs first if they exist and aren't already included
+    for dir in dirs_to_add {
+        if dir.exists() {
+            let s = dir.to_string_lossy().to_string();
+            if !result_parts.iter().any(|x| x.eq_ignore_ascii_case(&s)) &&
+               !current_splits.iter().any(|x| x.eq_ignore_ascii_case(&s)) {
+                result_parts.push(s);
+            }
+        }
+    }
+
+    // Append existing PATH
+    for part in current_splits {
+        let p_trimmed = part.trim();
+        if !p_trimmed.is_empty() && !result_parts.iter().any(|x| x.eq_ignore_ascii_case(p_trimmed)) {
+            result_parts.push(p_trimmed.to_string());
+        }
+    }
+
+    result_parts.join(sep)
+}
+
+/// Applies the augmented PATH to the current process's environment.
+pub fn apply_augmented_path_to_current_process() {
+    let aug = get_augmented_path();
+    std::env::set_var("PATH", &aug);
+}
+
+/// Helper to search for a binary on the system PATH and common installation directories
+pub fn find_executable(name: &str) -> Option<PathBuf> {
+    apply_augmented_path_to_current_process();
+
+    #[cfg(windows)]
+    let candidates = vec![
+        format!("{}.exe", name),
+        format!("{}.cmd", name),
+        format!("{}.bat", name),
+        name.to_string(),
+    ];
+    #[cfg(not(windows))]
+    let candidates = vec![name.to_string()];
+
+    #[cfg(windows)]
+    let which_cmd = "where";
+    #[cfg(not(windows))]
+    let which_cmd = "which";
+
+    for candidate in &candidates {
+        let mut cmd = std::process::Command::new(which_cmd);
+        cmd.arg(candidate);
+        cmd.env("PATH", get_augmented_path());
+        if let Ok(output) = cmd.output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if let Some(first_line) = stdout.lines().next() {
+                    let p = PathBuf::from(first_line.trim());
+                    if p.exists() {
+                        return Some(p);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        let mut check_dirs = vec![
+            home.join("AppData").join("Roaming").join("npm"),
+            home.join("AppData").join("Local").join("Programs").join("Python"),
+            home.join("AppData").join("Local").join("Microsoft").join("WinGet").join("Links"),
+            home.join(".local").join("bin"),
+            home.join(".cargo").join("bin"),
+        ];
+
+        #[cfg(windows)]
+        {
+            let winget_pkgs = home.join("AppData").join("Local").join("Microsoft").join("WinGet").join("Packages");
+            if let Ok(entries) = std::fs::read_dir(&winget_pkgs) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        check_dirs.push(p.clone());
+                        let bin_sub = p.join("bin");
+                        if bin_sub.is_dir() {
+                            check_dirs.push(bin_sub);
+                        }
+                    }
+                }
+            }
+        }
+
+        for dir in check_dirs {
+            for candidate in &candidates {
+                let full = dir.join(candidate);
+                if full.exists() {
+                    return Some(full);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Permanently ensures critical tool directories (such as ~/.local/bin and npm)
+/// are added to the user's persistent system environment and active process.
+pub fn ensure_and_apply_environment_paths() {
+    apply_augmented_path_to_current_process();
+
+    #[cfg(windows)]
+    {
+        if let Some(uv_path) = find_executable("uv") {
+            let _ = std::process::Command::new(uv_path)
+                .arg("tool")
+                .arg("update-shell")
+                .output();
+        }
+
+        if let Some(home) = dirs::home_dir() {
+            let local_bin = home.join(".local").join("bin").to_string_lossy().to_string();
+            let npm_bin = home.join("AppData").join("Roaming").join("npm").to_string_lossy().to_string();
+            let winget_links = home.join("AppData").join("Local").join("Microsoft").join("WinGet").join("Links").to_string_lossy().to_string();
+
+            let ps_script = format!(
+                r#"
+                $pathsToAdd = @('{local_bin}', '{npm_bin}', '{winget_links}')
+                $current = [Environment]::GetEnvironmentVariable('Path', 'User')
+                if ($null -eq $current) {{ $current = '' }}
+                $parts = $current -split ';' | Where-Object {{ $_.Trim() -ne '' }}
+                $changed = $false
+                foreach ($p in $pathsToAdd) {{
+                    if (Test-Path $p) {{
+                        $exists = $false
+                        foreach ($part in $parts) {{
+                            if ($part.Trim().TrimEnd('\') -ieq $p.Trim().TrimEnd('\')) {{
+                                $exists = $true
+                                break
+                            }}
+                        }}
+                        if (-not $exists) {{
+                            $parts += $p
+                            $changed = $true
+                        }}
+                    }}
+                }}
+                if ($changed) {{
+                    $newPath = $parts -join ';'
+                    [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+                }}
+                "#,
+                local_bin = local_bin.replace('\'', "''"),
+                npm_bin = npm_bin.replace('\'', "''"),
+                winget_links = winget_links.replace('\'', "''"),
+            );
+
+            let _ = std::process::Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+                .output();
+        }
+    }
+
+    apply_augmented_path_to_current_process();
+}
+
+

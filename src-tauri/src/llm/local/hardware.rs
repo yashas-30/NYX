@@ -489,10 +489,21 @@ async fn detect_gpu(_sys_ram_bytes: u64) -> GpuDetectionResult {
 }
 
 static GPU_INFO: tokio::sync::OnceCell<GpuDetectionResult> = tokio::sync::OnceCell::const_new();
+static HARDWARE_CACHE: std::sync::LazyLock<std::sync::RwLock<Option<(HardwareSnapshot, std::time::Instant)>>> =
+    std::sync::LazyLock::new(|| std::sync::RwLock::new(None));
 
 impl HardwareSnapshot {
     /// Collect hardware information. Uses `sysinfo` for CPU/RAM and `Get-CimInstance` for GPU.
     pub async fn collect() -> Self {
+        // Fast-path: Return cached snapshot if under 3 seconds old for sub-microsecond responsiveness
+        if let Ok(guard) = HARDWARE_CACHE.read() {
+            if let Some((ref cached, ref timestamp)) = *guard {
+                if timestamp.elapsed() < std::time::Duration::from_secs(3) {
+                    return cached.clone();
+                }
+            }
+        }
+
         let mut snapshot = Self::default();
 
         static SYS: std::sync::LazyLock<std::sync::Mutex<sysinfo::System>> = std::sync::LazyLock::new(|| {
@@ -608,6 +619,10 @@ impl HardwareSnapshot {
 
         info!("[HardwareAnalyser] Snapped to 2026 Profile: {:?} ({}MB VRAM, {}MB RAM, integrated: {})", 
             profile, snapshot.vram_total_mb, snapshot.ram_total_mb, snapshot.has_integrated_gpu);
+
+        if let Ok(mut guard) = HARDWARE_CACHE.write() {
+            *guard = Some((snapshot.clone(), std::time::Instant::now()));
+        }
 
         snapshot
     }

@@ -5,9 +5,8 @@
 //   1. Active local .safetensors/.ckpt model  → Python diffusers subprocess
 //   2. Active local .onnx model               → Python onnxruntime subprocess
 //   3. Active local .pt/.pth/.bin model        → Python torch.load subprocess
-//   4. Cloud: Pollinations AI (no key needed)
-//   5. Cloud: OpenAI DALL-E (if key present)
-//   6. Fallback: procedural gradient render
+//   4. Cloud: OpenAI DALL-E (if key present)
+//   5. Fallback: procedural gradient render
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -600,40 +599,7 @@ pub async fn generate_local_image(
         // ⚠️ Fall through to cloud fallbacks below — do NOT return Err here.
     }
 
-    // ── Step 2: Pollinations AI (free cloud API used ONLY when no local model is selected) ──────────
-    let seed = ts % 1_000_000;
-    let poll_url = format!(
-        "https://image.pollinations.ai/prompt/{}?width={}&height={}&nologo=true&seed={}",
-        urlencoding::encode(&prompt),
-        w,
-        h,
-        seed
-    );
-
-    if let Ok(client) = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(45))
-        .build()
-    {
-        if let Ok(res) = client.get(&poll_url).send().await {
-            if res.status().is_success() {
-                if let Ok(bytes) = res.bytes().await {
-                    if !bytes.is_empty()
-                        && tokio::fs::write(&target_path, &bytes).await.is_ok()
-                    {
-                        return Ok(ImageGenResult {
-                            success: true,
-                            image_path: target_str,
-                            prompt,
-                            engine: Some("Pollinations AI (FLUX Cloud)".to_string()),
-                            error: None,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    // ── Step 3: OpenAI DALL-E (if key set) ──────────────────────────────────
+    // ── Step 2: OpenAI DALL-E (if key set) ──────────────────────────────────
     if let Ok(openai_key) = std::env::var("OPENAI_API_KEY") {
         if !openai_key.is_empty() {
             let client = reqwest::Client::new();

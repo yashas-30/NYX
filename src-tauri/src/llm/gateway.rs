@@ -2,7 +2,7 @@
 // NYX — Dynamic Model Registry, Live Quota Ledger & Resilient Gateway
 // ─────────────────────────────────────────────────────────────────────────────
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -46,7 +46,7 @@ pub struct ProviderQuotaState {
     pub remaining_tokens: Option<u32>,
     pub limit_requests: Option<u32>,
     pub limit_tokens: Option<u32>,
-    pub reset_at: Option<DateTime<Utc>>,
+    pub reset_at: Option<i64>,
     pub consecutive_429s: u32,
     pub is_healthy: bool,
     pub latency_ema_ms: f64,
@@ -140,7 +140,7 @@ impl LiveQuotaLedger {
         entry.consecutive_429s += 1;
         entry.is_healthy = false;
         let cooldown = if retry_after_secs > 0 { retry_after_secs } else { 10 * (1 << entry.consecutive_429s.min(5)) };
-        entry.reset_at = Some(Utc::now() + chrono::Duration::seconds(cooldown as i64));
+        entry.reset_at = Some(Utc::now().timestamp() + cooldown as i64);
     }
 
     /// Checks if a provider has sufficient headroom for execution
@@ -148,7 +148,7 @@ impl LiveQuotaLedger {
         let lock = self.states.read().await;
         if let Some(entry) = lock.get(&format!("{}:{}", provider, key_hash)) {
             if let Some(reset) = entry.reset_at {
-                if Utc::now() < reset {
+                if Utc::now().timestamp() < reset {
                     return false;
                 }
             }

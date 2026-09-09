@@ -172,8 +172,20 @@ pub fn decontextualize_query(raw_query: &str) -> String {
         }
     }
 
+    // Strip politeness and imperative artifact generation commands (e.g. "create a pie chart for ...")
+    static ARTIFACT_PREFIX_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"(?i)^(?:(?:can|could|would)\s+you\s+(?:please\s+)?)?(?:create|generate|make|draw|build|write|plot|render|design)\s+(?:an?\s+)?(?:pie\s*chart|donut\s*chart|bar\s*(?:chart|graph)|line\s*(?:chart|graph)|chart|diagram|flowchart|architecture\s*diagram|visual|graphic|presentation|slides?|slide\s*deck|ppt|table|comparison\s*table|matrix|python\s*script|script|code|svg)\s*(?:of|for|about|showing|depicting|illustrating|regarding|with)?\s*").unwrap()
+    });
+
+    if let Some(mat) = ARTIFACT_PREFIX_RE.find(text) {
+        let stripped = text[mat.end()..].trim();
+        if !stripped.is_empty() {
+            text = stripped;
+        }
+    }
+
     static PREFIX_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r"(?i)^(?:can\s+you\s+(?:please\s+)?)?(?:search\s+(?:the\s+)?web\s+for|search\s+online\s+for|search\s+for|google\s+for|look\s*up\s+online|find\s+(?:out\s+)?about|tell\s+me\s+about|tell\s+me|give\s+me\s+(?:images?|photos?|pictures?)\s+of|show\s+me\s+(?:images?|photos?|pictures?)\s+of|show\s+me|images?\s+of|photos?\s+of|pictures?\s+of|draw\s+(?:an?\s+)?image\s+of|generate\s+(?:an?\s+)?image\s+of|visualize|deep\s+research\s+on|research\s+(?:about|on)?)\s*").unwrap()
+        regex::Regex::new(r"(?i)^(?:(?:can|could|would)\s+you\s+(?:please\s+)?)?(?:search\s+(?:the\s+)?web\s+for|search\s+online\s+for|search\s+for|google\s+for|look\s*up\s+online|find\s+(?:out\s+)?about|tell\s+me\s+about|tell\s+me|give\s+me\s+(?:images?|photos?|pictures?)\s+of|show\s+me\s+(?:images?|photos?|pictures?)\s+of|show\s+me|images?\s+of|photos?\s+of|pictures?\s+of|draw\s+(?:an?\s+)?image\s+of|generate\s+(?:an?\s+)?image\s+of|visualize|deep\s+research\s+on|research\s+(?:about|on)?)\s*").unwrap()
     });
 
     if let Some(mat) = PREFIX_RE.find(text) {
@@ -183,12 +195,34 @@ pub fn decontextualize_query(raw_query: &str) -> String {
         }
     }
 
+    // Strip subordinate conversational instructions (e.g. "and it should also show on each country what are the majority religions")
+    static SUBORDINATE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"(?i)\s+(?:and\s+)?(?:it\s+should|it\s+must|make\s+sure\s+to|be\s+sure\s+to|ensure\s+to|please\s+include|also\s+show|and\s+show|and\s+tell\s+me|and\s+also\s+how|and\s+how|and\s+explain)[\s\S]*$").unwrap()
+    });
+
+    if let Some(mat) = SUBORDINATE_RE.find(text) {
+        let stripped = text[..mat.start()].trim();
+        if stripped.len() >= 6 {
+            text = stripped;
+        }
+    }
+
     static SUFFIX_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
         regex::Regex::new(r"(?i)\s+(?:in\s+detail|in\s+full\s+detail|explained\s+in\s+detail|for\s+me|please|with\s+images|with\s+photos|and\s+show\s+images|and\s+show\s+photos|and\s+pictures)[?.!]*$").unwrap()
     });
 
     let cleaned = SUFFIX_RE.replace(text, "").trim().to_string();
-    if cleaned.is_empty() { text.to_string() } else { cleaned }
+    let final_clean = if cleaned.is_empty() { text.to_string() } else { cleaned };
+
+    // Cap token count and length for web search engine reliability
+    let tokens: Vec<&str> = final_clean.split_whitespace().collect();
+    if tokens.len() > 12 {
+        tokens[..12].join(" ")
+    } else if final_clean.len() > 120 {
+        final_clean.chars().take(120).collect()
+    } else {
+        final_clean
+    }
 }
 
 pub fn decode_html_entities(input: &str) -> String {
@@ -604,7 +638,7 @@ Output ONLY a valid JSON object matching this exact schema:
         endpoint_override: None,
         model_id: model,
         messages: vec![crate::llm::types::UnifiedMessage { role: "user".to_string(), content: serde_json::json!(planner_prompt) }],
-        system_instruction: Some("You are the Lucifer Master Search Specialist. Output ONLY valid JSON matching the requested schema.".to_string()),
+        system_instruction: Some("Output ONLY valid JSON matching the requested schema.".to_string()),
         api_key: key,
         temperature: Some(0.1),
         max_tokens: Some(1024),
@@ -708,6 +742,26 @@ Output ONLY a valid JSON object matching this exact schema:
 
 #[tauri::command]
 pub async fn search_web_command(
+    query: String,
+    num_results: Option<usize>,
+    search_provider: Option<String>,
+    api_key: Option<String>,
+) -> Result<String, String> {
+    match tokio::time::timeout(
+        Duration::from_secs(7),
+        search_web_internal(query, num_results, search_provider, api_key),
+    )
+    .await
+    {
+        Ok(res) => res,
+        Err(_) => {
+            tracing::warn!("[search_web_command] Overall search execution timed out after 7s");
+            Ok("Web search timed out. Proceeding with conversation.".to_string())
+        }
+    }
+}
+
+async fn search_web_internal(
     query: String,
     num_results: Option<usize>,
     search_provider: Option<String>,
@@ -1103,33 +1157,52 @@ pub async fn search_web_command(
             }
         }
 
-        // Concurrently deep-scrape top websites into clean Markdown and retrieve verified media
+        // Concurrently deep-scrape top 4 candidate websites into clean Markdown (up to 8,000 chars each)
         let scrape_futs = candidate_sources.iter().take(4).map(|(_, url, _)| {
             let u = url.clone();
             async move {
-                fetch_page_content(&u, 10_000).await
+                fetch_page_content(&u, 8000).await
             }
         });
 
-        let images_fut = {
-            let q = cleaned_query.clone();
-            async move {
-                execute_duckduckgo_image_search(&q, 6).await
-            }
+        let wants_media = {
+            let lower = cleaned_query.to_lowercase();
+            lower.contains("image")
+                || lower.contains("photo")
+                || lower.contains("picture")
+                || lower.contains("video")
+                || lower.contains("watch")
+                || lower.contains("youtube")
+                || lower.contains("wallpaper")
         };
 
-        let videos_fut = {
-            let q = cleaned_query.clone();
-            async move {
-                execute_duckduckgo_video_search(&q, 4).await
-            }
+        let (scraped_docs, verified_images, verified_videos) = if wants_media {
+            let images_fut = {
+                let q = cleaned_query.clone();
+                async move {
+                    tokio::time::timeout(Duration::from_secs(3), execute_duckduckgo_image_search(&q, 4))
+                        .await
+                        .unwrap_or_default()
+                }
+            };
+            let videos_fut = {
+                let q = cleaned_query.clone();
+                async move {
+                    tokio::time::timeout(Duration::from_secs(3), execute_duckduckgo_video_search(&q, 3))
+                        .await
+                        .unwrap_or_default()
+                }
+            };
+            let (docs, imgs, vids) = tokio::join!(
+                futures::future::join_all(scrape_futs),
+                images_fut,
+                videos_fut,
+            );
+            (docs, imgs, vids)
+        } else {
+            let docs = futures::future::join_all(scrape_futs).await;
+            (docs, Vec::new(), Vec::new())
         };
-
-        let (scraped_docs, verified_images, verified_videos) = tokio::join!(
-            futures::future::join_all(scrape_futs),
-            images_fut,
-            videos_fut,
-        );
 
         let mut sources_text_vec = Vec::new();
         for (i, (title, page_url, snippet)) in candidate_sources.into_iter().enumerate() {

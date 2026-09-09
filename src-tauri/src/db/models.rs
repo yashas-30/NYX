@@ -79,23 +79,13 @@ pub fn encode_embedding(v: &[f32]) -> Vec<u8> {
     buf
 }
 
-/// Decode little-endian raw bytes back into a float vector.
-/// Returns an empty Vec if the blob length is not a multiple of 4.
-pub fn decode_embedding(bytes: &[u8]) -> Vec<f32> {
-    if bytes.len() % 4 != 0 {
-        return Vec::new();
-    }
-    bytes.chunks_exact(4)
-        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-        .collect()
-}
 
 #[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
 pub struct LongTermMemory {
     pub id: String,
     pub fact: String,
     pub category: String,
-    /// Raw little-endian f32 bytes (BLOB). Use `decode_embedding` to get Vec<f32>.
+    /// Raw little-endian f32 bytes (BLOB).
     pub embedding: Vec<u8>,
     pub created_at: i64,
 }
@@ -140,29 +130,7 @@ pub struct ModelStats {
     pub cache_hits: i64,
 }
 
-// ── Phase 2: Multi-tier Memory ───────────────────────────────────────────────
 
-#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
-pub struct EpisodicMemory {
-    pub id: String,
-    pub session_id: String,
-    pub summary: String,
-    /// Raw little-endian f32 bytes (BLOB). Use `decode_embedding` to get Vec<f32>.
-    pub embedding: Vec<u8>,
-    pub key_topics: String,    // JSON string array
-    pub created_at: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
-pub struct MemoryEntity {
-    pub id: String,
-    pub entity_name: String,
-    pub entity_type: String,   // person | project | technology | preference
-    pub description: String,
-    pub confidence: f64,
-    pub last_seen: i64,
-    pub created_at: i64,
-}
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct LocalModel {

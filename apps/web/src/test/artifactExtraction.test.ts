@@ -48,3 +48,48 @@ describe('extractArtifactTitle', () => {
     expect(extractArtifactTitle('def foo(): pass', 'python')).toBe('Python Script');
   });
 });
+
+import { extractLatestCodeBlock } from '../features/chat/components/ChatPage';
+
+describe('extractLatestCodeBlock (Streaming Code Extraction)', () => {
+  it('extracts actively streaming unclosed code block', () => {
+    const streamContent =
+      'Here is the implementation:\n```typescript\nfunction calculateTotal(items: number[]) {\n  return items.reduce((a, b) => a + b, 0);';
+    const result = extractLatestCodeBlock(streamContent);
+    expect(result).not.toBeNull();
+    expect(result?.language).toBe('typescript');
+    expect(result?.code).toBe(
+      'function calculateTotal(items: number[]) {\n  return items.reduce((a, b) => a + b, 0);'
+    );
+    expect(result?.isClosed).toBe(false);
+  });
+
+  it('extracts code block with colon filename while streaming', () => {
+    const streamContent =
+      'Here is the file:\n```tsx:components/Button.tsx\nexport const Button = () => <button>Click</button>;';
+    const result = extractLatestCodeBlock(streamContent);
+    expect(result).not.toBeNull();
+    expect(result?.language).toBe('tsx');
+    expect(result?.filename).toBe('components/Button.tsx');
+    expect(result?.isClosed).toBe(false);
+  });
+
+  it('detects closed code block correctly', () => {
+    const completedContent =
+      'Done:\n```python\ndef hello():\n    print("world")\n```\nLet me know if you need more!';
+    const result = extractLatestCodeBlock(completedContent);
+    expect(result).not.toBeNull();
+    expect(result?.language).toBe('python');
+    expect(result?.code.trim()).toBe('def hello():\n    print("world")');
+    expect(result?.isClosed).toBe(true);
+  });
+
+  it('picks the latest code block when multiple blocks exist', () => {
+    const content =
+      'First block:\n```json\n{"status": "ok"}\n```\nSecond block:\n```rust\nfn main() {\n    println!("hello");\n}';
+    const result = extractLatestCodeBlock(content);
+    expect(result).not.toBeNull();
+    expect(result?.language).toBe('rust');
+    expect(result?.isClosed).toBe(false);
+  });
+});

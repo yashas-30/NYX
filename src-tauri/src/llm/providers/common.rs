@@ -6,7 +6,7 @@ use reqwest::Client;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::LazyLock;
-use crate::llm::types::UnifiedMessage;
+use crate::llm::types::{UnifiedMessage, UnifiedRequest};
 
 pub const MAX_TOKENS_DEFAULT: u32 = 8_192;
 pub const CONTEXT_BUDGET_CHARS: usize = 128_000 * 4; // ≈ 512k chars
@@ -47,17 +47,14 @@ pub fn clear_validation_cache(provider: Option<&str>) {
 /// Builds an optimized HTTP client with TCP_NODELAY, HTTP/2 multiplexing, connection pooling, and fast keep-alive
 pub fn build_fast_http_client(max_idle: usize, keepalive_secs: u64) -> Client {
     Client::builder()
-        .http2_keep_alive_interval(std::time::Duration::from_secs(15))
-        .http2_keep_alive_timeout(std::time::Duration::from_secs(5))
         .http2_adaptive_window(true)
-        .http2_initial_stream_window_size(Some(2 * 1024 * 1024))
-        .http2_initial_connection_window_size(Some(4 * 1024 * 1024))
+        .http2_initial_stream_window_size(Some(4 * 1024 * 1024))
+        .http2_initial_connection_window_size(Some(8 * 1024 * 1024))
         .tcp_nodelay(true)
         .tcp_keepalive(std::time::Duration::from_secs(keepalive_secs))
         .pool_max_idle_per_host(max_idle)
         .pool_idle_timeout(std::time::Duration::from_secs(300))
-        .connect_timeout(std::time::Duration::from_secs(8))
-        .gzip(true)
+        .connect_timeout(std::time::Duration::from_secs(30))
         .build()
         .expect("Failed to build high-speed HTTP client")
 }
@@ -93,6 +90,15 @@ pub fn budget_messages(messages: &[UnifiedMessage], budget_chars: usize) -> Vec<
         start_idx = i;
     }
     messages[start_idx..].to_vec()
+}
+
+/// Dynamically calculates character context budget from req.context_window,
+/// falling back to provider-specific default character budget if omitted or zero.
+pub fn resolve_context_budget_chars(req: &UnifiedRequest, fallback_chars: usize) -> usize {
+    req.context_window
+        .filter(|&w| w > 0)
+        .map(|w| (w as usize).saturating_mul(4))
+        .unwrap_or(fallback_chars)
 }
 
 pub fn validate_key_format(provider: &str, key: &str) -> Option<String> {

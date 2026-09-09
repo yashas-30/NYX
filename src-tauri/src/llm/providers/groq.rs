@@ -11,8 +11,8 @@ use tokio_util::io::StreamReader;
 use futures_util::TryStreamExt;
 use crate::llm::types::{UnifiedRequest, StreamChunkPayload, sanitize_messages_for_api};
 use super::common::{
-    build_fast_http_client, budget_messages, validate_key_format,
-    CONTEXT_BUDGET_CHARS, MAX_TOKENS_DEFAULT, QuotaResponse, KEY_VALIDATION_CACHE,
+    build_fast_http_client, budget_messages, validate_key_format, resolve_context_budget_chars,
+    MAX_TOKENS_DEFAULT, QuotaResponse, KEY_VALIDATION_CACHE,
 };
 
 /// Dedicated high-speed HTTP client for Groq LPU API
@@ -21,12 +21,25 @@ static GROQ_CLIENT: LazyLock<Client> = LazyLock::new(|| build_fast_http_client(6
 /// Normalizes model ID aliases for Groq
 pub fn normalize_groq_model(raw: &str) -> &str {
     match raw {
-        "gpt-oss-120b" => "openai/gpt-oss-120b",
-        "gpt-oss-20b" => "openai/gpt-oss-20b",
-        "compound" => "groq/compound",
-        "compound-mini" => "groq/compound-mini",
-        "qwen-3.6-27b" | "qwen3.6-27b" => "qwen/qwen3.6-27b",
-        other => other,
+        "openai/gpt-oss-120b" | "gpt-oss-120b" | "gpt_oss_120b" => "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b" | "gpt-oss-20b" | "gpt_oss_20b" => "openai/gpt-oss-20b",
+        "groq/compound" | "compound" => "groq/compound",
+        "groq/compound-mini" | "compound-mini" | "compound_mini" => "groq/compound-mini",
+        "qwen/qwen3.6-27b" | "qwen-3.6-27b" | "qwen3.6-27b" | "qwen3.6" => "qwen/qwen3.6-27b",
+        other => {
+            if let Some(stripped) = other.strip_prefix("groq/") {
+                match stripped {
+                    "openai/gpt-oss-120b" | "gpt-oss-120b" | "gpt_oss_120b" => "openai/gpt-oss-120b",
+                    "openai/gpt-oss-20b" | "gpt-oss-20b" | "gpt_oss_20b" => "openai/gpt-oss-20b",
+                    "compound" => "groq/compound",
+                    "compound-mini" | "compound_mini" => "groq/compound-mini",
+                    "qwen/qwen3.6-27b" | "qwen-3.6-27b" | "qwen3.6-27b" | "qwen3.6" => "qwen/qwen3.6-27b",
+                    _ => stripped,
+                }
+            } else {
+                other
+            }
+        }
     }
 }
 
@@ -49,7 +62,8 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
     );
 
     let max_tokens = req.max_tokens.unwrap_or(MAX_TOKENS_DEFAULT);
-    let budgeted = budget_messages(&req.messages, CONTEXT_BUDGET_CHARS);
+    let budget_chars = resolve_context_budget_chars(req, 131_072 * 4);
+    let budgeted = budget_messages(&req.messages, budget_chars);
     let sanitized_history = sanitize_messages_for_api(&budgeted);
 
     let normalized_model = normalize_groq_model(&req.model_id);
@@ -148,28 +162,57 @@ pub async fn execute_stream(
 ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunkPayload, String>>, String> {
     let (url, body, headers) = build_request(req)?;
 
-    let mut response = GROQ_CLIENT.post(&url)
-        .headers(headers.clone())
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let response;
+    let mut attempts = 0;
+    let max_attempts = 4;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body_text = response.text().await.unwrap_or_default();
+    loop {
+        attempts += 1;
+        let resp = GROQ_CLIENT
+            .post(&url)
+            .headers(headers.clone())
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
 
-        // 1. Handle short 429 rate limit backoff retry (2s sleep)
-        if status.as_u16() == 429 {
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            if let Ok(retry_resp) = GROQ_CLIENT.post(&url)
+        if resp.status().is_success() {
+            response = resp;
+            break;
+        }
+
+        let status = resp.status();
+        let body_text = resp.text().await.unwrap_or_default();
+
+        // 1. Handle 429 rate limit with progressive exponential backoff (2s, 4s, 6s)
+        if status.as_u16() == 429 && attempts < max_attempts {
+            let wait_duration = tokio::time::Duration::from_secs(attempts * 2);
+            tokio::time::sleep(wait_duration).await;
+            continue;
+        }
+
+        // 2. Handle unsupported tools retry fallback
+        let is_tool_unsupported = (status.as_u16() == 400 || status.as_u16() == 422)
+            && (body_text.to_lowercase().contains("tool") 
+                || body_text.to_lowercase().contains("function") 
+                || body_text.to_lowercase().contains("not support")
+                || body_text.to_lowercase().contains("unsupported"));
+
+        if is_tool_unsupported && body.get("tools").is_some() {
+            let mut retry_body = body.clone();
+            if let Some(map) = retry_body.as_object_mut() {
+                map.remove("tools");
+            }
+            if let Ok(retry_resp) = GROQ_CLIENT
+                .post(&url)
                 .headers(headers.clone())
-                .json(&body)
+                .json(&retry_body)
                 .send()
                 .await
             {
                 if retry_resp.status().is_success() {
                     response = retry_resp;
+                    break;
                 } else {
                     let r_status = retry_resp.status();
                     let r_text = retry_resp.text().await.unwrap_or_default();
@@ -180,42 +223,10 @@ pub async fn execute_stream(
                 let err_msg = extract_groq_error(&body_text).unwrap_or(body_text);
                 return Err(format!("Request failed ({}): {}", status, err_msg));
             }
-        } else {
-            // 2. Handle unsupported tools retry fallback
-            let is_tool_unsupported = (status.as_u16() == 400 || status.as_u16() == 422)
-                && (body_text.to_lowercase().contains("tool") 
-                    || body_text.to_lowercase().contains("function") 
-                    || body_text.to_lowercase().contains("not support")
-                    || body_text.to_lowercase().contains("unsupported"));
-
-            if is_tool_unsupported && body.get("tools").is_some() {
-                let mut retry_body = body.clone();
-                if let Some(map) = retry_body.as_object_mut() {
-                    map.remove("tools");
-                }
-                if let Ok(retry_resp) = GROQ_CLIENT.post(&url)
-                    .headers(headers.clone())
-                    .json(&retry_body)
-                    .send()
-                    .await
-                {
-                    if retry_resp.status().is_success() {
-                        response = retry_resp;
-                    } else {
-                        let r_status = retry_resp.status();
-                        let r_text = retry_resp.text().await.unwrap_or_default();
-                        let err_msg = extract_groq_error(&r_text).unwrap_or(r_text);
-                        return Err(format!("Request failed ({}): {}", r_status, err_msg));
-                    }
-                } else {
-                    let err_msg = extract_groq_error(&body_text).unwrap_or(body_text);
-                    return Err(format!("Request failed ({}): {}", status, err_msg));
-                }
-            } else {
-                let err_msg = extract_groq_error(&body_text).unwrap_or(body_text);
-                return Err(format!("Request failed ({}): {}", status, err_msg));
-            }
         }
+
+        let err_msg = extract_groq_error(&body_text).unwrap_or(body_text);
+        return Err(format!("Request failed ({}): {}", status, err_msg));
     }
 
     let (tx, rx) = tokio::sync::mpsc::channel(256);
@@ -225,7 +236,7 @@ pub async fn execute_stream(
             std::io::Error::new(std::io::ErrorKind::Other, e)
         });
         let stream_reader = StreamReader::new(byte_stream);
-        let mut lines = BufReader::with_capacity(64 * 1024, stream_reader).lines();
+        let mut lines = BufReader::with_capacity(4 * 1024 * 1024, stream_reader).lines();
         let mut buffer = String::new();
 
         'outer: loop {
@@ -346,4 +357,65 @@ pub async fn check_quota(api_key: Option<String>) -> Result<QuotaResponse, Strin
         provider: "groq".into(),
         message: if valid { "Groq API key is active.".into() } else { "Groq API key appears invalid. Check console.groq.com/keys.".into() },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::llm::types::UnifiedRequest;
+
+    #[test]
+    fn test_normalize_groq_models() {
+        assert_eq!(normalize_groq_model("openai/gpt-oss-120b"), "openai/gpt-oss-120b");
+        assert_eq!(normalize_groq_model("gpt-oss-120b"), "openai/gpt-oss-120b");
+        assert_eq!(normalize_groq_model("groq/openai/gpt-oss-120b"), "openai/gpt-oss-120b");
+
+        assert_eq!(normalize_groq_model("openai/gpt-oss-20b"), "openai/gpt-oss-20b");
+        assert_eq!(normalize_groq_model("gpt-oss-20b"), "openai/gpt-oss-20b");
+        assert_eq!(normalize_groq_model("groq/openai/gpt-oss-20b"), "openai/gpt-oss-20b");
+
+        assert_eq!(normalize_groq_model("groq/compound"), "groq/compound");
+        assert_eq!(normalize_groq_model("compound"), "groq/compound");
+
+        assert_eq!(normalize_groq_model("groq/compound-mini"), "groq/compound-mini");
+        assert_eq!(normalize_groq_model("compound-mini"), "groq/compound-mini");
+
+        assert_eq!(normalize_groq_model("qwen/qwen3.6-27b"), "qwen/qwen3.6-27b");
+        assert_eq!(normalize_groq_model("qwen3.6-27b"), "qwen/qwen3.6-27b");
+        assert_eq!(normalize_groq_model("groq/qwen/qwen3.6-27b"), "qwen/qwen3.6-27b");
+    }
+
+    #[test]
+    fn test_parse_groq_sse() {
+        let chunk_data = r#"{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567,"model":"openai/gpt-oss-120b","choices":[{"index":0,"delta":{"content":"Hello Groq"},"finish_reason":null}]}"#;
+        let events = parse_sse_event(chunk_data);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].content.as_deref(), Some("Hello Groq"));
+
+        let reasoning_data = r#"{"id":"chatcmpl-123","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning":"Analyzing step 1..."},"finish_reason":null}]}"#;
+        let reasoning_events = parse_sse_event(reasoning_data);
+        assert_eq!(reasoning_events.len(), 1);
+        assert_eq!(reasoning_events[0].event_type, "thinking");
+        assert_eq!(reasoning_events[0].content.as_deref(), Some("Analyzing step 1..."));
+    }
+
+    #[test]
+    fn test_build_request_groq() {
+        let req: UnifiedRequest = serde_json::from_value(json!({
+            "provider": "groq",
+            "model_id": "openai/gpt-oss-120b",
+            "messages": [
+                { "role": "user", "content": "Hello" }
+            ],
+            "api_key": "gsk_test1234567890",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+        })).expect("Failed to deserialize UnifiedRequest");
+
+        let (url, body, headers) = build_request(&req).expect("Failed to build Groq request");
+        assert_eq!(url, "https://api.groq.com/openai/v1/chat/completions");
+        assert_eq!(body["model"], "openai/gpt-oss-120b");
+        assert_eq!(body["max_tokens"], 4096);
+        assert!(headers.get("Authorization").is_some());
+    }
 }

@@ -15,7 +15,7 @@
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
 
-**NYX** is an all-in-one native AI workspace designed to give you **frontier intelligence with zero subscription costs**. It lets you run open-weight GGUF models directly on your local GPU with 100% privacy, or tap into 40 top-tier cloud models with massive context windows, real-time web search, interactive slide generation, 39 diagram types, and autonomous ReAct agents — all wrapped in an obsidian **True Black Minimalist** interface.
+**NYX** is an all-in-one native AI workspace designed to give you **frontier intelligence with zero subscription costs**. It lets you run open-weight GGUF models directly on your local GPU with 100% privacy, or tap into 40 top-tier cloud models with massive context windows, real-time web search, interactive slide decks, dynamic Mermaid diagrams, and real-time live preview — all wrapped in an obsidian **True Black Minimalist** interface.
 
 [**Live Web App**](https://yashas-30.github.io/NYX) · [**Download Desktop Releases**](https://github.com/yashas-30/NYX/releases) · [**Report an Issue**](https://github.com/yashas-30/NYX/issues)
 
@@ -29,7 +29,7 @@ Most AI tools force you into costly monthly subscriptions, lock you into cloud-o
 
 1. **100% Free & Private Local Execution**: Run any open-source model (Llama 3.3, Qwen 2.5, Gemma 3, DeepSeek, Mistral) directly via built-in `llama.cpp` and native Hugging Face Hub integration. Search, download, and run GGUF models with 100% offline privacy and zero external tools.
 2. **40 Curated Free Cloud Models**: If you don't have a high-end GPU, NYX gives you instant access to 40 frontier models from Google Gemini, Groq LPUs, Mistral AI, NVIDIA NIM, and OpenRouter Free Tier.
-3. **Beyond Plain Chat**: NYX isn't just a chatbot — it's a creative and analytical powerhouse that builds presentations you can export to PowerPoint, draws editorial system diagrams, conducts grounded research with verified citations, and runs autonomous multi-step coding agents.
+3. **Beyond Plain Chat**: NYX isn't just a chatbot — it's a creative and analytical powerhouse that builds presentations you can export to PowerPoint, renders interactive Mermaid and editorial SVG system diagrams, conducts grounded research with verified citations, and runs interactive terminals with live application preview.
 
 ---
 
@@ -146,31 +146,13 @@ Turn any idea, topic, or document into a presentation with zero formatting hassl
 
 ---
 
-### 5. 📐 39 Publication-Grade Visual Architecture Types
+### 5. 📐 Dynamic Mermaid & Publication-Grade SVG Architecture Diagrams
 
-Stop generating unstyled Mermaid diagrams. NYX generates clean, declarative inline **HTML/SVG diagrams** styled in an obsidian True Black palette (`#09090b` canvas, `#121214` cards, `border-white/10`, `#f08a59` focal accents):
+NYX generates clean, interactive diagrams styled in an obsidian True Black palette (`#09090b` canvas, `#121214` cards, `border-white/10`, focal accents):
 
-```
-┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
-│   Client App    ├──────►│   API Gateway   ├──────►│  Microservices  │
-│  (React 19/Web) │       │   (Tauri/Rust)  │       │(llama.cpp / NIM)│
-└─────────────────┘       └─────────────────┘       └─────────────────┘
-```
-
-**Supported Diagram Grammars**:
-
-1. **Architecture Topologies** (Cloud stacks, microservices, container clusters)
-2. **Sequence Flows** (Time-ordered actor message exchanges & auth handshakes)
-3. **C4 Models** (Context, Container, Component, and Code architectural levels)
-4. **Swimlane Workflows** (Cross-functional process handoffs)
-5. **Entity-Relationship (ER) & Database Schemas** (Tables, columns, foreign keys)
-6. **State Machines** (States, transitions, triggers, and guards)
-7. **Reinforcing Flywheels & Loops** (System dynamics with central hubs)
-8. **Sankey Diagrams** (Flow volumes and branching pipelines)
-9. **Medallion Data Pipelines** (Bronze → Silver → Gold storage architectures)
-10. **Wardley Maps, Timelines, Ishikawa Fishbone Root-Cause Models, and 29 more layout types.**
-
-_Includes interactive pan, zoom, full-screen expansion, and direct SVG export._
+- **Dynamic Mermaid.js Engine**: Instant interactive rendering of flowcharts, sequence diagrams, class diagrams, state diagrams, ER schemas, mindmaps, and gitgraphs.
+- **Publication-Grade SVG Visuals**: Clean, declarative architecture maps, topologies, and workflows.
+- **Interactive Controls**: Pan, zoom, full-screen double-click expansion, raw code toggles, and direct SVG export.
 
 ---
 
@@ -179,29 +161,28 @@ _Includes interactive pan, zoom, full-screen expansion, and direct SVG export._
 Search the web in real-time without leaving your conversation:
 
 - **Factual Attribution**: Every fact, metric, and breaking news item is grounded with numbered citations `[1]`, `[2]` linking directly to verified sources.
+- **Native Google Search Grounding**: Direct search grounding with Google Gemini without conflicting tool overhead.
 - **Verified Web Images**: Contextual DuckDuckGo search images embedded inline with descriptive captions.
 - **YouTube Explanation Cards**: Video preview cards displaying video thumbnails, channel names, duration badges, and direct links.
 - **Temporal Grounding**: Automatically synchronizes today's date so queries like _"what happened today?"_ or _"latest stock prices"_ deliver accurate, current information.
 
 ---
 
-### 7. 🤖 Autonomous ReAct Agent Conductor (Rust Native)
+### 7. 🖥️ Native ConPTY Terminal & Environment Path Augmentation
 
-When you need multi-step problem solving, NYX's native Rust agent takes over:
+Run and test applications directly within NYX's high-performance terminal:
 
-- **Plan-First Architecture**: Structures a step-by-step execution plan before making changes.
-- **Native Tool Calling**:
-  - `fs_read` / `fs_write` / `list_dir` — Inspect and modify local project files safely.
-  - `web_search` / `fetch_webpage` — Search the live internet and scrape full markdown content.
-  - `execute_command` — Run terminal commands and test scripts in a controlled sandbox.
-- **Live Plan Monitor**: Visual progress card showing step status (pending, active, completed, failed) with full input/output inspection.
+- **Full ConPTY Integration**: Direct pseudo-terminal emulation powered by native Windows ConPTY / Unix PTY with zero lag.
+- **Automatic Environment Discovery**: Automatically resolves and enriches PATH for developer toolchains (`npm`, `node`, `python`, `cargo`, `uv`, `rustc`).
+- **Interactive Shell Session**: Run build commands, start development servers, or execute test suites right inside your workspace.
 
 ---
 
-### 8. 🧠 Persistent Memory & Semantic Recall (TurboVec)
+### 8. 🔒 Fast, Privacy-Preserving SQLite Local Storage
 
-- **Vector-Powered Memory**: Indexes your conversation history, project preferences, and user context locally in SQLite with TurboVec vector embeddings.
-- **Zero Privacy Leakage**: Your long-term memory is stored locally on your machine and never synced to external analytics servers.
+- **100% Offline Chat History**: All conversations, session trees, folders, and long-term memories are stored locally in SQLite (`nyx.db`).
+- **Instant Search**: Fast keyword search over historical messages and notes without heavy background vector model overhead.
+- **Zero Privacy Leakage**: Your data never leaves your machine. No analytics trackers or external synchronization.
 
 ---
 
