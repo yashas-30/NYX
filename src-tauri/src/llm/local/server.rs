@@ -143,6 +143,12 @@ impl LlamaServerConfig {
             args.extend(["-tb".into(), self.threads_batch.to_string()]);
         }
 
+        // Disable CPU busy-wait spin polling in GGML threadpool (llama.cpp default is 50).
+        // Polling level 0 tells worker threads to sleep on condition variables/futexes when idle
+        // instead of burning 100% CPU spinning on all cores.
+        args.extend(["--poll".into(), "0".into()]);
+        args.extend(["--poll-batch".into(), "0".into()]);
+
         if let Some(mmproj) = &self.mmproj_path {
             args.extend(["--mmproj".into(), mmproj.to_string_lossy().into_owned()]);
             if self.mmproj_offload {
@@ -238,6 +244,11 @@ impl LlamaServerConfig {
                     ngld_val.to_string(),
                 ]);
             }
+
+            args.extend([
+                "--spec-draft-poll".into(), "0".into(),
+                "--spec-draft-poll-batch".into(), "0".into(),
+            ]);
 
             if ngld_val > 0 && !is_mtp {
                 if let Some(ref dev) = self.device_id {

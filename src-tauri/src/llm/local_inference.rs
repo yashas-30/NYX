@@ -942,6 +942,10 @@ pub async fn execute_local_stream(
         if current_port == 0 {
             return Err(format!("Local model '{}' is not loaded or could not be found. Please check Settings → Local Models to start the engine.", target_model));
         }
+
+        if let Some(manager) = app.try_state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>() {
+            manager.touch();
+        }
     }
 
     // Acquire rate limit permit
@@ -1342,8 +1346,13 @@ pub async fn llm_local_stream_request(
                         // Backpressure: check channel capacity before sending
                         // Tauri channels don't expose capacity, so we use a simple counter
                         item_count += 1;
-                        if item_count % 100 == 0 {
-                            tokio::task::yield_now().await; // Cooperate with scheduler
+                        if item_count % 25 == 0 {
+                            if let Some(mgr) = app.try_state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>() {
+                                mgr.touch();
+                            }
+                        }
+                        if item_count % 10 == 0 {
+                            tokio::task::yield_now().await; // Cooperate with async runtime
                         }
                         
                         let _ = on_event.send(payload);
@@ -1366,6 +1375,9 @@ pub async fn llm_local_stream_request(
     
     app.unlisten(cancel_id);
     app.unlisten(cancel_global_id);
+    if let Some(mgr) = app.try_state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>() {
+        mgr.touch();
+    }
     info!("[Inference] Session complete | items={}", item_count);
 
     Ok(())

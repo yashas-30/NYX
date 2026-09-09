@@ -797,8 +797,14 @@ pub fn compute_gpu_inference_config(
     // Generation threads match physical CPU cores for maximum decode throughput without contention
     let threads_gen = hw.cpu_physical_cores.max(1);
 
-    // For batch/prompt prefill, use all logical threads for maximum parallel prefill throughput
-    let threads_batch = hw.cpu_logical_threads.max(hw.cpu_physical_cores).max(1);
+    // For batch/prompt prefill:
+    // When running on a dedicated GPU, keep batch threads to physical cores
+    // to prevent hyperthread contention and eliminate 100% CPU saturation on all logical processors.
+    let threads_batch = if hw.has_dedicated_gpu {
+        hw.cpu_physical_cores.max(1)
+    } else {
+        hw.cpu_logical_threads.max(hw.cpu_physical_cores).max(1)
+    };
 
     let extra_args: Vec<String> = Vec::new();
     let disable_kv_offload = ngl_decision.disable_kv_offload;

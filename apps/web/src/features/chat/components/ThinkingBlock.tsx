@@ -589,8 +589,6 @@ const PlainText: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
-import { useSmoothTypewriter } from '../hooks/useSmoothTypewriter';
-
 function AgentProgressBar({
   step,
   total,
@@ -657,8 +655,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
     }
   }, [isComplete]);
 
-  const smoothContent = useSmoothTypewriter(content, !isComplete);
-  const segments = useMemo(() => parseThinking(smoothContent), [smoothContent]);
+  const segments = useMemo(() => parseThinking(content), [content]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [internalStartedAt] = useState(() => startedAt || Date.now());
@@ -674,8 +671,8 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
 
   const currentPhase: ThinkingPhase = useMemo(() => {
     if (isComplete) return 'complete';
-    return detectPhase(smoothContent, isStarting);
-  }, [smoothContent, isComplete, isStarting]);
+    return detectPhase(content, isStarting);
+  }, [content, isComplete, isStarting]);
 
   const currentStatusText = useMemo(() => {
     if (isComplete) return 'Complete';

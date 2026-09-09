@@ -981,7 +981,7 @@ export function useChatPipeline({
         let thinkEndTagLen = 0;
         let thinkingEndTime = -1;
         let lastUpdateTime = 0;
-        let THROTTLE_MS = 24;
+        let THROTTLE_MS = 48;
         let trailingUpdateTimer: ReturnType<typeof setTimeout> | null = null;
         const streamFilter = new StreamFluffFilter();
 
