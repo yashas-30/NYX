@@ -1488,36 +1488,25 @@ pub async fn start_local_server(
 
     let can_gpu_offload = hw.has_dedicated_gpu || hw.gpu_backend == GpuBackend::Metal || hw.vram_available_mb > 0;
 
-    // mmproj offload: offload to GPU only when there's actual remaining VRAM headroom.
-    // Previously: always offload when has_dedicated_gpu (ignoring headroom), causing VRAM overflow.
-    let mmproj_offload = if can_gpu_offload && mmproj_path.is_some() && remaining_vram >= mmproj_size_mb {
+    // Companion files (mmproj, MTP heads, draft models):
+    // When a dedicated GPU is available, the complete model, KV cache, and ALL support files run on the dedicated GPU
+    // utilizing Dedicated VRAM + Shared GPU Memory. They are NEVER executed on the CPU or in host system RAM.
+    let mmproj_offload = if hw.has_dedicated_gpu {
+        mmproj_path.is_some()
+    } else if can_gpu_offload && mmproj_path.is_some() && remaining_vram >= mmproj_size_mb {
         remaining_vram = remaining_vram.saturating_sub(mmproj_size_mb);
         true
     } else {
         false
     };
 
-    // MTP/draft layer offload: offload to GPU only when sufficient VRAM headroom remains after mmproj.
-    // Scale spec_draft_max down when headroom is tight to reduce KV pressure from speculative slots.
     let (ngl_draft, spec_draft_max_val) = if draft_model_path.is_some() {
-        if can_gpu_offload && remaining_vram >= draft_size_mb {
-            // Enough headroom: offload all draft layers to GPU.
-            remaining_vram = remaining_vram.saturating_sub(draft_size_mb);
-            // Scale max draft tokens by remaining headroom to limit KV slot overhead.
-            // At 32k context, each extra speculative slot adds significant KV memory.
-            // Formula: start from 5 max, reduce by 1 for each 512 MB of KV pressure.
-            let kv_pressure_mb = (effective_context_size as u64 * draft_size_mb) / (32 * 1024).max(1);
-            let draft_max = if kv_pressure_mb > remaining_vram.saturating_add(512) {
-                1u32 // Very tight — allow only 1 speculative token
-            } else if kv_pressure_mb > remaining_vram / 2 {
-                2u32 // Moderate — allow 2 speculative tokens
-            } else {
-                5u32 // Comfortable headroom — allow 5 speculative tokens
-            };
-            (Some(total_layers), Some(draft_max))
+        if hw.has_dedicated_gpu {
+            // All draft / MTP layers offloaded to the dedicated GPU
+            (Some(total_layers), Some(5u32))
+        } else if can_gpu_offload && remaining_vram >= draft_size_mb {
+            (Some(total_layers), Some(5u32))
         } else {
-            // No VRAM headroom for draft layers — run MTP on CPU (ngl_draft=0).
-            // This is correct: CPU MTP still works, just without GPU acceleration.
             (Some(0u32), Some(1u32))
         }
     } else {

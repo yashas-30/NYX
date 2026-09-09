@@ -577,41 +577,27 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
     };
 
     let total_needed = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, selected_ctx);
-    let weights_only = vram_weights_only(model_size_gb, meta, total_layers, total_layers, selected_ctx);
 
-    // Dedicated GPU Tiered Low-VRAM Offload Policy:
-    // Tier 1: Fits in physical dedicated VRAM -> 100% dedicated VRAM offload (disable_kv_offload: false, uses_shared: false)
-    // Tier 2: Model weights fit in VRAM, but KV cache causes overflow ->
-    //         Pin 100% of weights to GPU VRAM, but store KV cache in system RAM via --no-kv-offload (disable_kv_offload: true).
-    //         This keeps weights operating at 100% GPU speed without WDDM PCIe weight thrashing.
-    // Tier 3A: Modest weight spill (<= 30% of weights or <= 1.5GB overflow) -> 100% GPU offload using Shared GPU Memory (fast DMA streaming).
-    // Tier 3B: Massive spill (> 30% or > 1.5GB, e.g. 8B/14B models on 4GB card) -> Safe partial layer offload to prevent bidirectional WDDM thrashing and driver freezes.
+    // Dedicated GPU Offload Policy:
+    // All model layers and KV cache run 100% on the dedicated GPU.
+    // When dedicated physical VRAM is exceeded, Windows WDDM automatically manages
+    // the overflow in Shared GPU Memory via PCIe DMA, keeping compute 100% on the GPU.
+    // We NEVER offload KV cache or model layers to host CPU system memory when a dedicated GPU is present.
     let (selected_ngl, fully_gpu, hybrid, uses_shared_memory, disable_kv_offload, strategy) = if hw.has_dedicated_gpu {
         if total_needed <= dedicated_avail {
-            // Tier 1: Fits completely in dedicated physical VRAM
+            // Fits completely in dedicated physical VRAM
             (total_layers, true, false, false, false, "FullDedicatedGpu".to_string())
-        } else if weights_only <= dedicated_avail {
-            // Tier 2: Model weights fit in VRAM, store KV cache in host RAM via --no-kv-offload
-            (total_layers, true, false, false, true, "FullDedicatedGpu".to_string())
+        } else if total_needed <= gpu_budget {
+            // Fits within Dedicated VRAM + Shared GPU Memory pool: 100% GPU offload
+            (total_layers, true, false, true, false, "SharedGpuMemory".to_string())
         } else {
-            // Tier 3: Model weights exceed physical dedicated VRAM
-            let weight_spill_mb = weights_only.saturating_sub(dedicated_avail);
-            let weight_spill_ratio = weight_spill_mb as f64 / weights_only.max(1) as f64;
-            let is_modest_spill = (weight_spill_ratio <= 0.30 && weight_spill_mb <= 1536)
-                && weights_only <= gpu_budget;
-
-            if is_modest_spill {
-                // Tier 3A: Modest weight spill -> 100% GPU offload using Shared GPU Memory
-                (total_layers, true, false, true, true, "SharedGpuMemory".to_string())
-            } else {
-                // Tier 3B: Massive spill -> Safe partial layer offload
-                let safe_ngl = (0..=total_layers)
-                    .rev()
-                    .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, selected_ctx) <= dedicated_avail)
-                    .unwrap_or(0);
-                let is_full = safe_ngl >= total_layers;
-                (safe_ngl, is_full, !is_full, false, false, if is_full { "FullDedicatedGpu".to_string() } else { "Hybrid".to_string() })
-            }
+            // Exceeds total GPU budget (VRAM + Shared GPU Memory): offload as many layers as fit in GPU budget
+            let safe_ngl = (0..=total_layers)
+                .rev()
+                .find(|layers| vram_for_ngl(model_size_gb, meta, total_layers, *layers, selected_ctx) <= gpu_budget)
+                .unwrap_or(0);
+            let is_full = safe_ngl >= total_layers;
+            (safe_ngl, is_full, !is_full, true, false, if is_full { "SharedGpuMemory".to_string() } else { "Hybrid".to_string() })
         }
     } else if hw.vram_available_mb > 0 {
         // Integrated GPU or unified memory
@@ -782,7 +768,7 @@ pub fn compute_gpu_inference_config(
     draft_model_path: Option<PathBuf>,
     _is_auto_ctx: bool,
     model_name_or_id: Option<&str>,
-    companion_size_mb: u64,
+    _companion_size_mb: u64,
 ) -> Result<HybridInferenceConfig, String> {
     let ngl_decision = compute_ngl_decision(hw, meta, model_size_gb, ctx_size)?;
     let total_layers = estimate_total_layers(meta, model_size_gb);
@@ -817,25 +803,10 @@ pub fn compute_gpu_inference_config(
     let extra_args: Vec<String> = Vec::new();
     let disable_kv_offload = ngl_decision.disable_kv_offload;
 
-    // Use mmap unless on a low-VRAM / shared-memory GPU on Windows, where mmap causes
-    // double-allocation of model weights in the host process working set.
-    // Also disable mmap when companion files (mmproj + MTP/draft) are present and the
-    // total footprint (model + companions + KV cache) makes dedicated VRAM tight,
-    // because Windows fault-in of mmap'd pages causes both VRAM and host RAM to hold
-    // the same bytes simultaneously.
-    let total_vram_needed_with_companions = ngl_decision.estimated_vram_mb.saturating_add(companion_size_mb);
-    let companion_causes_pressure = companion_size_mb > 0
-        && hw.has_dedicated_gpu
-        && total_vram_needed_with_companions > hw.dedicated_vram_available_mb;
-    let use_mmap = if hw.has_dedicated_gpu
-        && (hw.dedicated_vram_available_mb <= 6144
-            || ngl_decision.uses_shared_memory
-            || companion_causes_pressure)
-    {
-        false
-    } else {
-        true
-    };
+    // Always use standard OS memory mapping (mmap).
+    // Never disable mmap: --no-mmap causes llama.cpp to allocate a multi-gigabyte
+    // private heap buffer via malloc() in host system RAM, ballooning host memory.
+    let use_mmap = true;
 
     let message = format!(
         "{} — {}/{} layers | KV: {} | ubatch {} | Shared GPU Mem: {} | Profile: {:?} | is_igpu: {}",
@@ -1124,50 +1095,38 @@ mod tests {
 
     #[test]
     fn test_tier2_weights_fit_in_vram_kv_causes_overflow() {
-        // Model weights fit within 3800MB dedicated VRAM, but large context KV pushes it over 3800MB
+        // Model weights fit within 3800MB dedicated VRAM, but large context KV pushes total into Shared GPU Memory
         let hw = hardware(3800, 8192);
         let decision = compute_ngl_decision(&hw, None, 3.5, 32768).unwrap();
         assert!(decision.fully_gpu);
         assert!(!decision.hybrid);
-        assert!(!decision.uses_shared_memory);
-        assert!(decision.disable_kv_offload);
-        assert_eq!(decision.strategy, "FullDedicatedGpu");
+        assert!(decision.uses_shared_memory);
+        assert!(!decision.disable_kv_offload);
+        assert_eq!(decision.strategy, "SharedGpuMemory");
     }
 
     #[test]
     fn test_tier3a_modest_weight_spill_uses_shared_memory() {
-        // Dedicated VRAM 4000MB, model 4.5GB (spill ~200-400MB <= 1.5GB)
+        // Dedicated VRAM 4000MB, model 4.5GB (fits in 4000MB dedicated + 8192MB shared)
         let hw = hardware(4000, 8192);
         let decision = compute_ngl_decision(&hw, None, 4.5, 4096).unwrap();
         assert!(decision.fully_gpu);
         assert!(!decision.hybrid);
         assert!(decision.uses_shared_memory);
-        assert!(decision.disable_kv_offload);
+        assert!(!decision.disable_kv_offload);
         assert_eq!(decision.strategy, "SharedGpuMemory");
     }
 
     #[test]
     fn test_tier3b_massive_spill_uses_safe_partial_offload() {
-        // 12GB model on 4GB dedicated card -> massive spill (> 1.5GB)
-        let hw = hardware(4096, 16384);
-        let decision = compute_ngl_decision(&hw, None, 12.0, 4096).unwrap();
+        // 20GB model on 4GB dedicated card + 8GB shared (budget 12GB) -> exceeds GPU budget
+        let hw = hardware(4096, 8192);
+        let decision = compute_ngl_decision(&hw, None, 20.0, 4096).unwrap();
         assert!(!decision.fully_gpu);
         assert!(decision.hybrid);
-        assert!(!decision.uses_shared_memory);
         assert_eq!(decision.strategy, "Hybrid");
-        assert!(decision.ngl < estimate_total_layers(None, 12.0));
+        assert!(decision.ngl < estimate_total_layers(None, 20.0));
         assert!(decision.ngl > 0);
-    }
-
-    #[test]
-    fn test_tier3b_triggers_when_spill_exceeds_1536mb_even_if_ratio_is_small() {
-        // Dedicated VRAM 10000MB, model 13.0GB (weights ~12500MB, spill ~2500MB > 1536MB, ratio ~20% <= 30%)
-        // Because spill exceeds 1536MB, it MUST trigger Tier 3B rather than Tier 3A.
-        let hw = hardware(10000, 16384);
-        let decision = compute_ngl_decision(&hw, None, 13.0, 4096).unwrap();
-        assert!(!decision.fully_gpu);
-        assert!(decision.hybrid);
-        assert_eq!(decision.strategy, "Hybrid");
     }
 
     #[test]

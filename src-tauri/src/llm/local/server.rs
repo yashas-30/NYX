@@ -5,7 +5,9 @@ use std::sync::Arc;
 // ─────────────────────────────────────────────────────────────────────────────
 
 use reqwest::Client;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::LazyLock;
+use tauri::Emitter;
 use tokio::process::{Child, Command as TokioCommand};
 use tokio::sync::Mutex;
 use tracing::info;
@@ -156,12 +158,11 @@ impl LlamaServerConfig {
         }
 
         if self.use_mmap {
+            args.extend(["--load-mode".into(), "mmap".into()]);
             #[cfg(not(target_os = "windows"))]
             if self.use_mlock {
                 args.push("--mlock".into());
             }
-        } else {
-            args.push("--no-mmap".into());
         }
 
         if self.flash_attention {
@@ -342,11 +343,120 @@ pub fn trim_current_process_working_set() {
 
 pub struct LlamaManager {
     process: Arc<Mutex<Option<Child>>>,
+    last_activity: Arc<AtomicU64>,
+    keep_alive_secs: Arc<AtomicU64>,
+    app_handle: Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
 }
 
 impl LlamaManager {
     pub fn new() -> Self {
-        Self { process: Arc::new(Mutex::new(None)) }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        Self {
+            process: Arc::new(Mutex::new(None)),
+            last_activity: Arc::new(AtomicU64::new(now)),
+            keep_alive_secs: Arc::new(AtomicU64::new(300)), // Default 5 minutes (300 seconds)
+            app_handle: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    /// Update the last activity timestamp (resets the inactivity timer).
+    pub fn touch(&self) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        self.last_activity.store(now, Ordering::Relaxed);
+    }
+
+    /// Set keep-alive duration in seconds (0 = disabled).
+    pub fn set_keep_alive_secs(&self, secs: u64) {
+        self.keep_alive_secs.store(secs, Ordering::Relaxed);
+    }
+
+    /// Get current keep-alive duration in seconds.
+    pub fn get_keep_alive_secs(&self) -> u64 {
+        self.keep_alive_secs.load(Ordering::Relaxed)
+    }
+
+    /// Set app handle for emitting lifecycle events.
+    pub fn set_app_handle(&self, app: tauri::AppHandle) {
+        if let Ok(mut guard) = self.app_handle.lock() {
+            *guard = Some(app);
+        }
+    }
+
+    fn spawn_inactivity_watchdog(&self, active_pid: Option<u32>) {
+        let weak_process = Arc::downgrade(&self.process);
+        let last_activity_clone = Arc::clone(&self.last_activity);
+        let keep_alive_clone = Arc::clone(&self.keep_alive_secs);
+        let app_handle_clone = Arc::clone(&self.app_handle);
+
+        tauri::async_runtime::spawn(async move {
+            let mut tick_count = 0u64;
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                tick_count += 1;
+
+                if let Some(process_arc) = weak_process.upgrade() {
+                    let mut guard = process_arc.lock().await;
+                    let current_pid = guard.as_ref().and_then(|c| c.id());
+                    if current_pid != active_pid {
+                        break; // Process changed or ended; terminate watchdog task
+                    }
+
+                    // Check keep-alive inactivity timeout
+                    let timeout = keep_alive_clone.load(Ordering::Relaxed);
+                    if timeout > 0 {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        let last = last_activity_clone.load(Ordering::Relaxed);
+                        let idle_secs = now.saturating_sub(last);
+
+                        if idle_secs >= timeout {
+                            info!(
+                                "[LlamaManager] Inactivity keep-alive watchdog: server idle for {}s (timeout {}s). Auto-unloading model and freeing GPU & host RAM.",
+                                idle_secs, timeout
+                            );
+                            if let Some(mut child) = guard.take() {
+                                let _ = child.kill().await;
+                                let _ = child.wait().await;
+                            }
+                            SERVER_PORT.store(0, Ordering::Relaxed);
+                            crate::llm::local::commands::clear_active_local_server_state();
+                            drop(guard);
+                            LlamaManager::kill_orphans(None).await;
+
+                            if let Ok(app_guard) = app_handle_clone.lock() {
+                                if let Some(ref app) = *app_guard {
+                                    let _ = app.emit("local-model-unloaded", serde_json::json!({
+                                        "reason": "inactivity_timeout",
+                                        "idle_seconds": idle_secs
+                                    }));
+                                    let _ = app.emit("llm-server-stopped", serde_json::json!({
+                                        "reason": "inactivity_timeout"
+                                    }));
+                                }
+                            }
+                            break;
+                        }
+                    }
+
+                    drop(guard);
+
+                    // Check for external orphans every 30 seconds
+                    if tick_count % 3 == 0 {
+                        LlamaManager::kill_orphans(current_pid).await;
+                    }
+                } else {
+                    break; // Manager was dropped / process released
+                }
+            }
+        });
     }
 
     /// Start llama-server with the given config.
@@ -464,29 +574,8 @@ impl LlamaManager {
         let active_pid = child.id();
         *guard = Some(child);
 
-        // Spawn orphan watchdog: kill any stray external processes every 30s
-        // NOTE: NEVER invoke trim_process_working_set in a periodic loop!
-        // Trimming the working set while CUDA is executing kernel memory transfers on pinned
-        // host pages (shared GPU memory) invalidates driver page tables and crashes llama-server
-        // with Access Violation / CUDA driver timeout, causing premature stream cutoff.
-        let weak_process = Arc::downgrade(&self.process);
-        tauri::async_runtime::spawn(async move {
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-                if let Some(process_arc) = weak_process.upgrade() {
-                    let guard = process_arc.lock().await;
-                    let current_pid = guard.as_ref().and_then(|c| c.id());
-                    drop(guard);
-                    if current_pid == active_pid {
-                        LlamaManager::kill_orphans(current_pid).await;
-                    } else {
-                        break; // Process changed or ended; terminate watchdog task
-                    }
-                } else {
-                    break; // Manager was dropped / process released
-                }
-            }
-        });
+        self.touch();
+        self.spawn_inactivity_watchdog(active_pid);
 
         Ok(())
     }
@@ -734,25 +823,8 @@ impl LlamaManager {
         let active_pid = child.id();
         *guard = Some(child);
 
-        // Spawn watchdog
-        let weak_process = Arc::downgrade(&self.process);
-        tauri::async_runtime::spawn(async move {
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-                if let Some(process_arc) = weak_process.upgrade() {
-                    let guard = process_arc.lock().await;
-                    let current_pid = guard.as_ref().and_then(|c| c.id());
-                    drop(guard);
-                    if current_pid == active_pid {
-                        LlamaManager::kill_orphans(current_pid).await;
-                    } else {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-        });
+        self.touch();
+        self.spawn_inactivity_watchdog(active_pid);
 
         Ok(())
     }
@@ -879,7 +951,10 @@ impl LlamaManager {
             progress(100, "Model loaded and ready.");
         }
 
+        let active_pid = child.id();
         *guard = Some(child);
+        self.touch();
+        self.spawn_inactivity_watchdog(active_pid);
         Ok(())
     }
 
@@ -919,4 +994,36 @@ impl LlamaManager {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_llama_manager_keep_alive_defaults() {
+        let manager = LlamaManager::new();
+        assert_eq!(manager.get_keep_alive_secs(), 300);
+        manager.set_keep_alive_secs(600);
+        assert_eq!(manager.get_keep_alive_secs(), 600);
+    }
+
+    #[test]
+    fn test_llama_manager_touch_updates_activity() {
+        let manager = LlamaManager::new();
+        let initial = manager.last_activity.load(Ordering::Relaxed);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        manager.touch();
+        let updated = manager.last_activity.load(Ordering::Relaxed);
+        assert!(updated >= initial);
+    }
+
+    #[test]
+    fn test_clear_active_local_server_state() {
+        {
+            let mut g = crate::llm::local::commands::ACTIVE_LOCAL_LLM_MODEL.lock().unwrap();
+            *g = Some("test-model".to_string());
+        }
+        crate::llm::local::commands::clear_active_local_server_state();
+        let g = crate::llm::local::commands::ACTIVE_LOCAL_LLM_MODEL.lock().unwrap();
+        assert!(g.is_none());
+    }
+}
