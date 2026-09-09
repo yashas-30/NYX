@@ -141,9 +141,6 @@ impl LlamaServerConfig {
             args.extend(["-tb".into(), self.threads_batch.to_string()]);
         }
 
-        // Limit HTTP server thread pool to 2 to prevent excessive idle CPU context switching.
-        args.extend(["--threads-http".into(), "2".into()]);
-
         if let Some(mmproj) = &self.mmproj_path {
             args.extend(["--mmproj".into(), mmproj.to_string_lossy().into_owned()]);
             if self.mmproj_offload {
@@ -153,6 +150,8 @@ impl LlamaServerConfig {
                         args.extend(["--mmproj-device".into(), dev.clone()]);
                     }
                 }
+            } else {
+                args.push("--no-mmproj-offload".into());
             }
         }
 
@@ -167,6 +166,8 @@ impl LlamaServerConfig {
 
         if self.flash_attention {
             args.extend(["--flash-attn".into(), "on".into()]);
+        } else {
+            args.extend(["--flash-attn".into(), "off".into()]);
         }
 
         if let Some(ref kct) = self.kv_cache_type {
@@ -203,7 +204,7 @@ impl LlamaServerConfig {
             ]);
 
             // Multi-Token Prediction (MTP) companion heads:
-            // When dedicated VRAM headroom exists, ngl_draft is Some(999); when headroom is tight or unspecified,
+            // When dedicated VRAM headroom exists, ngl_draft is Some(total_layers); when headroom is tight or unspecified,
             // default to 0 so MTP runs on CPU in system RAM to prevent CUDA OOM.
             let ngld_val = self.ngl_draft.unwrap_or(if is_mtp {
                 0
@@ -264,17 +265,17 @@ impl LlamaServerConfig {
             }
         }
 
-        // Single slot execution for desktop client (prevents allocating 4 concurrent slots in memory)
+        // Single slot execution for desktop client (prevents allocating concurrent slots in memory)
         args.extend(["-np".into(), "1".into()]);
 
-        // Dynamically scale host RAM prompt cache ceiling to (system_ram_mb / 8).clamp(512, 4096)
+        // Dynamically scale host RAM prompt cache based on system memory without arbitrary 4096MB cap
         let cache_ram_mb = {
             let mut sys = sysinfo::System::new_with_specifics(
                 sysinfo::RefreshKind::new().with_memory(sysinfo::MemoryRefreshKind::new().with_ram())
             );
             sys.refresh_memory();
             let system_ram_mb = sys.total_memory() / (1024 * 1024);
-            (system_ram_mb / 8).clamp(512, 4096)
+            (system_ram_mb / 4).max(512)
         };
         args.extend(["--cache-ram".into(), cache_ram_mb.to_string()]);
 
@@ -301,13 +302,8 @@ impl LlamaServerConfig {
             args.extend(["--reasoning-format".into(), "none".into()]);
         }
 
-        // Enable KV prompt caching unconditionally for instant first-token generation
+        // Enable KV prompt caching unconditionally in memory for instant first-token generation
         args.push("--cache-prompt".into());
-
-        // Wire prompt-cache file path if provided
-        if let Some(ref pc) = self.prompt_cache_path {
-            args.extend(["--prompt-cache".into(), pc.to_string_lossy().into_owned()]);
-        }
 
         // 2026 Dynamic Context Management: Enable context shifting so context auto-expands & shifts on demand
         args.push("--context-shift".into());
@@ -424,7 +420,8 @@ impl LlamaManager {
         // Fix #11: Reuse shared health client — avoids TCP+TLS setup per poll.
         let client = &*HEALTH_CLIENT;
 
-        let port = SERVER_PORT.load(std::sync::atomic::Ordering::Relaxed);
+        let port = cfg.port;
+        SERVER_PORT.store(port, std::sync::atomic::Ordering::Relaxed);
         let url = format!("http://{}:{}/health", SERVER_HOST, port);
         let max_polls = SERVER_READY_TIMEOUT_SECS * 4; // Poll every 250ms (backing off)
         let mut ready = false;

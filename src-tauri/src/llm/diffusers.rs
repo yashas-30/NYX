@@ -423,9 +423,9 @@ async fn try_sd_cpp_local_inference(
         return None;
     }
 
-    // Apply low-memory (4GB VRAM) constraints and general defaults
-    let is_low_vram = hw.profile == crate::llm::local_orchestrator::HardwareProfile::Vram4GbSys16Gb 
-        || hw.vram_total_mb <= 4608;
+    // Dynamically check available VRAM relative to model weight footprint for resolution scaling
+    let model_size_mb = std::fs::metadata(model_path).map(|m| m.len() / (1024 * 1024)).unwrap_or(2048);
+    let is_low_vram = hw.vram_available_mb < model_size_mb.saturating_add(1024);
 
     let target_w = if w > 0 { w } else { 1024 };
     let target_h = if h > 0 { h } else { 1024 };

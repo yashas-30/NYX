@@ -22,69 +22,28 @@ pub enum GpuBackend {
     Unknown,
 }
 
-/// 2026 Standard Hardware Profiles
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+/// Dynamic Hardware Profile representing the exact live device specifications
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type")]
 pub enum HardwareProfile {
-    Vram4GbSys16Gb,
-    Vram6GbSys16Gb,
-    Vram8GbSys16Gb,
-    Vram8GbSys24Gb,
-    Vram12GbSys16Gb,
-    Vram12GbSys24Gb,
-    Vram12GbSys32Gb,
-    Vram16GbSys32Gb,
-    Vram16GbSys64Gb,
+    Dynamic {
+        vram_mb: u64,
+        ram_mb: u64,
+    },
     AutoDetect,
 }
 
 impl HardwareProfile {
     pub fn get_specs(&self) -> Option<(u64, u64)> {
         match self {
-            Self::Vram4GbSys16Gb => Some((4, 16)),
-            Self::Vram6GbSys16Gb => Some((6, 16)),
-            Self::Vram8GbSys16Gb => Some((8, 16)),
-            Self::Vram8GbSys24Gb => Some((8, 24)),
-            Self::Vram12GbSys16Gb => Some((12, 16)),
-            Self::Vram12GbSys24Gb => Some((12, 24)),
-            Self::Vram12GbSys32Gb => Some((12, 32)),
-            Self::Vram16GbSys32Gb => Some((16, 32)),
-            Self::Vram16GbSys64Gb => Some((16, 64)),
+            Self::Dynamic { vram_mb, ram_mb } => Some((*vram_mb / 1024, *ram_mb / 1024)),
             Self::AutoDetect => None,
         }
     }
 
-    /// Snaps raw detected hardware to the closest 2026 standard profile
-    pub fn snap_from(vram_mb: u64, ram_mb: u64) -> Self {
-        let vram_gb = (vram_mb as f64 / 1024.0).round() as u64;
-        let ram_gb = (ram_mb as f64 / 1024.0).round() as u64;
-
-        if vram_mb == 0 {
-            if ram_gb >= 64 {
-                return Self::Vram16GbSys64Gb;
-            } else if ram_gb >= 32 {
-                return Self::Vram12GbSys32Gb;
-            } else if ram_gb >= 24 {
-                return Self::Vram8GbSys24Gb;
-            } else {
-                return Self::Vram4GbSys16Gb;
-            }
-        }
-
-        match vram_gb {
-            0..=4 => Self::Vram4GbSys16Gb,
-            5..=6 => Self::Vram6GbSys16Gb,
-            7..=8 => {
-                if ram_gb >= 24 { Self::Vram8GbSys24Gb } else { Self::Vram8GbSys16Gb }
-            },
-            9..=12 => {
-                if ram_gb >= 32 { Self::Vram12GbSys32Gb }
-                else if ram_gb >= 24 { Self::Vram12GbSys24Gb }
-                else { Self::Vram12GbSys16Gb }
-            },
-            _ => {
-                if ram_gb >= 64 { Self::Vram16GbSys64Gb } else { Self::Vram16GbSys32Gb }
-            }
-        }
+    /// Creates a 100% dynamic hardware profile from live device specs without arbitrary bucketing
+    pub fn from_hardware(vram_mb: u64, ram_mb: u64) -> Self {
+        Self::Dynamic { vram_mb, ram_mb }
     }
 }
 
@@ -202,9 +161,10 @@ async fn detect_gpu(sys_ram_bytes: u64) -> GpuDetectionResult {
             None
         }.await;
 
+        let has_integrated = secondary.is_some();
         let (secondary_gpu_name, has_integrated, available_devices) = (
             secondary,
-            true,
+            has_integrated,
             vec!["CUDA0".to_string()],
         );
 
@@ -569,9 +529,9 @@ impl HardwareSnapshot {
             snapshot.is_igpu = false;
         }
 
-        // 2026 Hardware Standardization: Snap to standard profiles
-        let profile = HardwareProfile::snap_from(snapshot.vram_total_mb, snapshot.ram_total_mb);
-        snapshot.profile = profile;
+        // Dynamic Hardware Profile based directly on live device specs
+        let profile = HardwareProfile::from_hardware(snapshot.vram_total_mb, snapshot.ram_total_mb);
+        snapshot.profile = profile.clone();
 
         #[cfg(target_os = "windows")]
         let live_free_bytes = if snapshot.gpu_backend == GpuBackend::Cuda {
@@ -585,40 +545,60 @@ impl HardwareSnapshot {
                 .and_then(|s| s.parse::<u64>().ok())
                 .map(|mib| mib * 1024 * 1024)
         } else {
-            None
+            // For non-NVIDIA GPUs on Windows (AMD/Intel), query local adapter memory usage dynamically
+            let out = tokio::process::Command::new("powershell").hide_window()
+                .args(&["-NoProfile", "-Command", "(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPULocalAdapterMemory -ErrorAction SilentlyContinue | Measure-Object -Property LocalUsage -Sum).Sum"])
+                .output()
+                .await
+                .ok();
+            let used_bytes = out.and_then(|o| String::from_utf8(o.stdout).ok())
+                .and_then(|t| t.trim().parse::<u64>().ok());
+            used_bytes.map(|used| (snapshot.vram_total_mb * 1024 * 1024).saturating_sub(used))
         };
         #[cfg(not(target_os = "windows"))]
-        let live_free_bytes: Option<u64> = None;
+        let live_free_bytes: Option<u64> = if snapshot.gpu_backend == GpuBackend::Cuda {
+            let out = tokio::process::Command::new("nvidia-smi")
+                .args(&["--query-gpu=memory.free", "--format=csv,noheader,nounits"])
+                .output()
+                .await
+                .ok();
+            out.and_then(|o| String::from_utf8(o.stdout).ok())
+                .and_then(|t| t.lines().next().map(|l| l.trim().to_string()))
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(|mib| mib * 1024 * 1024)
+        } else {
+            None
+        };
 
         let effective_free_bytes = live_free_bytes.or(gpu_result.vram_free_bytes);
         
         if snapshot.has_dedicated_gpu {
-            // Live free memory if detected via driver query, otherwise total minus 256MB OS baseline
+            // Live dedicated VRAM directly from OS/driver query
             snapshot.vram_available_mb = if let Some(free_b) = effective_free_bytes {
-                (free_b / (1024 * 1024)).saturating_sub(64)
+                free_b / (1024 * 1024)
             } else {
-                snapshot.vram_total_mb.saturating_sub(256)
+                snapshot.vram_total_mb
             };
             snapshot.dedicated_vram_available_mb = snapshot.vram_available_mb;
-            // Windows WDDM allocates up to 50% of System RAM as Shared GPU Memory.
-            // Keep a 1GB reserve for general host OS needs.
             let wddm_shared_cap_mb = snapshot.ram_total_mb / 2;
-            let usable_ram_mb = snapshot.ram_available_mb.saturating_sub(1024);
-            snapshot.shared_gpu_memory_mb = wddm_shared_cap_mb.min(usable_ram_mb);
+            snapshot.shared_gpu_memory_mb = wddm_shared_cap_mb.min(snapshot.ram_available_mb);
         } else {
-            snapshot.vram_available_mb = snapshot.vram_total_mb.saturating_sub(100);
+            snapshot.vram_available_mb = if let Some(free_b) = effective_free_bytes {
+                free_b / (1024 * 1024)
+            } else {
+                snapshot.vram_total_mb
+            };
             snapshot.dedicated_vram_available_mb = 0;
             let wddm_shared_cap_mb = snapshot.ram_total_mb / 2;
-            let usable_ram_mb = snapshot.ram_available_mb.saturating_sub(1024);
-            snapshot.shared_gpu_memory_mb = wddm_shared_cap_mb.min(usable_ram_mb);
+            snapshot.shared_gpu_memory_mb = wddm_shared_cap_mb.min(snapshot.ram_available_mb);
         }
         
         snapshot.secondary_gpu_name = gpu_result.secondary_gpu_name.clone();
         snapshot.has_integrated_gpu = gpu_result.has_integrated;
         snapshot.available_devices = gpu_result.available_devices.clone();
 
-        info!("[HardwareAnalyser] Snapped to 2026 Profile: {:?} ({}MB VRAM, {}MB RAM, integrated: {})", 
-            profile, snapshot.vram_total_mb, snapshot.ram_total_mb, snapshot.has_integrated_gpu);
+        info!("[HardwareAnalyser] Dynamic Specs: Profile={:?} (Total VRAM: {}MB, Avail Dedicated VRAM: {}MB, RAM Avail/Total: {}/{}MB, integrated: {})", 
+            profile, snapshot.vram_total_mb, snapshot.dedicated_vram_available_mb, snapshot.ram_available_mb, snapshot.ram_total_mb, snapshot.has_integrated_gpu);
 
         if let Ok(mut guard) = HARDWARE_CACHE.write() {
             *guard = Some((snapshot.clone(), std::time::Instant::now()));

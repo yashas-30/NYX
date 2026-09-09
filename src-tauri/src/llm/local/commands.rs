@@ -66,10 +66,6 @@ static GGUF_META_CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::H
     std::sync::Mutex::new(std::collections::HashMap::new())
 });
 
-static HW_SNAPSHOT_CACHE: std::sync::LazyLock<tokio::sync::Mutex<Option<HardwareSnapshot>>> = std::sync::LazyLock::new(|| {
-    tokio::sync::Mutex::new(None)
-});
-
 pub fn is_vision_projector_name(name: &str) -> bool {
     let lower = name.to_lowercase();
     if !lower.ends_with(".gguf") {
@@ -531,15 +527,7 @@ pub async fn analyze_hardware(
     let ctx = context_size.unwrap_or(0);
     let total_layers = estimate_total_layers(gguf_meta.as_ref(), model_size_gb);
 
-    // Try to use the actual server binary for accurate VRAM (it knows all drivers).
-    let mut cache = HW_SNAPSHOT_CACHE.lock().await;
-    let hw_snapshot = if let Some(cached) = cache.as_ref() {
-        cached.clone()
-    } else {
-        let hw = HardwareSnapshot::collect().await;
-        *cache = Some(hw.clone());
-        hw
-    };
+    let hw_snapshot = HardwareSnapshot::collect().await;
 
     let decision = compute_ngl_decision(&hw_snapshot, gguf_meta.as_ref(), model_size_gb, ctx);
     let (ngl, fully_gpu, hybrid, uses_shared_memory, estimated_vram_mb, schedule_message, recommended_cpu_threads, strategy) = match decision {
@@ -548,7 +536,6 @@ pub async fn analyze_hardware(
                 let custom_ngl = raw_l.min(total_layers);
                 let vram = vram_for_ngl(model_size_gb, gguf_meta.as_ref(), total_layers, custom_ngl, ctx);
                 let full = custom_ngl >= total_layers;
-                let hyb = !full && custom_ngl > 0;
                 let strat = if custom_ngl == 0 {
                     "CpuOnly".to_string()
                 } else if full {
@@ -563,12 +550,8 @@ pub async fn analyze_hardware(
                 } else {
                     format!("Custom Offload — {}/{} layers on GPU, {} layers on CPU.", custom_ngl, total_layers, total_layers.saturating_sub(custom_ngl))
                 };
-                let uses_shmem = hw_snapshot.has_dedicated_gpu && vram > hw_snapshot.dedicated_vram_available_mb.saturating_sub(512);
-                let threads = if full {
-                    hw_snapshot.cpu_physical_cores.min(4).max(1)
-                } else {
-                    hw_snapshot.cpu_physical_cores.max(1)
-                };
+                let uses_shmem = hw_snapshot.has_dedicated_gpu && vram > hw_snapshot.dedicated_vram_available_mb;
+                let threads = hw_snapshot.cpu_physical_cores.max(1);
                 (custom_ngl, full, !full, uses_shmem, vram, msg, threads, strat)
             } else {
                 (d.ngl, d.fully_gpu, d.hybrid, d.uses_shared_memory, d.estimated_vram_mb, d.message, d.recommended_cpu_threads, d.strategy)
@@ -689,6 +672,14 @@ pub static ACTIVE_LOCAL_LLM_MODEL: std::sync::LazyLock<std::sync::Mutex<Option<S
 
 pub fn get_active_local_llm_model() -> Option<String> {
     ACTIVE_LOCAL_LLM_MODEL.lock().unwrap().clone()
+}
+
+pub static ACTIVE_LOCAL_LLM_PATH: std::sync::LazyLock<std::sync::Mutex<Option<PathBuf>>> = std::sync::LazyLock::new(|| {
+    std::sync::Mutex::new(None)
+});
+
+pub fn get_active_local_llm_path() -> Option<PathBuf> {
+    ACTIVE_LOCAL_LLM_PATH.lock().unwrap().clone()
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1091,11 +1082,13 @@ pub async fn start_local_server(
             sd_port = find_free_port();
             SERVER_PORT.store(sd_port, std::sync::atomic::Ordering::Relaxed);
 
-            let is_low_vram = hw.profile == HardwareProfile::Vram4GbSys16Gb 
-                || hw.vram_total_mb <= 4608;
+            let model_size_mb = tokio::fs::metadata(&model_path).await
+                .map(|m| m.len() / (1024 * 1024))
+                .unwrap_or(2048);
+            let is_low_vram = hw.vram_available_mb < model_size_mb.saturating_add(1024);
 
             let threads = cpu_threads.unwrap_or_else(|| {
-                if hw.cpu_physical_cores > 0 { hw.cpu_physical_cores.min(8) } else { 4 }
+                hw.cpu_physical_cores.max(1)
             });
 
             let binary_path = app_dir.join("binaries").join("stable-diffusion").join(Downloader::sd_server_binary_name());
@@ -1333,33 +1326,20 @@ pub async fn start_local_server(
     let total_layers = estimate_total_layers(gguf_meta.as_ref(), model_size_gb);
 
 
-    // Respect user-specified or scheduler-budgeted GPU layer offload count.
-    // Never force -ngl 999 when partial offload is used so remaining layers execute
-    // on CPU without 15x PCIe WDDM bus thrashing.
+    // Pass the exact scheduler-computed NGL to llama-server.
+    // Using the precise layer count (not a 999 sentinel) is always safe:
+    // llama.cpp clamps -ngl to actual model layers internally, but passing
+    // 999 on some driver/VRAM combinations causes OOM because the server
+    // attempts to allocate all layers regardless of VRAM headroom.
     let final_ngl = match gpu_layers {
-        Some(layers) => {
-            if layers >= total_layers {
-                999
-            } else {
-                layers
-            }
-        }
-        None => {
-            if hybrid_cfg.ngl >= total_layers {
-                999
-            } else {
-                hybrid_cfg.ngl
-            }
-        }
+        Some(layers) => layers.min(total_layers),
+        None => hybrid_cfg.ngl.min(total_layers),
     };
+    let fully_gpu = final_ngl >= total_layers;
 
     // Generation threads: physical cores for sequential decode.
     let final_threads = cpu_threads.filter(|&t| t > 0).unwrap_or_else(|| {
-        if final_ngl < total_layers {
-            hw.cpu_physical_cores.max(1)
-        } else {
-            hybrid_cfg.threads_gen
-        }
+        hw.cpu_physical_cores.max(1)
     });
     // Batch / ubatch: user override or scheduler recommendation.
     let final_batch = batch_size.filter(|&b| b > 0).unwrap_or(hybrid_cfg.batch_size);
@@ -1377,15 +1357,15 @@ pub async fn start_local_server(
 
     let effective_context_size = hybrid_cfg.effective_context_size;
     // Effective context comes from the GPU scheduler (may be auto-reduced to fit VRAM).
-    let estimated_vram_mb = vram_for_ngl(model_size_gb, gguf_meta.as_ref(), total_layers, if final_ngl >= 999 { total_layers } else { final_ngl }, effective_context_size);
+    let estimated_vram_mb = vram_for_ngl(model_size_gb, gguf_meta.as_ref(), total_layers, final_ngl, effective_context_size);
     let context_capped = effective_context_size < effective_ctx;
     let mmproj_filename = mmproj_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
     let draft_filename = draft_model_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
 
     let _ = app.emit("vram-decision", serde_json::json!({
         "ngl": final_ngl,
-        "fully_gpu": final_ngl >= total_layers || final_ngl >= 999,
-        "hybrid": final_ngl < total_layers && final_ngl < 999,
+        "fully_gpu": fully_gpu,
+        "hybrid": !fully_gpu,
         "uses_shared_memory": hybrid_cfg.uses_shared_memory,
         "message": hybrid_cfg.message,
         "estimated_vram_mb": estimated_vram_mb,
@@ -1395,8 +1375,8 @@ pub async fn start_local_server(
         "gpu_name": hw.gpu_name,
         "model_size_gb": (model_size_gb * 0.80),
         "raw_file_size_gb": model_size_gb,
-        "layers_on_gpu": if final_ngl >= 999 { total_layers } else { final_ngl.min(total_layers) },
-        "layers_on_cpu": if final_ngl >= 999 { 0 } else { total_layers.saturating_sub(final_ngl) },
+        "layers_on_gpu": final_ngl.min(total_layers),
+        "layers_on_cpu": total_layers.saturating_sub(final_ngl),
         "cpu_threads": final_threads,
         "threads_batch": hybrid_cfg.threads_batch,
         "ubatch_size": final_ubatch,
@@ -1405,7 +1385,7 @@ pub async fn start_local_server(
         "kv_in_vram": true,
         "mlock": final_mlock,
         "flash_attention": final_flash,
-        "inference_mode": if final_ngl >= total_layers || final_ngl >= 999 { "full_gpu" } else { "hybrid" },
+        "inference_mode": if fully_gpu { "full_gpu" } else { "hybrid" },
         "llamacpp_version": Downloader::get_installed_version(&app_dir).await,
         // 2026 additions
         "is_igpu": hw.is_igpu,
@@ -1476,24 +1456,44 @@ pub async fn start_local_server(
     } else {
         0
     };
-    // Dedicated VRAM free for auxiliary components (reserving 512MB for Windows DWM compositor headroom)
-    let dedicated_free_for_aux = hw.dedicated_vram_available_mb.saturating_sub(512);
-
-    // If dedicated VRAM has room (dedicated_vram_free > model_vram + mmproj_size + kv_cache + 300MB), pass --mmproj-offload.
-    // If space is tight, pass --mmproj WITHOUT --mmproj-offload so the vision projector runs in system RAM via CPU to prevent CUDA OOM.
-    let mmproj_offload = hw.has_dedicated_gpu
-        && mmproj_path.is_some()
-        && (dedicated_free_for_aux > estimated_vram_mb.saturating_add(mmproj_size_mb).saturating_add(300));
-
-    // Budget MTP companion heads into VRAM (-ngld 999) when dedicated VRAM headroom exists,
-    // otherwise pass Some(0) so MTP stays in system RAM on CPU, preventing CUDA OOM.
-    let ngl_draft = if hw.has_dedicated_gpu && dedicated_free_for_aux > estimated_vram_mb.saturating_add(200) {
-        Some(999)
+    let gpu_vram_avail = if hw.has_dedicated_gpu {
+        hw.dedicated_vram_available_mb
     } else {
-        Some(0)
+        hw.vram_available_mb
+    };
+    // Real-time available dedicated VRAM headroom after accounting for model and KV cache
+    let mut remaining_vram = gpu_vram_avail.saturating_sub(estimated_vram_mb);
+
+    let draft_size_mb = if let Some(ref p) = draft_model_path {
+        tokio::fs::metadata(p).await.map(|m| m.len() / (1024 * 1024)).unwrap_or(0)
+    } else {
+        0
     };
 
-    let cfg = LlamaServerConfig {
+    let can_gpu_offload = hw.has_dedicated_gpu || hw.gpu_backend == GpuBackend::Metal || hw.vram_available_mb > 0;
+
+    // Companion files (mmproj, MTP heads, draft models):
+    // Load in VRAM if dedicated VRAM has room after accounting for the model and KV cache;
+    // if VRAM is exhausted or insufficient, load companion files in system memory (CPU/RAM)
+    // so bigger models run reliably without OOM crashes.
+    let mmproj_offload = if can_gpu_offload && mmproj_path.is_some() && remaining_vram >= mmproj_size_mb {
+        remaining_vram = remaining_vram.saturating_sub(mmproj_size_mb);
+        true
+    } else {
+        false
+    };
+
+    let ngl_draft = if can_gpu_offload && draft_model_path.is_some() && remaining_vram >= draft_size_mb {
+        // Offload all companion draft/MTP layers to VRAM using the actual layer count.
+        // llama.cpp clamps -ngld internally so passing total_layers is always safe.
+        Some(total_layers)
+    } else if draft_model_path.is_some() {
+        Some(0) // Seamlessly load companion in system memory on CPU
+    } else {
+        None
+    };
+
+    let mut cfg = LlamaServerConfig {
         server_path: server_path.clone(),
         model_path,
         context_size: server_ctx,
@@ -1533,56 +1533,142 @@ pub async fn start_local_server(
     })).await;
 
     if let Err(err) = start_res {
-        if cfg.draft_model_path.is_some() {
-            if cfg.ngl_draft != Some(0) {
-                warn!("[start_local_server] Initial start with GPU draft offload failed: {}. Retrying with CPU draft placement (-ngld 0)...", err);
-                let mut fallback_cfg = cfg.clone();
-                fallback_cfg.ngl_draft = Some(0);
-                let app_handle_retry = app.clone();
-                let retry_res = manager.start(&fallback_cfg, Some(move |pct: u32, msg: &str| {
-                    let _ = app_handle_retry.emit("llm-server-loading-progress", serde_json::json!({
-                        "progress": pct,
-                        "message": msg
-                    }));
-                })).await;
-                if let Err(retry_err) = retry_res {
-                    warn!("[start_local_server] Failed to start with CPU draft: {}. Retrying without draft model...", retry_err);
-                    let mut no_draft_cfg = cfg.clone();
-                    no_draft_cfg.draft_model_path = None;
-                    no_draft_cfg.spec_type = None;
-                    let app_handle_final = app.clone();
-                    manager.start(&no_draft_cfg, Some(move |pct: u32, msg: &str| {
-                        let _ = app_handle_final.emit("llm-server-loading-progress", serde_json::json!({
-                            "progress": pct,
-                            "message": msg
-                        }));
-                    })).await?;
-                }
-            } else {
-                warn!("[start_local_server] Failed to start with draft model: {}. Retrying without draft model...", err);
-                let mut fallback_cfg = cfg.clone();
-                fallback_cfg.draft_model_path = None;
-                fallback_cfg.spec_type = None;
-                let app_handle_retry = app.clone();
-                manager.start(&fallback_cfg, Some(move |pct: u32, msg: &str| {
-                    let _ = app_handle_retry.emit("llm-server-loading-progress", serde_json::json!({
-                        "progress": pct,
-                        "message": msg
-                    }));
-                })).await?;
+        warn!("[start_local_server] Initial launch failed: {}. Initiating dynamic memory recovery...", err);
+        let mut recovered = false;
+
+        // Step 1: Offload draft/MTP companion to system memory on CPU
+        if cfg.draft_model_path.is_some() && cfg.ngl_draft != Some(0) {
+            let mut fallback_cfg = cfg.clone();
+            fallback_cfg.ngl_draft = Some(0);
+            let app_handle_retry = app.clone();
+            if let Ok(()) = manager.start(&fallback_cfg, Some(move |pct: u32, msg: &str| {
+                let _ = app_handle_retry.emit("llm-server-loading-progress", serde_json::json!({ "progress": pct, "message": msg }));
+            })).await {
+                recovered = true;
+                cfg = fallback_cfg;
             }
-        } else {
+        }
+
+        // Step 2: Offload mmproj to system memory on CPU
+        if !recovered && cfg.mmproj_offload {
+            let mut fallback_cfg = cfg.clone();
+            fallback_cfg.mmproj_offload = false;
+            fallback_cfg.ngl_draft = Some(0);
+            let app_handle_retry = app.clone();
+            if let Ok(()) = manager.start(&fallback_cfg, Some(move |pct: u32, msg: &str| {
+                let _ = app_handle_retry.emit("llm-server-loading-progress", serde_json::json!({ "progress": pct, "message": msg }));
+            })).await {
+                recovered = true;
+                cfg = fallback_cfg;
+            }
+        }
+
+        // Step 3: Run without draft model if draft model is incompatible
+        if !recovered && cfg.draft_model_path.is_some() {
+            let mut fallback_cfg = cfg.clone();
+            fallback_cfg.draft_model_path = None;
+            fallback_cfg.spec_type = None;
+            fallback_cfg.mmproj_offload = false;
+            let app_handle_retry = app.clone();
+            if let Ok(()) = manager.start(&fallback_cfg, Some(move |pct: u32, msg: &str| {
+                let _ = app_handle_retry.emit("llm-server-loading-progress", serde_json::json!({ "progress": pct, "message": msg }));
+            })).await {
+                recovered = true;
+                cfg = fallback_cfg;
+            }
+        }
+
+        // Step 3.5: If high layer offload failed, reduce offloaded layers by 50%
+        if !recovered && cfg.ngl > 1 {
+            let mut fallback_cfg = cfg.clone();
+            fallback_cfg.ngl = cfg.ngl / 2;
+            fallback_cfg.ngl_draft = Some(0);
+            fallback_cfg.mmproj_offload = false;
+            let app_handle_retry = app.clone();
+            if let Ok(()) = manager.start(&fallback_cfg, Some(move |pct: u32, msg: &str| {
+                let _ = app_handle_retry.emit("llm-server-loading-progress", serde_json::json!({ "progress": pct, "message": msg }));
+            })).await {
+                recovered = true;
+                cfg = fallback_cfg;
+            }
+        }
+
+        // Step 4: If GPU VRAM allocation failed, seamlessly place layers in system memory on CPU (-ngl 0)
+        if !recovered && cfg.ngl > 0 {
+            warn!("[start_local_server] VRAM exhausted; seamlessly running model in system memory on CPU (-ngl 0)...");
+            let mut fallback_cfg = cfg.clone();
+            fallback_cfg.ngl = 0;
+            fallback_cfg.ngl_draft = Some(0);
+            fallback_cfg.mmproj_offload = false;
+            fallback_cfg.draft_model_path = None;
+            fallback_cfg.spec_type = None;
+            let app_handle_retry = app.clone();
+            if let Ok(()) = manager.start(&fallback_cfg, Some(move |pct: u32, msg: &str| {
+                let _ = app_handle_retry.emit("llm-server-loading-progress", serde_json::json!({ "progress": pct, "message": msg }));
+            })).await {
+                recovered = true;
+                cfg = fallback_cfg;
+            }
+        }
+
+        if !recovered {
             return Err(err);
         }
+
+        // Re-emit updated vram-decision reflecting the recovered state
+        let _ = app.emit("vram-decision", serde_json::json!({
+            "ngl": cfg.ngl,
+            "fully_gpu": cfg.ngl >= total_layers && cfg.ngl > 0,
+            "hybrid": cfg.ngl < total_layers,
+            "uses_shared_memory": false,
+            "message": if cfg.ngl == 0 {
+                format!("CPU (System RAM) — running in system memory on CPU (-ngl 0). Context: {}.", cfg.context_size)
+            } else {
+                format!("Hybrid — {}/{} layers on GPU and {} layers in system RAM. Context: {}.", cfg.ngl, total_layers, total_layers.saturating_sub(cfg.ngl), cfg.context_size)
+            },
+            "estimated_vram_mb": vram_for_ngl(model_size_gb, gguf_meta.as_ref(), total_layers, cfg.ngl, cfg.context_size),
+            "vram_available_mb": hw.vram_available_mb,
+            "dedicated_vram_available_mb": hw.dedicated_vram_available_mb,
+            "shared_gpu_memory_mb": hw.shared_gpu_memory_mb,
+            "gpu_name": hw.gpu_name,
+            "model_size_gb": (model_size_gb * 0.80),
+            "raw_file_size_gb": model_size_gb,
+            "layers_on_gpu": cfg.ngl.min(total_layers),
+            "layers_on_cpu": total_layers.saturating_sub(cfg.ngl),
+            "cpu_threads": cfg.cpu_threads,
+            "threads_batch": cfg.threads_batch,
+            "ubatch_size": cfg.ubatch_size,
+            "batch_size": cfg.batch_size,
+            "kv_cache_type": cfg.kv_cache_type.clone(),
+            "kv_in_vram": cfg.ngl > 0,
+            "mlock": cfg.use_mlock,
+            "flash_attention": cfg.flash_attention,
+            "inference_mode": if cfg.ngl >= total_layers && cfg.ngl > 0 { "full_gpu" } else { "hybrid" },
+            "llamacpp_version": Downloader::get_installed_version(&app_dir).await,
+            "is_igpu": hw.is_igpu,
+            "is_npu": hw.gpu_backend == GpuBackend::Npu,
+            "context_capped": cfg.context_size < effective_ctx,
+            "effective_context_size": cfg.context_size,
+            "gpu_backend": format!("{:?}", hw.gpu_backend),
+            "has_mmproj": cfg.mmproj_path.is_some(),
+            "mmproj_file": cfg.mmproj_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned()),
+            "has_mtp": cfg.draft_model_path.is_some(),
+            "draft_model_file": cfg.draft_model_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned()),
+            "spec_type": cfg.spec_type.clone(),
+        }));
     }
 
     {
         let mut active_llm = ACTIVE_LOCAL_LLM_MODEL.lock().unwrap();
         *active_llm = Some(model_id.clone());
     }
+    {
+        let mut active_path = ACTIVE_LOCAL_LLM_PATH.lock().unwrap();
+        *active_path = Some(cfg.model_path.clone());
+    }
     ACTIVE_SERVER_CTX_SIZE.store(server_ctx, std::sync::atomic::Ordering::Relaxed);
     {
-        let mmproj_filename = mmproj_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
+        let mmproj_filename = cfg.mmproj_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
         let draft_filename = cfg.draft_model_path.as_ref().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().into_owned());
 
         let mut cfg_lock = ACTIVE_SERVER_CONFIG.lock().unwrap();

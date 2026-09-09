@@ -865,9 +865,19 @@ pub async fn execute_local_stream(
         
         let (has_image, has_audio) = request_has_attachments(req);
         let resolved = crate::llm::local_orchestrator::resolve_model_path(app, &target_model).await;
-        if resolved.is_some() {
+        if let Some(ref res_path) = resolved {
             let active_port = SERVER_PORT.load(std::sync::atomic::Ordering::Relaxed);
-            if active_port == 0 {
+            let active_path = {
+                let guard = crate::llm::local_orchestrator::ACTIVE_LOCAL_LLM_PATH.lock().unwrap();
+                guard.clone()
+            };
+            let active_model = {
+                let guard = crate::llm::local_orchestrator::ACTIVE_LOCAL_LLM_MODEL.lock().unwrap();
+                guard.clone()
+            };
+            let is_same_model = active_path.as_ref() == Some(res_path) 
+                || active_model.as_deref() == Some(&target_model);
+            if active_port == 0 || !is_same_model {
                 info!("[Inference] Auto-starting native GPU engine with model: {}", target_model);
                 if let Some(manager) = app.try_state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>() {
                     if let Err(e) = crate::llm::local_orchestrator::start_local_server(
@@ -901,7 +911,17 @@ pub async fn execute_local_stream(
                 while waited < 180 {
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     let p = SERVER_PORT.load(std::sync::atomic::Ordering::Relaxed);
-                    if p != 0 {
+                    let curr_path = {
+                        let guard = crate::llm::local_orchestrator::ACTIVE_LOCAL_LLM_PATH.lock().unwrap();
+                        guard.clone()
+                    };
+                    let curr_model = {
+                        let guard = crate::llm::local_orchestrator::ACTIVE_LOCAL_LLM_MODEL.lock().unwrap();
+                        guard.clone()
+                    };
+                    let matches = curr_path.as_ref() == Some(res_path)
+                        || curr_model.as_deref() == Some(&target_model);
+                    if p != 0 && matches {
                         info!("[Inference] Native Lucifer server ready on port {} after {}ms", p, waited * 500);
                         break;
                     }
